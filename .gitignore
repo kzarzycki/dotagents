@@ -1,0 +1,28 @@
+# Local overrides — never managed by install, never committed
+**/*.local.*
+**/.env*
+**/settings.local.json
+
+# Per-project state (machine-local)
+home/.claude/projects/
+
+# Runtime / cache (skipped by install, also never committed)
+home/.claude/sessions/
+home/.claude/history.jsonl
+home/.claude/.credentials.json
+home/.claude/cache/
+home/.claude/debug/
+home/.claude/backups/
+home/.claude/file-history/
+home/.claude/paste-cache/
+home/.claude/plans/
+home/.claude/session-env/
+home/.claude/shell-snapshots/
+home/.claude/tasks/
+home/.claude/telemetry/
+home/.claude/teams/
+home/.claude/todos/
+home/.claude/mcp-needs-auth-cache.json
+home/.claude/.last-cleanup
+home/.claude/plugins/
+home/.claude/commands/

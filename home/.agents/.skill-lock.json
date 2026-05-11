@@ -1,0 +1,15 @@
+{
+  "version": 3,
+  "skills": {
+    "flow": {
+      "source": "kzarzycki/agent-skills",
+      "sourceType": "github",
+      "sourceUrl": "https://github.com/kzarzycki/agent-skills.git",
+      "skillPath": "flow/SKILL.md",
+      "skillFolderHash": "15567d14cbe70d0ee924e6f3c11553e8040e0310",
+      "installedAt": "2026-02-19T14:40:45.673Z",
+      "updatedAt": "2026-02-19T14:40:45.673Z"
+    }
+  },
+  "dismissed": {}
+}

@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# dotagents — install/manage symlinks from $HOME into the dotagents repo.
+# Usage:
+#   dotagents install [--no-pull] [--dry-run]
+#
+# Install is idempotent. Each direct child of <repo>/home/ becomes a ~/-level
+# entry; for each item inside, a symlink is created at $HOME/<dotdir>/<item>
+# pointing back into the repo. Existing real files at destinations are left
+# alone and reported as conflicts. Local-override patterns are skipped.
+
+set -euo pipefail
+
+# Locate the repo root: dir containing this script's parent.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SRC="$REPO_ROOT/home"
+
+CMD="${1:-}"
+shift || true
+
+case "$CMD" in
+  install)
+    ;;
+  ""|-h|--help|help)
+    cat <<EOF
+dotagents — install ~/ symlinks from this repo
+
+Usage:
+  dotagents install [--no-pull] [--dry-run]
+
+Options:
+  --no-pull   Skip the git pull step.
+  --dry-run   Print actions without making changes.
+EOF
+    exit 0
+    ;;
+  *)
+    echo "dotagents: unknown command: $CMD" >&2
+    exit 2
+    ;;
+esac
+
+NO_PULL=0
+DRY_RUN=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-pull) NO_PULL=1 ;;
+    --dry-run) DRY_RUN=1 ;;
+    *) echo "dotagents: unknown option: $arg" >&2; exit 2 ;;
+  esac
+done
+
+run() {
+  if (( DRY_RUN )); then
+    printf 'DRY: %s\n' "$*"
+  else
+    "$@"
+  fi
+}
+
+# 1. git pull
+if (( ! NO_PULL )); then
+  if [ -d "$REPO_ROOT/.git" ]; then
+    if git -C "$REPO_ROOT" remote | grep -q .; then
+      run git -C "$REPO_ROOT" pull --ff-only
+    else
+      echo "dotagents: no git remote configured; skipping pull"
+    fi
+  fi
+fi
+
+# 2. Walk home/ and link each item under each agent dir.
+shopt -s nullglob dotglob
+
+# Patterns to never link.
+is_skipped() {
+  local name="$1"
+  case "$name" in
+    *.local.*|.env*|settings.local.json|projects) return 0 ;;
+    # cache / runtime — also belt-and-braces here in case .gitignore is stale
+    sessions|history.jsonl|.credentials.json|cache|debug|backups|\
+    file-history|paste-cache|plans|session-env|shell-snapshots|tasks|\
+    telemetry|teams|todos|mcp-needs-auth-cache.json|.last-cleanup|plugins|\
+    commands)
+      return 0 ;;
+  esac
+  return 1
+}
+
+linked=0; skipped=0; conflicts=0; agents_seen=0
+for agent_dir in "$SRC"/*/; do
+  [ -d "$agent_dir" ] || continue
+  agents_seen=$((agents_seen + 1))
+  name=$(basename "$agent_dir")        # .claude, .agents, ...
+  dest="$HOME/$name"
+
+  run mkdir -p "$dest"
+
+  for entry in "$agent_dir"*; do
+    item=$(basename "$entry")
+    if is_skipped "$item"; then
+      skipped=$((skipped + 1))
+      continue
+    fi
+
+    target="$dest/$item"
+    if [ -e "$target" ] && [ ! -L "$target" ]; then
+      printf 'CONFLICT: %s exists and is not a symlink — leaving alone\n' "$target"
+      conflicts=$((conflicts + 1))
+      continue
+    fi
+    run ln -sfn "$entry" "$target"
+    linked=$((linked + 1))
+  done
+done
+
+# 3. Validate
+problems=0
+if command -v jq >/dev/null 2>&1; then
+  for f in "$HOME"/.claude/settings.json; do
+    [ -e "$f" ] || continue
+    if ! jq . "$f" >/dev/null 2>&1; then
+      printf 'INVALID JSON: %s\n' "$f"
+      problems=$((problems + 1))
+    fi
+  done
+fi
+
+# Dangling-symlink check inside our managed dotdirs.
+for agent_dir in "$SRC"/*/; do
+  name=$(basename "$agent_dir")
+  dest="$HOME/$name"
+  [ -d "$dest" ] || continue
+  while IFS= read -r -d '' link; do
+    if [ ! -e "$link" ]; then
+      printf 'DANGLING: %s\n' "$link"
+      problems=$((problems + 1))
+    fi
+  done < <(find "$dest" -maxdepth 1 -type l -print0)
+done
+
+printf '\ndotagents install: %d agents, %d linked, %d skipped, %d conflicts, %d validation problems\n' \
+  "$agents_seen" "$linked" "$skipped" "$conflicts" "$problems"
+
+(( conflicts == 0 && problems == 0 ))
