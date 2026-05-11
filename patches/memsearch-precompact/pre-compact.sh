@@ -107,14 +107,18 @@ if [ -z "$SUMMARY" ]; then
   SUMMARY="$PARSED"
 fi
 
-{
-  echo "### $NOW (pre-compact, trigger=$TRIGGER)"
-  if [ -n "$SESSION_ID" ]; then
-    echo "<!-- session:${SESSION_ID} turn:${LAST_USER_TURN_UUID} transcript:${TRANSCRIPT_PATH} precompact:${TRIGGER} -->"
-  fi
-  echo "$SUMMARY"
-  echo ""
-} >> "$MEMORY_FILE"
+# Parallel-session-safe append: flock serializes writes across concurrent hooks.
+(
+  flock -x 200
+  {
+    echo "### $NOW (pre-compact, trigger=$TRIGGER)"
+    if [ -n "$SESSION_ID" ]; then
+      echo "<!-- session:${SESSION_ID} turn:${LAST_USER_TURN_UUID} transcript:${TRANSCRIPT_PATH} precompact:${TRIGGER} -->"
+    fi
+    echo "$SUMMARY"
+    echo ""
+  } >> "$MEMORY_FILE"
+) 200>"$MEMORY_DIR/.write.lock"
 
 kill_orphaned_index
 run_memsearch index "$MEMORY_DIR"
