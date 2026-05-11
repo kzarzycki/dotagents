@@ -22,5 +22,18 @@
   "skipAutoPermissionPrompt": true,
   "enabledPlugins": {
     "memsearch@memsearch-plugins": true
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.dotagents/patches/memsearch-precompact/apply.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
   }
 }
