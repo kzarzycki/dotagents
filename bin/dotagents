@@ -80,8 +80,7 @@ is_skipped() {
     # cache / runtime — also belt-and-braces here in case .gitignore is stale
     sessions|history.jsonl|.credentials.json|cache|debug|backups|\
     file-history|paste-cache|plans|session-env|shell-snapshots|tasks|\
-    telemetry|teams|todos|mcp-needs-auth-cache.json|.last-cleanup|plugins|\
-    commands)
+    telemetry|teams|todos|mcp-needs-auth-cache.json|.last-cleanup|plugins)
       return 0 ;;
   esac
   return 1
