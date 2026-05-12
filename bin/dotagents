@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # dotagents — install/manage symlinks from $HOME into the dotagents repo.
 # Usage:
-#   dotagents install [--no-pull] [--dry-run]
+#   dotagents install [--no-pull] [--dry-run] [--profile <name>]
 #
 # Install is idempotent. Each direct child of <repo>/home/ becomes a ~/-level
 # entry; for each item inside, a symlink is created at $HOME/<dotdir>/<item>
 # pointing back into the repo. Existing real files at destinations are left
 # alone and reported as conflicts. Local-override patterns are skipped.
+#
+# Profile: machine-class overlay name (mac, vps, xebia-remote, ...). If not
+# supplied via --profile and $HOME/.dotagents-profile is missing, prompts on
+# a TTY. Resolved value is written to $HOME/.dotagents-profile.
 
 set -euo pipefail
 
@@ -26,11 +30,14 @@ case "$CMD" in
 dotagents — install ~/ symlinks from this repo
 
 Usage:
-  dotagents install [--no-pull] [--dry-run]
+  dotagents install [--no-pull] [--dry-run] [--profile <name>]
 
 Options:
-  --no-pull   Skip the git pull step.
-  --dry-run   Print actions without making changes.
+  --no-pull          Skip the git pull step.
+  --dry-run          Print actions without making changes.
+  --profile <name>   Machine-class profile (mac, vps, xebia-remote, ...).
+                     Written to ~/.dotagents-profile. If omitted and the
+                     file is missing, prompts on a TTY.
 EOF
     exit 0
     ;;
@@ -42,12 +49,19 @@ esac
 
 NO_PULL=0
 DRY_RUN=0
-for arg in "$@"; do
-  case "$arg" in
+PROFILE_ARG=""
+while (( $# )); do
+  case "$1" in
     --no-pull) NO_PULL=1 ;;
     --dry-run) DRY_RUN=1 ;;
-    *) echo "dotagents: unknown option: $arg" >&2; exit 2 ;;
+    --profile)
+      shift || { echo "dotagents: --profile requires a value" >&2; exit 2; }
+      PROFILE_ARG="$1"
+      ;;
+    --profile=*) PROFILE_ARG="${1#--profile=}" ;;
+    *) echo "dotagents: unknown option: $1" >&2; exit 2 ;;
   esac
+  shift
 done
 
 run() {
@@ -57,6 +71,47 @@ run() {
     "$@"
   fi
 }
+
+# 0. Resolve profile. Precedence: --profile arg > existing ~/.dotagents-profile
+# > interactive prompt. Resolved value is persisted to ~/.dotagents-profile
+# so subsequent runs need no flag.
+PROFILE_FILE="$HOME/.dotagents-profile"
+resolved_profile=""
+if [ -n "$PROFILE_ARG" ]; then
+  resolved_profile="$PROFILE_ARG"
+elif [ -f "$PROFILE_FILE" ]; then
+  resolved_profile=$(head -1 "$PROFILE_FILE" | tr -d '\n\r ')
+fi
+
+if [ -z "$resolved_profile" ]; then
+  available=()
+  for f in "$SRC"/.claude/settings.*.json; do
+    [ -e "$f" ] || continue
+    n=$(basename "$f")
+    n=${n#settings.}
+    n=${n%.json}
+    available+=("$n")
+  done
+  if [ -t 0 ]; then
+    printf 'Profile name (available: %s): ' "${available[*]:-mac vps}" >&2
+    read -r resolved_profile
+    resolved_profile=$(printf '%s' "$resolved_profile" | tr -d '\n\r ')
+  fi
+fi
+
+if [ -n "$resolved_profile" ]; then
+  current=""
+  [ -f "$PROFILE_FILE" ] && current=$(head -1 "$PROFILE_FILE" | tr -d '\n\r ')
+  if [ "$current" != "$resolved_profile" ]; then
+    if (( DRY_RUN )); then
+      printf 'DRY: write profile "%s" to %s\n' "$resolved_profile" "$PROFILE_FILE"
+    else
+      printf '%s\n' "$resolved_profile" > "$PROFILE_FILE"
+    fi
+  fi
+else
+  echo "dotagents: no profile set (no --profile, no $PROFILE_FILE, no TTY); per-machine overlay will be skipped" >&2
+fi
 
 # 1. git pull
 if (( ! NO_PULL )); then
@@ -137,27 +192,23 @@ for agent_dir in "$SRC"/*/; do
 done
 
 # 4. Per-profile overlay: link $HOME/.claude/settings.local.json to the
-# profile-specific committed file named in $HOME/.dotagents-profile.
-# CC reads settings.json (shared) + settings.local.json (machine overlay).
-# This step makes the overlay come from the repo too, so per-machine edits
-# go through the symlink back into the profile file.
-PROFILE_FILE="$HOME/.dotagents-profile"
-if [ -f "$PROFILE_FILE" ]; then
-  profile=$(head -1 "$PROFILE_FILE" | tr -d '\n\r ')
-  if [ -n "$profile" ]; then
-    profile_src="$SRC/.claude/settings.$profile.json"
-    profile_dest="$HOME/.claude/settings.local.json"
-    if [ -f "$profile_src" ]; then
-      if [ -e "$profile_dest" ] && [ ! -L "$profile_dest" ]; then
-        printf 'CONFLICT: %s exists and is not a symlink — leaving alone\n' "$profile_dest"
-        conflicts=$((conflicts + 1))
-      else
-        run ln -sfn "$profile_src" "$profile_dest"
-        linked=$((linked + 1))
-      fi
+# profile-specific committed file resolved in step 0. CC reads settings.json
+# (shared) + settings.local.json (machine overlay). This makes the overlay
+# come from the repo too, so per-machine edits go through the symlink back
+# into the profile file.
+if [ -n "$resolved_profile" ]; then
+  profile_src="$SRC/.claude/settings.$resolved_profile.json"
+  profile_dest="$HOME/.claude/settings.local.json"
+  if [ -f "$profile_src" ]; then
+    if [ -e "$profile_dest" ] && [ ! -L "$profile_dest" ]; then
+      printf 'CONFLICT: %s exists and is not a symlink — leaving alone\n' "$profile_dest"
+      conflicts=$((conflicts + 1))
     else
-      printf 'WARNING: profile "%s" declared but %s not found\n' "$profile" "$profile_src" >&2
+      run ln -sfn "$profile_src" "$profile_dest"
+      linked=$((linked + 1))
     fi
+  else
+    printf 'WARNING: profile "%s" declared but %s not found\n' "$resolved_profile" "$profile_src" >&2
   fi
 fi
 

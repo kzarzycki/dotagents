@@ -54,7 +54,14 @@ Some configuration is machine-class-specific (xebia-only marketplaces and plugin
 - `home/.claude/settings.<profile>.json` — per-profile overlay linked to `~/.claude/settings.local.json`. CC merges both files (committed base + profile overlay) at runtime.
 - `~/.dotagents-profile` — single line naming the profile for this machine (e.g. `mac`, `vps`, `xebia-remote`). Per-machine, not committed.
 
-`bin/dotagents install` reads the profile name and symlinks the matching `settings.<profile>.json` to `~/.claude/settings.local.json`. Editing through either symlink writes back into the repo. Add new profiles by creating new `home/.claude/settings.<name>.json` files; no install-script change needed.
+`bin/dotagents install` resolves the profile in this order: `--profile <name>` flag, existing `~/.dotagents-profile`, interactive prompt (TTY only). The resolved value is written to `~/.dotagents-profile` so subsequent runs need no flag. The matching `settings.<profile>.json` is symlinked to `~/.claude/settings.local.json`. Editing through either symlink writes back into the repo. Add new profiles by creating new `home/.claude/settings.<name>.json` files; no install-script change needed.
+
+```sh
+# first install on a new machine
+dotagents install --profile mac
+# subsequent runs pick up profile from ~/.dotagents-profile
+dotagents install
+```
 
 ### memsearch bootstrap (per machine)
 
