@@ -155,3 +155,20 @@ PY
     fi
   fi
 done
+
+# ============================================================================
+# Milvus standalone compose: generate per-machine .env
+# ============================================================================
+# docker compose runs may be invoked with sudo, which clobbers $HOME. Resolve
+# the host data dir from this script's invocation context (always user-level
+# via SessionStart hook) and bake it into a gitignored .env beside the compose.
+STANDALONE_DIR="$PATCH_DIR/standalone"
+if [ -d "$STANDALONE_DIR" ]; then
+  ENV_FILE="$STANDALONE_DIR/.env"
+  DESIRED="MEMSEARCH_DATA_DIR=$HOME/.memsearch/standalone/volumes"
+  if [ ! -f "$ENV_FILE" ] || ! grep -qxF "$DESIRED" "$ENV_FILE"; then
+    echo "$DESIRED" > "$ENV_FILE"
+    mkdir -p "$HOME/.memsearch/standalone/volumes/etcd" "$HOME/.memsearch/standalone/volumes/milvus"
+    echo "[memsearch-overlay] wrote $ENV_FILE" >&2
+  fi
+fi

@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.dotagents/patches/memsearch-precompact/apply.sh",
+            "command": "bash $HOME/.dotagents/patches/memsearch/apply.sh",
             "timeout": 5
           }
         ]
