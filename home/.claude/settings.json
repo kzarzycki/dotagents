@@ -7,7 +7,8 @@
     "MAX_THINKING_TOKENS": "32000",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "330000",
     "BRANDFETCH_CLIENT_ID": "1idStnJHAEZskBpUdQN",
-    "CLAUDE_CODE_FORK_SUBAGENT": "1"
+    "CLAUDE_CODE_FORK_SUBAGENT": "1",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
   },
   "permissions": {
     "allow": ["*"],
@@ -16,6 +17,19 @@
   "statusLine": {
     "type": "command",
     "command": "bash $HOME/.claude/statusline.sh"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.dotagents/patches/memsearch/apply.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
   },
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {
@@ -44,6 +58,9 @@
     },
     "kzarzycki-agent-skills-private": {
       "source": { "source": "github", "repo": "kzarzycki/agent-skills-private" }
+    },
+    "memsearch-plugins": {
+      "source": { "source": "github", "repo": "zilliztech/memsearch" }
     }
   },
   "enabledPlugins": {
@@ -65,12 +82,12 @@
     "comms-personal@kzarzycki-agent-skills-private": true,
     "voice-personal@kzarzycki-agent-skills-private": true,
     "xebia-personal@kzarzycki-agent-skills-private": true,
-    "experimental@xebia-ai-skills": true
+    "experimental@xebia-ai-skills": true,
+    "memsearch@memsearch-plugins": true
   },
   "effortLevel": "xhigh",
   "tui": "fullscreen",
-  "autoMemoryEnabled": true,
-  "autoMemoryDirectory": "~/.claude/memory/",
+  "autoMemoryEnabled": false,
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "skipAutoPermissionPrompt": true,
