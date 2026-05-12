@@ -69,10 +69,16 @@ if (( ! NO_PULL )); then
   fi
 fi
 
-# 2. Ensure ~/.dotagents -> $REPO_ROOT symlink. Committed settings.json
-# references this path for hook commands; reliable across machines.
+# 2. Ensure $HOME/.dotagents resolves to $REPO_ROOT. Committed settings.json
+# references this path for hook commands.
+#   - Repo cloned at $HOME/.dotagents itself: nothing to do.
+#   - $HOME/.dotagents is a symlink: ensure it points at $REPO_ROOT.
+#   - $HOME/.dotagents is a real path different from $REPO_ROOT: conflict.
+#   - Missing: create symlink.
 DOTAGENTS_LINK="$HOME/.dotagents"
-if [ -L "$DOTAGENTS_LINK" ]; then
+if [ "$REPO_ROOT" = "$DOTAGENTS_LINK" ]; then
+  :  # repo is canonical clone path; no symlink needed
+elif [ -L "$DOTAGENTS_LINK" ]; then
   current_target=$(readlink "$DOTAGENTS_LINK")
   if [ "$current_target" != "$REPO_ROOT" ]; then
     run ln -sfn "$REPO_ROOT" "$DOTAGENTS_LINK"
