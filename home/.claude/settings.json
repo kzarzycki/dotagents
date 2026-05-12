@@ -6,7 +6,6 @@
     "CLAUDE_CODE_TEAMMATE_MODE": "tmux",
     "MAX_THINKING_TOKENS": "32000",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "330000",
-    "BRANDFETCH_CLIENT_ID": "1idStnJHAEZskBpUdQN",
     "CLAUDE_CODE_FORK_SUBAGENT": "1",
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
   },
@@ -53,9 +52,6 @@
     "kzarzycki-agent-skills": {
       "source": { "source": "github", "repo": "kzarzycki/agent-skills" }
     },
-    "xebia-ai-skills": {
-      "source": { "source": "github", "repo": "xebia/ai-skills" }
-    },
     "kzarzycki-agent-skills-private": {
       "source": { "source": "github", "repo": "kzarzycki/agent-skills-private" }
     },
@@ -78,11 +74,8 @@
     "engineering@kzarzycki-agent-skills": true,
     "content@kzarzycki-agent-skills": true,
     "workflow@kzarzycki-agent-skills": true,
-    "pdlc@xebia-ai-skills": true,
     "comms-personal@kzarzycki-agent-skills-private": true,
     "voice-personal@kzarzycki-agent-skills-private": true,
-    "xebia-personal@kzarzycki-agent-skills-private": true,
-    "experimental@xebia-ai-skills": true,
     "memsearch@memsearch-plugins": true
   },
   "effortLevel": "xhigh",
@@ -91,7 +84,5 @@
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "skipAutoPermissionPrompt": true,
-  "theme": "dark-daltonized",
-  "verbose": true,
-  "voiceEnabled": true
+  "verbose": true
 }

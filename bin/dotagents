@@ -97,6 +97,9 @@ is_skipped() {
   local name="$1"
   case "$name" in
     *.local.*|.env*|settings.local.json|projects) return 0 ;;
+    # Per-profile settings files — picked up via $HOME/.dotagents-profile,
+    # never linked as ~/.<dotdir>/settings.<profile>.json directly.
+    settings.*.json) return 0 ;;
     # cache / runtime — also belt-and-braces here in case .gitignore is stale
     sessions|history.jsonl|.credentials.json|cache|debug|backups|\
     file-history|paste-cache|plans|session-env|shell-snapshots|tasks|\
@@ -133,7 +136,32 @@ for agent_dir in "$SRC"/*/; do
   done
 done
 
-# 3. Validate
+# 4. Per-profile overlay: link $HOME/.claude/settings.local.json to the
+# profile-specific committed file named in $HOME/.dotagents-profile.
+# CC reads settings.json (shared) + settings.local.json (machine overlay).
+# This step makes the overlay come from the repo too, so per-machine edits
+# go through the symlink back into the profile file.
+PROFILE_FILE="$HOME/.dotagents-profile"
+if [ -f "$PROFILE_FILE" ]; then
+  profile=$(head -1 "$PROFILE_FILE" | tr -d '\n\r ')
+  if [ -n "$profile" ]; then
+    profile_src="$SRC/.claude/settings.$profile.json"
+    profile_dest="$HOME/.claude/settings.local.json"
+    if [ -f "$profile_src" ]; then
+      if [ -e "$profile_dest" ] && [ ! -L "$profile_dest" ]; then
+        printf 'CONFLICT: %s exists and is not a symlink — leaving alone\n' "$profile_dest"
+        conflicts=$((conflicts + 1))
+      else
+        run ln -sfn "$profile_src" "$profile_dest"
+        linked=$((linked + 1))
+      fi
+    else
+      printf 'WARNING: profile "%s" declared but %s not found\n' "$profile" "$profile_src" >&2
+    fi
+  fi
+fi
+
+# 5. Validate
 problems=0
 if command -v jq >/dev/null 2>&1; then
   for f in "$HOME"/.claude/settings.json; do

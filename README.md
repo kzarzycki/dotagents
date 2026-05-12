@@ -46,6 +46,16 @@ The install command is idempotent. It (1) runs `git pull --ff-only` (skip with `
 
 Committed files (e.g. `home/.claude/settings.json` hook commands) reference the repo via `$HOME/.dotagents/...`. The install command creates `~/.dotagents` -> the actual clone path on each machine, so the repo can live anywhere while the access path stays canonical. Reliable regardless of shell env state.
 
+### Profiles (`~/.dotagents-profile`)
+
+Some configuration is machine-class-specific (xebia-only marketplaces and plugins on Mac and on xebia worker machines; nothing extra on a personal VPS). To handle this without per-machine repo forks, dotagents uses profiles:
+
+- `home/.claude/settings.json` — shared base linked to `~/.claude/settings.json` on every machine.
+- `home/.claude/settings.<profile>.json` — per-profile overlay linked to `~/.claude/settings.local.json`. CC merges both files (committed base + profile overlay) at runtime.
+- `~/.dotagents-profile` — single line naming the profile for this machine (e.g. `mac`, `vps`, `xebia-remote`). Per-machine, not committed.
+
+`bin/dotagents install` reads the profile name and symlinks the matching `settings.<profile>.json` to `~/.claude/settings.local.json`. Editing through either symlink writes back into the repo. Add new profiles by creating new `home/.claude/settings.<name>.json` files; no install-script change needed.
+
 ### memsearch bootstrap (per machine)
 
 `home/.claude/settings.json` enables the memsearch plugin and wires a SessionStart hook that runs `patches/memsearch/apply.sh` (idempotent, fast no-op once patched). To make memsearch actually function on a fresh machine, run once:

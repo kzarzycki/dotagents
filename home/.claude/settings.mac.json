@@ -1,0 +1,17 @@
+{
+  "env": {
+    "BRANDFETCH_CLIENT_ID": "1idStnJHAEZskBpUdQN"
+  },
+  "extraKnownMarketplaces": {
+    "xebia-ai-skills": {
+      "source": { "source": "github", "repo": "xebia/ai-skills" }
+    }
+  },
+  "enabledPlugins": {
+    "pdlc@xebia-ai-skills": true,
+    "experimental@xebia-ai-skills": true,
+    "xebia-personal@kzarzycki-agent-skills-private": true
+  },
+  "theme": "dark-daltonized",
+  "voiceEnabled": true
+}
