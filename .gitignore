@@ -25,3 +25,6 @@ home/.claude/todos/
 home/.claude/mcp-needs-auth-cache.json
 home/.claude/.last-cleanup
 home/.claude/plugins/
+
+# Memsearch runtime (per-repo memory snapshot if memsearch runs inside this dir)
+.memsearch/

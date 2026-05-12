@@ -69,7 +69,21 @@ if (( ! NO_PULL )); then
   fi
 fi
 
-# 2. Walk home/ and link each item under each agent dir.
+# 2. Ensure ~/.dotagents -> $REPO_ROOT symlink. Committed settings.json
+# references this path for hook commands; reliable across machines.
+DOTAGENTS_LINK="$HOME/.dotagents"
+if [ -L "$DOTAGENTS_LINK" ]; then
+  current_target=$(readlink "$DOTAGENTS_LINK")
+  if [ "$current_target" != "$REPO_ROOT" ]; then
+    run ln -sfn "$REPO_ROOT" "$DOTAGENTS_LINK"
+  fi
+elif [ -e "$DOTAGENTS_LINK" ]; then
+  printf 'CONFLICT: %s exists and is not a symlink — leaving alone\n' "$DOTAGENTS_LINK"
+else
+  run ln -sfn "$REPO_ROOT" "$DOTAGENTS_LINK"
+fi
+
+# 3. Walk home/ and link each item under each agent dir.
 shopt -s nullglob dotglob
 
 # Patterns to never link.
