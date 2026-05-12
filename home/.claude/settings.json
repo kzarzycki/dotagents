@@ -1,26 +1,80 @@
 {
+  "cleanupPeriodDays": 999999,
   "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "BRIDGE_TLS": "1",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_CODE_TEAMMATE_MODE": "tmux",
+    "MAX_THINKING_TOKENS": "32000",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "330000",
+    "BRANDFETCH_CLIENT_ID": "1idStnJHAEZskBpUdQN",
+    "CLAUDE_CODE_FORK_SUBAGENT": "1"
   },
   "permissions": {
+    "allow": ["*"],
     "defaultMode": "auto"
   },
   "statusLine": {
     "type": "command",
-    "command": "bash $HOME/.claude/statusline-command.sh"
+    "command": "bash $HOME/.claude/statusline.sh"
   },
   "extraKnownMarketplaces": {
-    "memsearch-plugins": {
-      "source": {
-        "source": "github",
-        "repo": "zilliztech/memsearch"
-      }
+    "anthropic-agent-skills": {
+      "source": { "source": "git", "url": "https://github.com/anthropics/skills.git" }
+    },
+    "cli-anything": {
+      "source": { "source": "github", "repo": "HKUDS/CLI-Anything" }
+    },
+    "openai-codex": {
+      "source": { "source": "github", "repo": "openai/codex-plugin-cc" }
+    },
+    "powerpoint-mcp": {
+      "source": { "source": "github", "repo": "kzarzycki/powerpoint-mcp" }
+    },
+    "superpowers-marketplace": {
+      "source": { "source": "github", "repo": "obra/superpowers-marketplace" }
+    },
+    "caveman": {
+      "source": { "source": "github", "repo": "JuliusBrussee/caveman" }
+    },
+    "kzarzycki-agent-skills": {
+      "source": { "source": "github", "repo": "kzarzycki/agent-skills" }
+    },
+    "xebia-ai-skills": {
+      "source": { "source": "github", "repo": "xebia/ai-skills" }
+    },
+    "kzarzycki-agent-skills-private": {
+      "source": { "source": "github", "repo": "kzarzycki/agent-skills-private" }
     }
   },
-  "effortLevel": "high",
+  "enabledPlugins": {
+    "claude-code-setup@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "code-review@claude-plugins-official": true,
+    "document-skills@anthropic-agent-skills": true,
+    "cli-anything@cli-anything": true,
+    "skill-creator@claude-plugins-official": false,
+    "codex@openai-codex": true,
+    "powerpoint-mcp@powerpoint-mcp": true,
+    "superpowers@claude-plugins-official": true,
+    "caveman@caveman": true,
+    "research@kzarzycki-agent-skills": true,
+    "engineering@kzarzycki-agent-skills": true,
+    "content@kzarzycki-agent-skills": true,
+    "workflow@kzarzycki-agent-skills": true,
+    "pdlc@xebia-ai-skills": true,
+    "comms-personal@kzarzycki-agent-skills-private": true,
+    "voice-personal@kzarzycki-agent-skills-private": true,
+    "xebia-personal@kzarzycki-agent-skills-private": true,
+    "experimental@xebia-ai-skills": true
+  },
+  "effortLevel": "xhigh",
+  "tui": "fullscreen",
+  "autoMemoryEnabled": true,
+  "autoMemoryDirectory": "~/.claude/memory/",
+  "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "skipAutoPermissionPrompt": true,
-  "enabledPlugins": {
-    "memsearch@memsearch-plugins": true
-  }
+  "theme": "dark-daltonized",
+  "verbose": true,
+  "voiceEnabled": true
 }

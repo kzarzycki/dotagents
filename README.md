@@ -48,6 +48,22 @@ Anything machine-specific lives at the destination as a real file (never symlink
 - `~/.claude/settings.local.json` — per-machine Claude permissions, hooks, env vars
 - Files matching `*.local.*`, `.env*` anywhere under `~/` — left alone by install
 
+### Marketplace overrides
+
+`home/.claude/settings.json` declares marketplaces as `github` sources for portability. If you are actively developing one of those repos locally and want Claude Code to pick up uncommitted changes, override that marketplace in `~/.claude/settings.local.json` with a `directory` source pointing at your local clone. Example:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "kzarzycki-agent-skills": {
+      "source": { "source": "directory", "path": "/Users/you/dev/agent-skills" }
+    }
+  }
+}
+```
+
+The same applies to any marketplace with no public remote (e.g. local-only knowledge bases) — declare it in `settings.local.json` and enable its plugins there too.
+
 ## Adding an agent
 
 1. Create `home/<dotdir>/` (e.g. `home/.codex/`).
