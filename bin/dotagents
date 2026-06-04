@@ -148,16 +148,28 @@ fi
 # skills. Skills now come from plugins/marketplaces, not this repo.
 is_legacy_skill_link() {
   local target="$1"
-  local old_source=""
+  local suffix=""
 
   case "$target" in
-    "$HOME/.agents/.skill-lock.json") old_source="$SRC/.agents/.skill-lock.json" ;;
-    "$HOME/.agents/skills") old_source="$SRC/.agents/skills" ;;
-    "$HOME/.claude/skills") old_source="$SRC/.claude/skills" ;;
+    "$HOME/.agents/.skill-lock.json") suffix="/.agents/.skill-lock.json" ;;
+    "$HOME/.agents/skills") suffix="/.agents/skills" ;;
+    "$HOME/.claude/skills") suffix="/.claude/skills" ;;
     *) return 1 ;;
   esac
 
-  [ -L "$target" ] && [ "$(readlink "$target")" = "$old_source" ]
+  [ -L "$target" ] || return 1
+
+  # Old dotagents linked these into the repo's home/ payload, addressed either
+  # directly ($REPO_ROOT/home/...) or via the $HOME/.dotagents symlink. The two
+  # forms resolve to the same place but are different strings, so match both.
+  # Skills are no longer vendored, so any such link is stale.
+  local link src_rel
+  link=$(readlink "$target")
+  src_rel="${SRC#$REPO_ROOT}"          # e.g. /home
+  case "$link" in
+    "$SRC$suffix"|"$DOTAGENTS_LINK$src_rel$suffix") return 0 ;;
+  esac
+  return 1
 }
 
 remove_legacy_skill_link() {
