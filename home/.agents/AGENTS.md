@@ -42,30 +42,52 @@ Does not apply to: tutorials, training material, examples-by-design docs, telegr
 
 Quoted slop (showing what's wrong, in review) is fine — never in your own voice.
 
-## Subagent Usage
+## Orchestration — Default to Teams
 
-Main thread orchestrates and synthesizes. Subagents explore, research, produce. Keep main context clean; parallelize independent work.
+Any task past a one-shot answer runs in one of two roles. Decide the role first,
+state it in one line before acting. When the decomposition is non-obvious, ask
+(AskUserQuestion) — better to ask than split wrong. When you auto-decide a split
+the user didn't specify, declare it ("Spawning 3 executors: A/B/C — say stop to change").
 
-**Explore agents (read-only):** Before any non-trivial task, spawn one to gather context instead of reading in the main thread. Use for unfamiliar code/repos, SharePoint/OneDrive, log scans, existing-pattern checks.
+### Orchestrator — default for any multi-step task
+Don't do the work in the main thread. Plan → decompose → delegate.
+1. Plan: goal, the large pieces, dependencies.
+2. Delegate each large piece to an executor spawned into a team:
+   `Agent({ team_name, name, subagent_type, prompt })`. team_name + name = addressable;
+   coordinate via `SendMessage`.
+3. Executor keeps the full tool suite — it spawns its own subagents. Hand it a
+   chunk, not a micro-step.
+4. Main thread stays clean: route messages, synthesize results, decide next step.
+   Never fill main context with raw tool output.
 
-**General-purpose agents (full tools):**
-- Research (web, docs, email/Slack lookup, profiles) → delegate, synthesize in main.
-- Content production: each independent deliverable gets its own agent.
-- IMPORTANT: subagents write outputs to files (in the work-item dir) and return only `path + 1-2 line summary`. Never pass large content through context.
+### Executor — one coherent stream of work (main thread OR a spawned agent)
+Get the chunk done; parallelize where independent, sequence where dependent.
+- Independent sub-parts → parallel agents in one message.
+- Dependent steps (research→compose, explore→implement) → sequential.
+- Research (web, docs, email/Slack lookup, profiles) → delegate, synthesize back.
+- Content production → each independent deliverable gets its own agent.
+- Fresh isolated context, output not needed in your context → fork (Agent, omit
+  subagent_type). Shares your cache.
+- Multi-file code change → `isolation: "worktree"`. Code only, never non-code.
+- Long-running, not needed now (backtests, batch, test suites) → background.
+- Subagents write outputs to files in the work-item dir; return path + 1-2 line
+  summary only. Never pass large content through context.
 
-**Effort scaling:**
-- Simple lookup → 1 agent, 3-10 tool calls
-- Comparisons / multi-part → 2-4 parallel agents
-- Deep research / large deliverables → up to 10 agents with divided responsibilities
+### Read-only first
+Before non-trivial work, spawn an Explore agent to gather context (unfamiliar
+code/repos, SharePoint/OneDrive, log scans, existing-pattern checks) instead of
+reading in the main thread.
 
-**Parallel / sequential / background:**
-- Independent sub-parts → parallel (always)
-- Dependent steps (research → compose, explore → implement) → sequential
-- Long-running not-needed-now (backtests, batch, test suites) → background
+### Effort scaling
+- Simple lookup → 1 agent, 3-10 tool calls. No orchestration overhead.
+- Comparison / multi-part → 2-4 parallel agents.
+- Deep research / large build → orchestrator + team of up to 10 executors,
+  divided responsibilities.
 
-**Worktree isolation:** multi-file code changes only. Never for non-code tasks.
-
-**Prompt quality (every subagent prompt):** (1) concrete objective, (2) expected output format, (3) tool/source guidance, (4) task boundaries.
+### Prompt quality (every spawn)
+(1) concrete objective, (2) output format, (3) tool/source guidance, (4) task
+boundaries. Fresh subagents (with subagent_type) start at zero context — brief
+fully. Forks inherit context — give a directive, not background.
 
 ## Working Style
 

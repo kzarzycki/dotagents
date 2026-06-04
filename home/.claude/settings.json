@@ -7,15 +7,14 @@
     "MAX_THINKING_TOKENS": "32000",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "330000",
     "CLAUDE_CODE_FORK_SUBAGENT": "1",
-    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+    "CLAUDE_CODE_WORKFLOWS": "1"
   },
   "permissions": {
-    "allow": ["*"],
+    "allow": [
+      "*"
+    ],
     "defaultMode": "auto"
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "bash $HOME/.claude/statusline.sh"
   },
   "hooks": {
     "SessionStart": [
@@ -30,34 +29,9 @@
       }
     ]
   },
-  "extraKnownMarketplaces": {
-    "anthropic-agent-skills": {
-      "source": { "source": "git", "url": "https://github.com/anthropics/skills.git" }
-    },
-    "cli-anything": {
-      "source": { "source": "github", "repo": "HKUDS/CLI-Anything" }
-    },
-    "openai-codex": {
-      "source": { "source": "github", "repo": "openai/codex-plugin-cc" }
-    },
-    "powerpoint-mcp": {
-      "source": { "source": "github", "repo": "kzarzycki/powerpoint-mcp" }
-    },
-    "superpowers-marketplace": {
-      "source": { "source": "github", "repo": "obra/superpowers-marketplace" }
-    },
-    "caveman": {
-      "source": { "source": "github", "repo": "JuliusBrussee/caveman" }
-    },
-    "kzarzycki-agent-skills": {
-      "source": { "source": "github", "repo": "kzarzycki/agent-skills" }
-    },
-    "kzarzycki-agent-skills-private": {
-      "source": { "source": "github", "repo": "kzarzycki/agent-skills-private" }
-    },
-    "memsearch-plugins": {
-      "source": { "source": "github", "repo": "zilliztech/memsearch" }
-    }
+  "statusLine": {
+    "type": "command",
+    "command": "bash $HOME/.claude/statusline.sh"
   },
   "enabledPlugins": {
     "claude-code-setup@claude-plugins-official": true,
@@ -76,13 +50,79 @@
     "workflow@kzarzycki-agent-skills": true,
     "comms-personal@kzarzycki-agent-skills-private": true,
     "voice-personal@kzarzycki-agent-skills-private": true,
-    "memsearch@memsearch-plugins": true
+    "memsearch@memsearch-plugins": true,
+    "kb@kb-for-agents": true,
+    "draftsmith@draftsmith-local": true
+  },
+  "extraKnownMarketplaces": {
+    "anthropic-agent-skills": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/anthropics/skills.git"
+      }
+    },
+    "cli-anything": {
+      "source": {
+        "source": "github",
+        "repo": "HKUDS/CLI-Anything"
+      }
+    },
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      }
+    },
+    "powerpoint-mcp": {
+      "source": {
+        "source": "github",
+        "repo": "kzarzycki/powerpoint-mcp"
+      }
+    },
+    "superpowers-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "obra/superpowers-marketplace"
+      }
+    },
+    "caveman": {
+      "source": {
+        "source": "github",
+        "repo": "JuliusBrussee/caveman"
+      }
+    },
+    "kzarzycki-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "kzarzycki/agent-skills"
+      }
+    },
+    "kzarzycki-agent-skills-private": {
+      "source": {
+        "source": "github",
+        "repo": "kzarzycki/agent-skills-private"
+      }
+    },
+    "memsearch-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "zilliztech/memsearch"
+      }
+    },
+    "draftsmith-local": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/zarz/draftsmith-marketplace"
+      }
+    }
   },
   "effortLevel": "xhigh",
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
-  "skipAutoPermissionPrompt": true,
-  "verbose": true
+  "skipWorkflowUsageWarning": true,
+  "verbose": true,
+  "autoCompactEnabled": true,
+  "skipAutoPermissionPrompt": true
 }

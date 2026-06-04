@@ -2,15 +2,102 @@
   "env": {
     "BRANDFETCH_CLIENT_ID": "1idStnJHAEZskBpUdQN"
   },
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x '/Users/zarz/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/zarz/.orca/agent-hooks/claude-hook.sh'; fi"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x '/Users/zarz/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/zarz/.orca/agent-hooks/claude-hook.sh'; fi"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x '/Users/zarz/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/zarz/.orca/agent-hooks/claude-hook.sh'; fi"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x '/Users/zarz/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/zarz/.orca/agent-hooks/claude-hook.sh'; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x '/Users/zarz/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/zarz/.orca/agent-hooks/claude-hook.sh'; fi"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x '/Users/zarz/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/zarz/.orca/agent-hooks/claude-hook.sh'; fi"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -x '/Users/zarz/.orca/agent-hooks/claude-hook.sh' ]; then /bin/sh '/Users/zarz/.orca/agent-hooks/claude-hook.sh'; fi"
+          }
+        ]
+      }
+    ]
+  },
   "extraKnownMarketplaces": {
     "xebia-ai-skills": {
-      "source": { "source": "github", "repo": "xebia/ai-skills" }
+      "source": {
+        "source": "github",
+        "repo": "xebia/ai-skills"
+      }
+    },
+    "dev": {
+      "source": {
+        "source": "directory",
+        "path": "/Users/zarz/dev"
+      }
     }
   },
   "enabledPlugins": {
     "pdlc@xebia-ai-skills": true,
     "experimental@xebia-ai-skills": true,
-    "xebia-personal@kzarzycki-agent-skills-private": true
+    "xebia-personal@kzarzycki-agent-skills-private": true,
+    "experimental@dev": true,
+    "xebia-personal@dev": true
   },
   "theme": "dark-daltonized",
   "voiceEnabled": true
