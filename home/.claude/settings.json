@@ -52,7 +52,9 @@
     "voice-personal@kzarzycki-agent-skills-private": true,
     "memsearch@memsearch-plugins": true,
     "kb@kb-for-agents": true,
-    "draftsmith@draftsmith-local": true
+    "draftsmith@draftsmith-local": true,
+    "experimental@dev": true,
+    "xebia-personal@dev": true
   },
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {
@@ -113,6 +115,12 @@
       "source": {
         "source": "directory",
         "path": "/Users/zarz/draftsmith-marketplace"
+      }
+    },
+    "dev": {
+      "source": {
+        "source": "directory",
+        "path": "~/dev"
       }
     }
   },

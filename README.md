@@ -85,19 +85,19 @@ Anything machine-specific lives at the destination as a real file (never symlink
 
 ### Marketplace overrides
 
-`home/.claude/settings.json` declares marketplaces as `github` sources for portability. If you are actively developing one of those repos locally and want Claude Code to pick up uncommitted changes, override that marketplace in `~/.claude/settings.local.json` with a `directory` source pointing at your local clone. Example:
+`home/.claude/settings.json` declares shared marketplaces. Prefer `github` sources for portable repos. For shared local marketplaces that are expected to exist on every machine, use `~` paths rather than absolute user paths; Claude resolves `~/...` at runtime.
 
 ```json
 {
   "extraKnownMarketplaces": {
-    "kzarzycki-agent-skills": {
-      "source": { "source": "directory", "path": "/Users/you/dev/agent-skills" }
+    "dev": {
+      "source": { "source": "directory", "path": "~/dev" }
     }
   }
 }
 ```
 
-The same applies to any marketplace with no public remote (e.g. local-only knowledge bases) — declare it in `settings.local.json` and enable its plugins there too.
+Machine-specific marketplace overrides still belong in `~/.claude/settings.local.json` via the active profile overlay.
 
 ## Adding an agent
 
