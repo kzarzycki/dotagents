@@ -13,7 +13,7 @@ A dotfiles-style repo whose `home/` directory mirrors what the user wants under 
 - **Local-overrides never enter the repo.** `*.local.*`, `.env*`, `settings.local.json`, and `projects/` are skipped by install and should not be committed. The `.gitignore` enforces this.
 - **In-repo symlinks use relative paths.** E.g. `home/.claude/CLAUDE.md → ../.agents/AGENTS.md`. Keep them relative so they resolve correctly inside the repo regardless of where it's cloned.
 - **Per-agent files that are agent-specific (settings, hooks, slash commands) live inside `home/<agent-dotdir>/`** — never lift them into `home/.agents/` unless they're genuinely shared across agents.
-- **Skill content is agent-neutral**: skills live under `home/.agents/skills/<name>/`. Each agent that supports skills has a per-skill in-repo symlink under its own dir (e.g. `home/.claude/skills/<name> → ../../.agents/skills/<name>`).
+- **Do not vendor skill payloads or skill lockfiles in this repo.** Configure Claude plugins and marketplaces in `home/.claude/settings.json` or `home/.claude/settings.<profile>.json`; skills live in their source plugin/marketplace repos.
 
 ## When changing the install script
 
@@ -40,4 +40,4 @@ HOME=/tmp/dotagents-test bin/dotagents install --no-pull
 
 - Project-scoped agent state (per-project CLAUDE.md, per-project memories).
 - Cloud / remote agent sessions (Claude Code remote, Codex remote). Those load only repo-committed `<project>/.claude/` config; bridging dotagents into them is a separate effort tracked outside V1.
-- Plugin migration (V2).
+- Skill payload vendoring. This repo records plugin and marketplace configuration, not copied skill content.

@@ -12,17 +12,18 @@ dotagents/
 │   └── dotagents       ← the install command
 └── home/               ← install payload; 1:1 mirror of ~/
     ├── .agents/
-    │   ├── AGENTS.md   ← canonical user behavioral spec
-    │   ├── .skill-lock.json
-    │   └── skills/     ← agent-neutral skill content
+    │   └── AGENTS.md   ← canonical user behavioral spec
     └── .claude/
         ├── CLAUDE.md   ← in-repo symlink → ../.agents/AGENTS.md
         ├── settings.json
-        ├── statusline-command.sh
-        └── skills/<name> → ../../.agents/skills/<name>   (in-repo symlinks)
+        ├── settings.<profile>.json
+        ├── statusline.sh
+        └── commands/
 ```
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
+
+Skills are not vendored here. Claude skills come from plugins and marketplaces declared in `home/.claude/settings.json` and profile overlays.
 
 ## Install
 

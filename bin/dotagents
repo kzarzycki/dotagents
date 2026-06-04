@@ -144,6 +144,34 @@ else
   run ln -sfn "$REPO_ROOT" "$DOTAGENTS_LINK"
 fi
 
+# Remove symlinks created by older dotagents versions that vendored Claude
+# skills. Skills now come from plugins/marketplaces, not this repo.
+is_legacy_skill_link() {
+  local target="$1"
+  local old_source=""
+
+  case "$target" in
+    "$HOME/.agents/.skill-lock.json") old_source="$SRC/.agents/.skill-lock.json" ;;
+    "$HOME/.agents/skills") old_source="$SRC/.agents/skills" ;;
+    "$HOME/.claude/skills") old_source="$SRC/.claude/skills" ;;
+    *) return 1 ;;
+  esac
+
+  [ -L "$target" ] && [ "$(readlink "$target")" = "$old_source" ]
+}
+
+remove_legacy_skill_link() {
+  local target="$1"
+
+  if is_legacy_skill_link "$target"; then
+    run rm "$target"
+  fi
+}
+
+remove_legacy_skill_link "$HOME/.agents/.skill-lock.json"
+remove_legacy_skill_link "$HOME/.agents/skills"
+remove_legacy_skill_link "$HOME/.claude/skills"
+
 # 3. Walk home/ and link each item under each agent dir.
 shopt -s nullglob dotglob
 
@@ -151,7 +179,7 @@ shopt -s nullglob dotglob
 is_skipped() {
   local name="$1"
   case "$name" in
-    *.local.*|.env*|settings.local.json|projects) return 0 ;;
+    *.local.*|.env*|settings.local.json|projects|.skill-lock.json|skills) return 0 ;;
     # Per-profile settings files — picked up via $HOME/.dotagents-profile,
     # never linked as ~/.<dotdir>/settings.<profile>.json directly.
     settings.*.json) return 0 ;;
@@ -231,6 +259,9 @@ for agent_dir in "$SRC"/*/; do
   [ -d "$dest" ] || continue
   while IFS= read -r -d '' link; do
     if [ ! -e "$link" ]; then
+      if (( DRY_RUN )) && is_legacy_skill_link "$link"; then
+        continue
+      fi
       printf 'DANGLING: %s\n' "$link"
       problems=$((problems + 1))
     fi
