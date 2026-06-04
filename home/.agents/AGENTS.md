@@ -2,6 +2,8 @@
 
 Behavioral spec for any CLI agent (Claude Code today; Codex/others later). Installs to `~/.agents/AGENTS.md`; per-agent files (e.g. `~/.claude/CLAUDE.md`) symlink here.
 
+When reporting information be extremely concise and sacrifice grammar for the sake of concision.
+
 ## Writing Quality
 
 Audience is allergic to LLM-voice. Write like a person with a deadline.
