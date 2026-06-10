@@ -10,7 +10,9 @@ A dotfiles-style repo whose `home/` directory mirrors what the user wants under 
 
 - **Never edit `home/.claude/CLAUDE.md` (or any per-agent instruction file) directly.** They're symlinks. Edit `home/.agents/AGENTS.md` instead — every agent's instruction file resolves to it.
 - **The directory tree under `home/` IS the manifest.** There is no `manifest.toml`. To add an agent, create `home/<dotdir>/` and populate it. To remove one, delete the dir.
-- **Local-overrides never enter the repo.** `*.local.*`, `.env*`, `settings.local.json`, and `projects/` are skipped by install and should not be committed. The `.gitignore` enforces this.
+- **Machine-class config goes in profile overlays.** Shared config lives in `home/.claude/settings.json`; machine-class config in `home/.claude/settings.<profile>.json` (install symlinks `~/.claude/settings.local.json` to the active profile's file — edit the profile file, never a loose local one).
+- **Local-overrides never enter the repo.** `*.local.*`, `.env*`, `settings.local.json`, and `projects/` are skipped by install and must not be committed. The `.gitignore` enforces this.
+- **`patches/` scripts run on every SessionStart — keep them idempotent.** They overlay installed plugins (`memsearch/`) or link live-dev plugins (`dev-marketplace/`); the no-op pass must be fast and silent.
 - **In-repo symlinks use relative paths.** E.g. `home/.claude/CLAUDE.md → ../.agents/AGENTS.md`. Keep them relative so they resolve correctly inside the repo regardless of where it's cloned.
 - **Per-agent files that are agent-specific (settings, hooks, slash commands) live inside `home/<agent-dotdir>/`** — never lift them into `home/.agents/` unless they're genuinely shared across agents.
 - **Do not vendor skill payloads or skill lockfiles in this repo.** Configure Claude plugins and marketplaces in `home/.claude/settings.json` or `home/.claude/settings.<profile>.json`; skills live in their source plugin/marketplace repos.

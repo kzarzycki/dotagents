@@ -10,6 +10,9 @@ dotagents/
 ├── AGENTS.md           ← meta: instructions for agents working on THIS repo
 ├── bin/
 │   └── dotagents       ← the install command
+├── patches/            ← overlay scripts run by SessionStart hooks
+│   ├── memsearch/      ← memsearch plugin patches + per-machine bootstrap
+│   └── dev-marketplace/← live-dev plugin linker + tracked marketplace.json
 └── home/               ← install payload; 1:1 mirror of ~/
     ├── .agents/
     │   └── AGENTS.md   ← canonical user behavioral spec
@@ -41,11 +44,11 @@ After pulling updates:
 dotagents install
 ```
 
-The install command is idempotent. It (1) runs `git pull --ff-only` (skip with `--no-pull`), (2) ensures `~/.dotagents` is a symlink to the repo, (3) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo. Existing real files at the destination are left alone and reported as conflicts.
+The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) symlinks `~/.claude/settings.local.json` to the resolved profile overlay, (6) validates: `~/.claude/settings.json` must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything.
 
 ### `~/.dotagents` symlink
 
-Committed files (e.g. `home/.claude/settings.json` hook commands) reference the repo via `$HOME/.dotagents/...`. The install command creates `~/.dotagents` -> the actual clone path on each machine, so the repo can live anywhere while the access path stays canonical. Reliable regardless of shell env state.
+Committed files (e.g. `home/.claude/settings.json` hook commands) reference the repo via `$HOME/.dotagents/...`. The install command creates `~/.dotagents` -> the actual clone path on each machine, so the repo can live anywhere while the access path stays canonical. Reliable regardless of shell env state. Cloning the repo directly at `~/.dotagents` (typical on a VPS) also works — install detects it and skips the symlink.
 
 ### Profiles (`~/.dotagents-profile`)
 
@@ -66,7 +69,7 @@ dotagents install
 
 ### memsearch bootstrap (per machine)
 
-`home/.claude/settings.json` enables the memsearch plugin and wires a SessionStart hook that runs `patches/memsearch/apply.sh` (idempotent, fast no-op once patched). To make memsearch actually function on a fresh machine, run once:
+`home/.claude/settings.json` enables the memsearch plugin and wires a SessionStart hook that runs `patches/memsearch/apply.sh` (idempotent, fast no-op once patched). The hook patches the installed plugin: PreCompact transcript capture, flock-guarded markdown writes, and a Milvus flush fix (upstream bug #534). To make memsearch actually function on a fresh machine, run once:
 
 ```sh
 ~/.dotagents/patches/memsearch/bootstrap.sh
@@ -74,14 +77,23 @@ dotagents install
 
 It (a) installs `memsearch` via `uv tool install`, (b) writes `~/.memsearch/standalone/docker-compose.yml` (Milvus + etcd, relative volumes), (c) brings the stack up via `docker compose up -d`. Idempotent; safe to re-run.
 
-Requirements: `uv` (https://docs.astral.sh/uv/), running Docker daemon, `flock` (Linux: built-in; macOS: `brew install flock`). After bootstrap, restart Claude Code so the SessionStart hook applies the python-side flush patch (memsearch upstream bug #534).
+Requirements: `uv` (https://docs.astral.sh/uv/), running Docker daemon, `python3`, `flock` (Linux: built-in; macOS: `brew install flock`). After bootstrap, restart Claude Code so the SessionStart hook applies the patches.
+
+### dev marketplace (live local plugins)
+
+`home/.claude/settings.json` declares a `dev` directory marketplace at `~/dev`. The profile overlays wire a SessionStart hook that runs `patches/dev-marketplace/apply.sh`, which:
+
+1. Symlinks `~/dev/.claude-plugin/marketplace.json` to the repo-tracked copy at `patches/dev-marketplace/marketplace.json` — the marketplace definition is versioned here, not a loose machine-local file.
+2. For every installed `<name>@dev` plugin with a local `./repo/plugin` source, symlinks its plugin-cache install dir to the working tree under `~/dev` — editing the plugin source plus `/reload-plugins` is enough, no re-copy or push.
+
+To add a plugin: add its `./repo/plugin` entry to `patches/dev-marketplace/marketplace.json`, enable `<name>@dev` in the profile overlay. The hook is a silent no-op on machines without `~/dev` or without the plugin's source repo.
 
 ## Local overrides
 
-Anything machine-specific lives at the destination as a real file (never symlinked, never managed):
+Machine-class config belongs in the committed profile overlay (`home/.claude/settings.<profile>.json`); `~/.claude/settings.local.json` is a managed symlink to it, not a free local file. Truly per-machine state, never committed and never touched by install:
 
-- `~/.claude/settings.local.json` — per-machine Claude permissions, hooks, env vars
-- Files matching `*.local.*`, `.env*` anywhere under `~/` — left alone by install
+- `~/.dotagents-profile` — single line naming this machine's profile
+- Files matching `*.local.*`, `.env*` under managed dotdirs — left alone by install
 
 ### Marketplace overrides
 
@@ -97,7 +109,7 @@ Anything machine-specific lives at the destination as a real file (never symlink
 }
 ```
 
-Machine-specific marketplace overrides still belong in `~/.claude/settings.local.json` via the active profile overlay.
+Machine-specific marketplaces (e.g. absolute local paths) belong in the profile overlay (`home/.claude/settings.<profile>.json`).
 
 ## Adding an agent
 
