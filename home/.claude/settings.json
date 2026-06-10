@@ -14,7 +14,7 @@
     "allow": [],
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5[1m]",
+  "model": "sonnet",
   "hooks": {
     "SessionStart": [
       {
@@ -125,7 +125,8 @@
     "comms-personal@kzarzycki-agent-skills-private": true,
     "voice-personal@kzarzycki-agent-skills-private": true,
     "memsearch@memsearch-plugins": true,
-    "kb@kb-for-agents": true
+    "kb@kb-for-agents": true,
+    "drawio-skill@agents365-drawio-skill": true
   },
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {
@@ -186,6 +187,12 @@
       "source": {
         "source": "directory",
         "path": "~/dev"
+      }
+    },
+    "agents365-drawio-skill": {
+      "source": {
+        "source": "github",
+        "repo": "Agents365-ai/drawio-skill"
       }
     }
   },
