@@ -131,7 +131,7 @@
     "voice-personal@kzarzycki-agent-skills-private": true,
     "memsearch@memsearch-plugins": true,
     "kb@kb-for-agents": true,
-    "drawio-skill@agents365-drawio-skill": true
+    "drawio@365-skills": true
   },
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {
@@ -194,10 +194,10 @@
         "path": "~/dev"
       }
     },
-    "agents365-drawio-skill": {
+    "365-skills": {
       "source": {
         "source": "github",
-        "repo": "Agents365-ai/drawio-skill"
+        "repo": "Agents365-ai/365-skills"
       }
     }
   },
