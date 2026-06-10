@@ -44,7 +44,7 @@ After pulling updates:
 dotagents install
 ```
 
-The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) generates `~/.claude/settings.local.json` by deep-merging `settings.shared.json` + the profile overlay, (6) syncs the merged `enabledPlugins` into `~/.claude/settings.json` — at user scope Claude Code reads that key only from `settings.json`, not `settings.local.json` (verified on 2.1.170) — preserving CC-written runtime prefs, (7) validates: settings files must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
+The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, (6) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
 
 ### `~/.dotagents` symlink
 
@@ -58,9 +58,9 @@ Some configuration is machine-class-specific (xebia-only marketplaces and plugin
 - `home/.claude/settings.<profile>.json` — per-profile overlay (e.g. `mac`, `vps`, `xebia-remote`).
 - `~/.dotagents-profile` — single line naming the profile for this machine. Per-machine, not committed.
 
-`bin/dotagents install` resolves the profile in this order: `--profile <name>` flag, existing `~/.dotagents-profile`, interactive prompt (TTY only). The resolved value is written to `~/.dotagents-profile` so subsequent runs need no flag. Install deep-merges shared + profile (profile wins per key; nested objects merge, arrays replace — so profiles must not define `hooks`; install warns if one does) and writes the result to `~/.claude/settings.local.json` as a real file, regenerated on every install with a diff printed when it changes. To change managed config: edit the repo files and re-run `dotagents install`, never the generated file. Add new profiles by creating new `home/.claude/settings.<name>.json` files; no install-script change needed.
+`bin/dotagents install` resolves the profile in this order: `--profile <name>` flag, existing `~/.dotagents-profile`, interactive prompt (TTY only). The resolved value is written to `~/.dotagents-profile` so subsequent runs need no flag. Install deep-merges shared + profile (profile wins per key; nested objects merge, arrays replace — so profiles must not define `hooks`; install warns if one does) and writes the result to `~/.claude/settings.json` — Claude Code's only user-scope settings file (user-level `settings.local.json` is not read by CC). Regenerated on every install, diff printed when it changes. To change managed config: edit the repo files and re-run `dotagents install`, never the generated file. Add new profiles by creating new `home/.claude/settings.<name>.json` files; no install-script change needed.
 
-`~/.claude/settings.json` is deliberately unmanaged. Claude Code persists runtime preferences there (`/model`, `/effort`, don't-ask-again flags); keeping it a free local file means that churn stays on the machine instead of dirtying the repo.
+Between installs Claude Code persists runtime preferences (`/model`, `/effort`, don't-ask-again flags) into the same generated file. They stay machine-local and never dirty the repo; the next `dotagents install` resets the file to repo state, and the printed diff shows what got dropped.
 
 ```sh
 # first install on a new machine
@@ -92,10 +92,10 @@ To add a plugin: add its `./repo/plugin` entry to `patches/dev-marketplace/marke
 
 ## Local overrides
 
-Machine-class config belongs in the committed profile overlay (`home/.claude/settings.<profile>.json`); `~/.claude/settings.local.json` is generated from the repo, not a free local file. Truly per-machine state, never committed:
+Machine-class config belongs in the committed profile overlay (`home/.claude/settings.<profile>.json`); `~/.claude/settings.json` is generated from the repo, not a free local file. Truly per-machine state, never committed:
 
-- `~/.claude/settings.json` — Claude Code's own runtime-written settings (model, effort, prompt flags)
 - `~/.dotagents-profile` — single line naming this machine's profile
+- Runtime prefs Claude writes into `~/.claude/settings.json` — machine-local until the next install resets them
 - Files matching `*.local.*`, `.env*` under managed dotdirs — left alone by install
 
 ### Marketplace overrides

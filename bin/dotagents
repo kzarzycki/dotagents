@@ -232,31 +232,42 @@ for agent_dir in "$SRC"/*/; do
   done
 done
 
-# 4. Settings assembly. $HOME/.claude/settings.json is NOT managed — it's a
-# real local file Claude Code writes runtime prefs into (/model, /effort,
-# don't-ask-again flags); that churn stays out of the repo. Managed config is
-# generated instead: deep-merge settings.shared.json + settings.<profile>.json
-# (profile wins per key; nested objects merge, arrays replace) into
-# $HOME/.claude/settings.local.json as a real file. Regenerated on every
-# install — edit the repo files, never the generated one.
-
-# Migration from the symlink era: both destinations used to point into the repo.
+# 4. Settings assembly. Claude Code's only user-scope settings file is
+# $HOME/.claude/settings.json — user-level settings.local.json is NOT read
+# (only project-level .claude/settings.local.json exists). Install generates
+# settings.json by deep-merging settings.shared.json + settings.<profile>.json
+# (profile wins per key; nested objects merge, arrays replace). Claude writes
+# runtime prefs (/model, /effort, don't-ask-again flags) into the same file
+# between installs; each install resets it to repo state and prints the diff,
+# so session churn stays visible and machine-local instead of dirtying the
+# repo. Edit the repo files, never the generated one.
 USER_SETTINGS="$HOME/.claude/settings.json"
+SHARED_SETTINGS="$SRC/.claude/settings.shared.json"
+LEGACY_LOCAL="$HOME/.claude/settings.local.json"
+
+# Migration from the symlink era: both files used to point into the repo.
 if [ -L "$USER_SETTINGS" ]; then
   case "$(readlink "$USER_SETTINGS")" in
     "$SRC"/*|"$DOTAGENTS_LINK"/*)
-      printf 'MIGRATE: %s symlink -> local scratch file\n' "$USER_SETTINGS"
+      printf 'MIGRATE: %s symlink -> generated file\n' "$USER_SETTINGS"
       run rm "$USER_SETTINGS"
-      if (( ! DRY_RUN )); then printf '{}\n' > "$USER_SETTINGS"; fi
       ;;
   esac
 fi
+if [ -L "$LEGACY_LOCAL" ]; then
+  case "$(readlink "$LEGACY_LOCAL")" in
+    "$SRC"/*|"$DOTAGENTS_LINK"/*)
+      printf 'MIGRATE: removing %s (user-level settings.local.json is not read by Claude Code)\n' "$LEGACY_LOCAL"
+      run rm "$LEGACY_LOCAL"
+      ;;
+  esac
+elif [ -f "$LEGACY_LOCAL" ]; then
+  printf 'NOTE: %s exists but Claude Code does not read user-level settings.local.json\n' "$LEGACY_LOCAL"
+fi
 
-SHARED_SETTINGS="$SRC/.claude/settings.shared.json"
-LOCAL_DEST="$HOME/.claude/settings.local.json"
 if [ -f "$SHARED_SETTINGS" ]; then
   if ! command -v jq >/dev/null 2>&1; then
-    echo "ERROR: jq is required to generate $LOCAL_DEST" >&2
+    echo "ERROR: jq is required to generate $USER_SETTINGS" >&2
     exit 1
   fi
   merge_inputs=("$SHARED_SETTINGS")
@@ -271,48 +282,29 @@ if [ -f "$SHARED_SETTINGS" ]; then
       printf 'WARNING: profile "%s" declared but %s not found\n' "$resolved_profile" "$profile_src" >&2
     fi
   fi
-  if [ -L "$LOCAL_DEST" ]; then
-    printf 'MIGRATE: %s symlink -> generated file\n' "$LOCAL_DEST"
-    run rm "$LOCAL_DEST"
-  fi
   if (( DRY_RUN )); then
-    printf 'DRY: generate %s from: %s\n' "$LOCAL_DEST" "${merge_inputs[*]}"
+    printf 'DRY: generate %s from: %s\n' "$USER_SETTINGS" "${merge_inputs[*]}"
   else
     tmp=$(mktemp)
     jq -s 'reduce .[] as $overlay ({}; . * $overlay)' "${merge_inputs[@]}" > "$tmp"
-    if [ -f "$LOCAL_DEST" ] && ! cmp -s "$tmp" "$LOCAL_DEST"; then
-      printf 'UPDATED %s:\n' "$LOCAL_DEST"
-      diff -u "$LOCAL_DEST" "$tmp" || true
-    fi
-    mv "$tmp" "$LOCAL_DEST"
-  fi
-  linked=$((linked + 1))
-
-  # Claude Code reads enabledPlugins at user scope ONLY from settings.json —
-  # it ignores the key in ~/.claude/settings.local.json (verified on 2.1.170:
-  # `claude plugin list` showed every plugin disabled while settings.local.json
-  # declared them enabled). Sync the merged enabledPlugins into the scratch
-  # settings.json, replacing that one key and preserving all CC-written
-  # runtime prefs (model, effort, don't-ask-again flags).
-  if (( DRY_RUN )); then
-    printf 'DRY: sync enabledPlugins from %s into %s\n' "$LOCAL_DEST" "$USER_SETTINGS"
-  else
-    [ -f "$USER_SETTINGS" ] || printf '{}\n' > "$USER_SETTINGS"
-    tmp=$(mktemp)
-    jq -s '.[0] * {enabledPlugins: (.[1].enabledPlugins // {})}' \
-      "$USER_SETTINGS" "$LOCAL_DEST" > "$tmp"
-    if ! cmp -s "$tmp" "$USER_SETTINGS"; then
-      printf 'UPDATED %s (enabledPlugins):\n' "$USER_SETTINGS"
+    if [ -f "$USER_SETTINGS" ] && ! cmp -s "$tmp" "$USER_SETTINGS"; then
+      # one-time safety copy before the first overwrite of a real file
+      if [ ! -e "$USER_SETTINGS.pre-dotagents.bak" ]; then
+        cp "$USER_SETTINGS" "$USER_SETTINGS.pre-dotagents.bak"
+      fi
+      printf 'UPDATED %s:\n' "$USER_SETTINGS"
       diff -u "$USER_SETTINGS" "$tmp" || true
     fi
+    chmod 644 "$tmp"
     mv "$tmp" "$USER_SETTINGS"
   fi
+  linked=$((linked + 1))
 fi
 
 # 5. Validate
 problems=0
 if command -v jq >/dev/null 2>&1; then
-  for f in "$HOME"/.claude/settings.json "$HOME"/.claude/settings.local.json; do
+  for f in "$HOME"/.claude/settings.json; do
     [ -e "$f" ] || continue
     if ! jq . "$f" >/dev/null 2>&1; then
       printf 'INVALID JSON: %s\n' "$f"
