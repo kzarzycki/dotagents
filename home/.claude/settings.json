@@ -11,9 +11,7 @@
     "CLAUDE_CODE_WORKFLOWS": "1"
   },
   "permissions": {
-    "allow": [
-      "*"
-    ],
+    "allow": [],
     "defaultMode": "auto"
   },
   "model": "claude-fable-5[1m]",
