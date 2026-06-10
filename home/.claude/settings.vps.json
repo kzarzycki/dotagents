@@ -2,19 +2,6 @@
   "env": {
     "CLAUDE_CODE_PLUGIN_PREFER_HTTPS": "1"
   },
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash $HOME/.dotagents/patches/dev-marketplace/apply.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  },
   "enabledPlugins": {
     "workflow@dev": true,
     "research@dev": true,

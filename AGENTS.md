@@ -10,7 +10,7 @@ A dotfiles-style repo whose `home/` directory mirrors what the user wants under 
 
 - **Never edit `home/.claude/CLAUDE.md` (or any per-agent instruction file) directly.** They're symlinks. Edit `home/.agents/AGENTS.md` instead — every agent's instruction file resolves to it.
 - **The directory tree under `home/` IS the manifest.** There is no `manifest.toml`. To add an agent, create `home/<dotdir>/` and populate it. To remove one, delete the dir.
-- **Machine-class config goes in profile overlays.** Shared config lives in `home/.claude/settings.json`; machine-class config in `home/.claude/settings.<profile>.json` (install symlinks `~/.claude/settings.local.json` to the active profile's file — edit the profile file, never a loose local one).
+- **Machine-class config goes in profile overlays.** Shared config lives in `home/.claude/settings.shared.json`; machine-class config in `home/.claude/settings.<profile>.json`. Install deep-merges the two into `~/.claude/settings.local.json` (generated file, regenerated every install — edit the repo files, never the generated one). Profiles must not define `hooks`: arrays replace in the merge, so a profile hook would clobber shared ones. `~/.claude/settings.json` is Claude Code's runtime-written file — machine-local, gitignored, never committed.
 - **Local-overrides never enter the repo.** `*.local.*`, `.env*`, `settings.local.json`, and `projects/` are skipped by install and must not be committed. The `.gitignore` enforces this.
 - **`patches/` scripts run on every SessionStart — keep them idempotent.** They overlay installed plugins (`memsearch/`) or link live-dev plugins (`dev-marketplace/`); the no-op pass must be fast and silent.
 - **In-repo symlinks use relative paths.** E.g. `home/.claude/CLAUDE.md → ../.agents/AGENTS.md`. Keep them relative so they resolve correctly inside the repo regardless of where it's cloned.
@@ -22,7 +22,7 @@ A dotfiles-style repo whose `home/` directory mirrors what the user wants under 
 The install script lives at `bin/dotagents`. It must remain:
 
 - Idempotent — safe to run repeatedly.
-- Pure bash, no external deps beyond standard Linux/macOS tools (`git`, `ln`, `mkdir`, `jq` for validation).
+- Pure bash, no external deps beyond standard Linux/macOS tools (`git`, `ln`, `mkdir`; `jq` required for settings generation and validation).
 - Conservative — never overwrite a real file at a destination; only replace existing symlinks. Report conflicts and continue.
 
 Before committing changes to the install script, sandbox-test it with a fake `$HOME`:
