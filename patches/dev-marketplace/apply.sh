@@ -20,6 +20,20 @@ set -uo pipefail
 DEV_ROOT="$HOME/dev"
 MARKETFILE="$DEV_ROOT/.claude-plugin/marketplace.json"
 INSTALLED="$HOME/.claude/plugins/installed_plugins.json"
+TRACKED_MARKET="$HOME/.dotagents/patches/dev-marketplace/marketplace.json"
+
+# Ensure the dev marketplace.json exists by symlinking the dotagents-tracked
+# copy into ~/dev/.claude-plugin/. This is the reproducible source of truth —
+# without it the file is a loose, machine-local single point of failure. Each
+# machine resolves only the plugins whose source repos it actually has.
+if [ -f "$TRACKED_MARKET" ]; then
+  mkdir -p "$DEV_ROOT/.claude-plugin"
+  if [ ! -L "$MARKETFILE" ] || [ "$(readlink "$MARKETFILE")" != "$TRACKED_MARKET" ]; then
+    rm -f "$MARKETFILE"
+    ln -s "$TRACKED_MARKET" "$MARKETFILE"
+    echo "[dev-marketplace] linked marketplace.json -> $TRACKED_MARKET" >&2
+  fi
+fi
 
 [ -f "$MARKETFILE" ] || exit 0
 [ -f "$INSTALLED" ] || exit 0

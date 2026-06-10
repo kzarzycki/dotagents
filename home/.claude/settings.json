@@ -16,6 +16,7 @@
     ],
     "defaultMode": "auto"
   },
+  "model": "claude-fable-5[1m]",
   "hooks": {
     "SessionStart": [
       {
@@ -117,7 +118,8 @@
     "codex@openai-codex": true,
     "powerpoint-mcp@powerpoint-mcp": true,
     "superpowers@claude-plugins-official": true,
-    "caveman@caveman": true,
+    "caveman@caveman": false,
+    "google-workspace@kzarzycki-agent-skills": true,
     "research@kzarzycki-agent-skills": true,
     "engineering@kzarzycki-agent-skills": true,
     "content@kzarzycki-agent-skills": true,
@@ -125,9 +127,7 @@
     "comms-personal@kzarzycki-agent-skills-private": true,
     "voice-personal@kzarzycki-agent-skills-private": true,
     "memsearch@memsearch-plugins": true,
-    "kb@kb-for-agents": true,
-    "experimental@dev": true,
-    "xebia-personal@dev": true
+    "kb@kb-for-agents": true
   },
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {

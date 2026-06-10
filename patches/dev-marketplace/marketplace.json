@@ -1,0 +1,36 @@
+{
+  "name": "dev",
+  "owner": { "name": "Krzysztof Zarzycki" },
+  "plugins": [
+    {
+      "name": "experimental",
+      "source": "./xebia-ai-skills/experimental",
+      "description": "Local modified Xebia experimental skills"
+    },
+    {
+      "name": "xebia-personal",
+      "source": "./agent-skills-private/xebia-personal",
+      "description": "Private personal skills (delegacja, playbook-review, submit-monthly-invoice)"
+    },
+    {
+      "name": "workflow",
+      "source": "./agent-skills/workflow",
+      "description": "Live working-tree copy of workflow (published as workflow@kzarzycki-agent-skills)"
+    },
+    {
+      "name": "research",
+      "source": "./agent-skills/research",
+      "description": "Live working-tree copy of research (published as research@kzarzycki-agent-skills)"
+    },
+    {
+      "name": "engineering",
+      "source": "./agent-skills/engineering",
+      "description": "Live working-tree copy of engineering (published as engineering@kzarzycki-agent-skills)"
+    },
+    {
+      "name": "content",
+      "source": "./agent-skills/content",
+      "description": "Live working-tree copy of content (published as content@kzarzycki-agent-skills)"
+    }
+  ]
+}
