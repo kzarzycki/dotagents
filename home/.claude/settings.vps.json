@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_PLUGIN_PREFER_HTTPS": "1"
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -17,6 +20,7 @@
     "research@dev": true,
     "engineering@dev": true,
     "content@dev": true,
+    "mattpocock-skills@kzarzycki-agent-skills": true,
     "workflow@kzarzycki-agent-skills": false,
     "research@kzarzycki-agent-skills": false,
     "engineering@kzarzycki-agent-skills": false,
