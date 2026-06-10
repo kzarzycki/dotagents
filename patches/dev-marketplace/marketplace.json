@@ -4,8 +4,8 @@
   "plugins": [
     {
       "name": "experimental",
-      "source": "./xebia-ai-skills/experimental",
-      "description": "Local modified Xebia experimental skills"
+      "source": "./agent-skills/experimental",
+      "description": "Live working-tree experimental skills (communicating-in-html, update-delta-audit)"
     },
     {
       "name": "xebia-personal",
