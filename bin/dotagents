@@ -262,7 +262,20 @@ if [ -L "$LEGACY_LOCAL" ]; then
       ;;
   esac
 elif [ -f "$LEGACY_LOCAL" ]; then
-  printf 'NOTE: %s exists but Claude Code does not read user-level settings.local.json\n' "$LEGACY_LOCAL"
+  # A generated-file leftover from the short-lived settings.local.json design.
+  # Harmful, not just dead weight: when Claude is started from $HOME, the file
+  # loads as *project-local* settings (cwd/.claude/settings.local.json), which
+  # outrank user settings and shadow the generated settings.json. Remove it if
+  # it carries our hook marker; leave anything we can't identify as ours.
+  if grep -q '\.dotagents/' "$LEGACY_LOCAL"; then
+    printf 'MIGRATE: removing dotagents-generated %s (shadows user settings when Claude runs from $HOME)\n' "$LEGACY_LOCAL"
+    if [ ! -e "$LEGACY_LOCAL.pre-dotagents.bak" ]; then
+      run cp "$LEGACY_LOCAL" "$LEGACY_LOCAL.pre-dotagents.bak"
+    fi
+    run rm "$LEGACY_LOCAL"
+  else
+    printf 'NOTE: %s exists but Claude Code does not read user-level settings.local.json\n' "$LEGACY_LOCAL"
+  fi
 fi
 
 if [ -f "$SHARED_SETTINGS" ]; then
