@@ -2,6 +2,19 @@
   "env": {
     "BRANDFETCH_CLIENT_ID": "1idStnJHAEZskBpUdQN"
   },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.dotagents/patches/dev-marketplace/apply.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
   "extraKnownMarketplaces": {
     "xebia-ai-skills": {
       "source": {
@@ -20,7 +33,15 @@
     "pdlc@xebia-ai-skills": true,
     "experimental@xebia-ai-skills": true,
     "xebia-personal@kzarzycki-agent-skills-private": true,
-    "draftsmith@draftsmith-local": true
+    "draftsmith@draftsmith-local": true,
+    "workflow@dev": true,
+    "research@dev": true,
+    "engineering@dev": true,
+    "content@dev": true,
+    "workflow@kzarzycki-agent-skills": false,
+    "research@kzarzycki-agent-skills": false,
+    "engineering@kzarzycki-agent-skills": false,
+    "content@kzarzycki-agent-skills": false
   },
   "theme": "dark-daltonized",
   "voiceEnabled": true

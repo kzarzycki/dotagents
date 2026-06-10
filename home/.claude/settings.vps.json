@@ -1,1 +1,25 @@
-{}
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.dotagents/patches/dev-marketplace/apply.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "workflow@dev": true,
+    "research@dev": true,
+    "engineering@dev": true,
+    "content@dev": true,
+    "workflow@kzarzycki-agent-skills": false,
+    "research@kzarzycki-agent-skills": false,
+    "engineering@kzarzycki-agent-skills": false,
+    "content@kzarzycki-agent-skills": false
+  }
+}
