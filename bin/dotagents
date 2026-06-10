@@ -287,6 +287,26 @@ if [ -f "$SHARED_SETTINGS" ]; then
     mv "$tmp" "$LOCAL_DEST"
   fi
   linked=$((linked + 1))
+
+  # Claude Code reads enabledPlugins at user scope ONLY from settings.json —
+  # it ignores the key in ~/.claude/settings.local.json (verified on 2.1.170:
+  # `claude plugin list` showed every plugin disabled while settings.local.json
+  # declared them enabled). Sync the merged enabledPlugins into the scratch
+  # settings.json, replacing that one key and preserving all CC-written
+  # runtime prefs (model, effort, don't-ask-again flags).
+  if (( DRY_RUN )); then
+    printf 'DRY: sync enabledPlugins from %s into %s\n' "$LOCAL_DEST" "$USER_SETTINGS"
+  else
+    [ -f "$USER_SETTINGS" ] || printf '{}\n' > "$USER_SETTINGS"
+    tmp=$(mktemp)
+    jq -s '.[0] * {enabledPlugins: (.[1].enabledPlugins // {})}' \
+      "$USER_SETTINGS" "$LOCAL_DEST" > "$tmp"
+    if ! cmp -s "$tmp" "$USER_SETTINGS"; then
+      printf 'UPDATED %s (enabledPlugins):\n' "$USER_SETTINGS"
+      diff -u "$USER_SETTINGS" "$tmp" || true
+    fi
+    mv "$tmp" "$USER_SETTINGS"
+  fi
 fi
 
 # 5. Validate

@@ -44,7 +44,7 @@ After pulling updates:
 dotagents install
 ```
 
-The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) generates `~/.claude/settings.local.json` by deep-merging `settings.shared.json` + the profile overlay, (6) validates: settings files must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
+The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) generates `~/.claude/settings.local.json` by deep-merging `settings.shared.json` + the profile overlay, (6) syncs the merged `enabledPlugins` into `~/.claude/settings.json` — at user scope Claude Code reads that key only from `settings.json`, not `settings.local.json` (verified on 2.1.170) — preserving CC-written runtime prefs, (7) validates: settings files must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
 
 ### `~/.dotagents` symlink
 
