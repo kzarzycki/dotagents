@@ -196,7 +196,6 @@
       }
     }
   },
-  "effortLevel": "xhigh",
   "tui": "fullscreen",
   "autoMemoryEnabled": false,
   "autoDreamEnabled": true,
