@@ -15,13 +15,17 @@ dotagents/
 │   └── dev-marketplace/← live-dev plugin linker + tracked marketplace.json
 └── home/               ← install payload; 1:1 mirror of ~/
     ├── .agents/
-    │   └── AGENTS.md   ← canonical user behavioral spec
+    │   ├── AGENTS.md   ← canonical user behavioral spec
+    │   └── env.sh      ← shell extensions for managed tools (PATH, MEMSEARCH_DIR)
     └── .claude/
         ├── CLAUDE.md            ← in-repo symlink → ../.agents/AGENTS.md
         ├── settings.shared.json ← config common to every machine
         ├── settings.<profile>.json
         ├── statusline.sh
-        └── commands/
+        ├── commands/
+        ├── hooks/
+        │   └── preload-skills.py ← SessionStart skill preloader
+        └── preload-skills.txt    ← list of skills to preload every session
 ```
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
@@ -44,7 +48,7 @@ After pulling updates:
 dotagents install
 ```
 
-The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, (6) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
+The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) appends a one-time source line for `~/.agents/env.sh` to existing `~/.bashrc`/`~/.zshrc` — the rc files stay machine-owned, only the snippet is managed; `env.sh` carries shell extensions the managed tools need (PATH, `MEMSEARCH_DIR`), not general shell config, (6) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, (7) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
 
 ### `~/.dotagents` symlink
 
@@ -89,6 +93,12 @@ Requirements: `uv` (https://docs.astral.sh/uv/), running Docker daemon, `python3
 2. For every installed `<name>@dev` plugin with a local `./repo/plugin` source, symlinks its plugin-cache install dir to the working tree under `~/dev` — editing the plugin source plus `/reload-plugins` is enough, no re-copy or push.
 
 To add a plugin: add its `./repo/plugin` entry to `patches/dev-marketplace/marketplace.json`, enable `<name>@dev` in the profile overlay. The hook is a silent no-op on machines without `~/dev` or without the plugin's source repo.
+
+### Skill preloading (always-on skills)
+
+Claude Code loads a skill's full SKILL.md only when the model decides to invoke it — there is no native "always load" flag. For skills that must be active from turn 1 in every session (e.g. `communicating-in-html`), `home/.claude/settings.shared.json` wires a SessionStart hook (matcher `startup|resume|clear|compact`, so content is re-injected after `/clear` and compaction) that runs `home/.claude/hooks/preload-skills.py`. The script reads `home/.claude/preload-skills.txt` (installed as `~/.claude/preload-skills.txt`), resolves each entry to a SKILL.md, and injects the contents as `additionalContext`, marked as active skills with their base directory — so progressive disclosure is preserved: only SKILL.md enters context, `references/` and `assets/` are read on demand.
+
+Entry forms in `preload-skills.txt`: bare skill name (searched in `~/.claude/skills/` and all plugin marketplaces + cache, newest copy by mtime wins), `plugin:skill-name`, or an absolute/`~` path to a skill dir. Duplicate names load once — first entry wins, so list a machine-specific dev checkout before a portable fallback name. Fail-safe: entries that don't resolve on a machine are skipped, and every session start prints a `preload-skills: loaded: ... / NOT FOUND (skipped): ...` note. Keep total preloaded content under ~9.5KB; Claude Code diverts hook output above 10KB to a file instead of context (the script warns when exceeded).
 
 ## Local overrides
 

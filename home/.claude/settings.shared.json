@@ -18,6 +18,17 @@
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/preload-skills.py",
+            "timeout": 10,
+            "statusMessage": "Preloading skills..."
+          }
+        ]
+      },
+      {
         "hooks": [
           {
             "type": "command",
@@ -121,7 +132,6 @@
     "codex@openai-codex": true,
     "powerpoint-mcp@powerpoint-mcp": true,
     "superpowers@claude-plugins-official": true,
-    "caveman@caveman": false,
     "google-workspace@kzarzycki-agent-skills": false,
     "experimental@dev": true,
     "research@kzarzycki-agent-skills": true,
@@ -131,7 +141,6 @@
     "comms-personal@kzarzycki-agent-skills-private": true,
     "voice-personal@kzarzycki-agent-skills-private": true,
     "memsearch@memsearch-plugins": true,
-    "kb@kb-for-agents": true,
     "drawio@365-skills": true
   },
   "extraKnownMarketplaces": {
@@ -163,12 +172,6 @@
       "source": {
         "source": "github",
         "repo": "obra/superpowers-marketplace"
-      }
-    },
-    "caveman": {
-      "source": {
-        "source": "github",
-        "repo": "JuliusBrussee/caveman"
       }
     },
     "kzarzycki-agent-skills": {
@@ -207,7 +210,7 @@
   "autoDreamEnabled": true,
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
-  "verbose": true,
+  "verbose": false,
   "autoCompactEnabled": true,
   "skipAutoPermissionPrompt": true
 }
