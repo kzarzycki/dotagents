@@ -5,8 +5,6 @@
   "enabledPlugins": {
     "memsearch@memsearch-plugins": false,
     "experimental@dev": false,
-    "experimental@kzarzycki-agent-skills": true,
-    "comms-personal@kzarzycki-agent-skills-private": false,
-    "voice-personal@kzarzycki-agent-skills-private": false
+    "experimental@kzarzycki-agent-skills": true
   }
 }
