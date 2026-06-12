@@ -1,0 +1,21 @@
+# Skills to preload into every Claude Code session (SessionStart hook,
+# home/.claude/hooks/preload-skills.py). Shared across machines via dotagents;
+# entries missing on a machine are skipped with a visible note.
+#
+# One entry per line. '#' starts a comment. Entry forms:
+#   skill-name                -> searched in ~/.claude/skills/<name>/ and all
+#                                plugin marketplaces + cache (newest copy wins,
+#                                so live-dev symlinks beat stale clones)
+#   plugin:skill-name         -> narrowed to that plugin's dirs
+#   /abs/path or ~/path       -> skill dir or SKILL.md directly (machine-specific)
+#
+# Duplicate skill names load once - FIRST entry wins, so list the preferred
+# source (e.g. live dev checkout) before a portable fallback name.
+#
+# Keep total content under ~9.5KB - Claude Code diverts hook output >10KB to a
+# file instead of context.
+
+~/dev/agent-skills/experimental/skills/communicating-in-html
+communicating-in-html
+
+memsearch:memory-recall
