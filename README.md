@@ -9,7 +9,8 @@ dotagents/
 ├── README.md
 ├── AGENTS.md           ← meta: instructions for agents working on THIS repo
 ├── bin/
-│   └── dotagents       ← the install command
+│   ├── dotagents       ← the install command
+│   └── remote-setup.sh ← Claude Code on the web bootstrap (clone/find + install --profile remote)
 ├── patches/            ← overlay scripts run by SessionStart hooks
 │   ├── memsearch/      ← memsearch plugin patches + per-machine bootstrap
 │   └── dev-marketplace/← live-dev plugin linker + tracked marketplace.json
@@ -99,6 +100,31 @@ To add a plugin: add its `./repo/plugin` entry to `patches/dev-marketplace/marke
 Claude Code loads a skill's full SKILL.md only when the model decides to invoke it — there is no native "always load" flag. For skills that must be active from turn 1 in every session (e.g. `communicating-in-html`), `home/.claude/settings.shared.json` wires a SessionStart hook (matcher `startup|resume|clear|compact`, so content is re-injected after `/clear` and compaction) that runs `home/.claude/hooks/preload-skills.py`. The script reads `home/.claude/preload-skills.txt` (installed as `~/.claude/preload-skills.txt`), resolves each entry to a SKILL.md, and injects the contents as `additionalContext`, marked as active skills with their base directory — so progressive disclosure is preserved: only SKILL.md enters context, `references/` and `assets/` are read on demand.
 
 Entry forms in `preload-skills.txt`: bare skill name (searched in `~/.claude/skills/` and all plugin marketplaces + cache, newest copy by mtime wins), `plugin:skill-name`, or an absolute/`~` path to a skill dir. Duplicate names load once — first entry wins, so list a machine-specific dev checkout before a portable fallback name. Fail-safe: entries that don't resolve on a machine are skipped, and every session start prints a `preload-skills: loaded: ... / NOT FOUND (skipped): ...` note. Keep total preloaded content under ~9.5KB; Claude Code diverts hook output above 10KB to a file instead of context (the script warns when exceeded).
+
+### Remote sessions (Claude Code on the web)
+
+Cloud sessions run in an ephemeral container that's reclaimed after use, so dotagents has to re-apply itself on every container build. The `remote` profile plus `bin/remote-setup.sh` make a fresh container come up fully configured — plugins, hooks, statusline, env — with no manual steps.
+
+How it fits together:
+
+- **Generation, not symlink-to-running.** The harness starts Claude Code *after* the container's setup script runs. `bin/remote-setup.sh` runs `dotagents install --profile remote` during that setup step, which writes `~/.claude/settings.json` *before* Claude Code reads it. Claude Code then auto-installs every `enabledPlugins` entry from the declared `extraKnownMarketplaces` on session start (declarative — no `claude plugin install` calls needed), wires the SessionStart skill-preloader + `patches/*` hooks, and applies the statusline and `env`.
+- **Coexists with the harness's own hooks.** Claude Code *merges* `hooks` across settings layers rather than overriding, so the remote launcher's git-identity / stop-gate hooks and dotagents' hooks all run. dotagents only writes user-scope `~/.claude/settings.json`, which the harness leaves for us.
+- **The `remote` profile (`settings.remote.json`) disables what can't work in a container:** `memsearch` (needs Docker + Milvus + `uv`), `experimental@dev` and any `*@dev` plugin (no `~/dev` live-dev tree), and the private `comms-personal` / `voice-personal` marketplace plugins (no credentials). It enables `experimental@kzarzycki-agent-skills` (public source for the same skills, e.g. `communicating-in-html`) and sets `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` so marketplace clones use HTTPS, not SSH. The shared `patches/memsearch` and `patches/dev-marketplace` SessionStart hooks stay wired but self-guard to a silent no-op when their infra is absent.
+
+Setup: in the environment's **Setup script** field (Claude Code on the web → environment settings), paste one of —
+
+```sh
+# A) dotagents added as a workspace source repo (cloned via the harness git
+#    proxy; preferred under a GitHub-scoped network policy — no extra egress):
+bash "$(ls -d "$HOME"/*/dotagents/bin/remote-setup.sh /home/*/dotagents/bin/remote-setup.sh 2>/dev/null | head -1)"
+
+# B) fetch + run directly (needs raw.githubusercontent.com egress):
+curl -fsSL https://raw.githubusercontent.com/kzarzycki/dotagents/main/bin/remote-setup.sh | bash
+```
+
+`remote-setup.sh` is idempotent: it ensures `jq`, finds an existing checkout (workspace source repo or `~/.dotagents`) or clones one, then runs `dotagents install --profile remote`. Container state is cached after the setup script, so later sessions start instantly.
+
+**Network policy.** Auto-installing plugins (and option B's fetch) needs outbound access to the marketplace hosts — set the environment's network policy to one that permits GitHub (and `raw.githubusercontent.com` for option B). Under a repo-scoped policy, add `kzarzycki/dotagents` as a workspace source repo and use option A so the repo arrives via the harness proxy; public marketplace plugins still need GitHub egress to install.
 
 ## Local overrides
 
