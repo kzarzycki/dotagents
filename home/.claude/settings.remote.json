@@ -1,0 +1,10 @@
+{
+  "env": {
+    "CLAUDE_CODE_PLUGIN_PREFER_HTTPS": "1"
+  },
+  "enabledPlugins": {
+    "memsearch@memsearch-plugins": false,
+    "experimental@dev": false,
+    "experimental@kzarzycki-agent-skills": true
+  }
+}

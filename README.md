@@ -9,10 +9,12 @@ dotagents/
 ├── README.md
 ├── AGENTS.md           ← meta: instructions for agents working on THIS repo
 ├── bin/
-│   └── dotagents       ← the install command
+│   ├── dotagents       ← the install command
+│   └── remote-setup.sh ← Claude Code on the web bootstrap (clone/find + install --profile remote)
 ├── patches/            ← overlay scripts run by SessionStart hooks
 │   ├── memsearch/      ← memsearch plugin patches + per-machine bootstrap
-│   └── dev-marketplace/← live-dev plugin linker + tracked marketplace.json
+│   ├── dev-marketplace/← live-dev plugin linker + tracked marketplace.json
+│   └── remote/         ← Claude Code on the web per-session dotagents pull
 └── home/               ← install payload; 1:1 mirror of ~/
     ├── .agents/
     │   ├── AGENTS.md   ← canonical user behavioral spec
@@ -99,6 +101,31 @@ To add a plugin: add its `./repo/plugin` entry to `patches/dev-marketplace/marke
 Claude Code loads a skill's full SKILL.md only when the model decides to invoke it — there is no native "always load" flag. For skills that must be active from turn 1 in every session (e.g. `communicating-in-html`), `home/.claude/settings.shared.json` wires a SessionStart hook (matcher `startup|resume|clear|compact`, so content is re-injected after `/clear` and compaction) that runs `home/.claude/hooks/preload-skills.py`. The script reads `home/.claude/preload-skills.txt` (installed as `~/.claude/preload-skills.txt`), resolves each entry to a SKILL.md, and injects the contents as `additionalContext`, marked as active skills with their base directory — so progressive disclosure is preserved: only SKILL.md enters context, `references/` and `assets/` are read on demand.
 
 Entry forms in `preload-skills.txt`: bare skill name (searched in `~/.claude/skills/` and all plugin marketplaces + cache, newest copy by mtime wins), `plugin:skill-name`, or an absolute/`~` path to a skill dir. Duplicate names load once — first entry wins, so list a machine-specific dev checkout before a portable fallback name. Fail-safe: entries that don't resolve on a machine are skipped, and every session start prints a `preload-skills: loaded: ... / NOT FOUND (skipped): ...` note. Keep total preloaded content under ~9.5KB; Claude Code diverts hook output above 10KB to a file instead of context (the script warns when exceeded).
+
+### Remote sessions (Claude Code on the web)
+
+Cloud sessions run in an ephemeral container, so dotagents re-applies itself per container build. The `remote` profile plus `bin/remote-setup.sh` make a fresh container come up with full desktop parity — same plugins, hooks, statusline, model, permissions — adapted only where the container can't comply.
+
+**How it fits together.** The harness runs the environment's setup script *before* Claude Code launches. `bin/remote-setup.sh` runs `dotagents install --profile remote` there, writing `~/.claude/settings.json` before Claude Code reads it. Claude Code then auto-installs every `enabledPlugins` entry from the declared `extraKnownMarketplaces` on session start (declarative — no `claude plugin install` calls), and wires the SessionStart hooks, statusline, and `env`. dotagents only writes user-scope `~/.claude/settings.json`; the harness keeps its own git-identity / stop-gate hooks in a separate layer, and Claude Code *merges* `hooks` across layers rather than overriding, so both run.
+
+**The `remote` profile (`settings.remote.json`)** keeps everything from `shared` — model pin, auto-permissions, tmux teammates, private marketplaces — and deviates only where the container physically can't comply: `memsearch` off (ephemeral container has no persistent Milvus to remember into) and `experimental@dev` off (no `~/dev` live-dev tree), with `experimental@kzarzycki-agent-skills` enabled as the public source for those same skills. It sets `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` so marketplace clones use HTTPS. The shared `patches/memsearch` and `patches/dev-marketplace` SessionStart hooks stay wired but self-guard to a silent no-op when their infra is absent.
+
+**Delivery — private repos need the harness credential.** A fresh container can clone *public* GitHub repos directly (the default **Trusted** network policy allowlists `github.com`), so public marketplace plugins install with no extra config. A *private* repo can only be cloned with the scoped credential the harness wires for repos **added to the environment** — a plain `git clone` or `raw.githubusercontent` fetch of a private repo fails in the sandbox. So:
+
+- Add **`kzarzycki/dotagents`** to the environment's repositories — the harness checks it out into the workspace, and `remote-setup.sh` finds and installs from that checkout.
+- Add **`kzarzycki/agent-skills-private`** too, so the `comms-personal` / `voice-personal` plugins can clone+install at session start. Without it those two may silently fail to install.
+
+Then paste this into the environment's **Setup script** field (Claude Code on the web → environment settings):
+
+```sh
+bash "$(ls -d "$HOME"/*/dotagents/bin/remote-setup.sh /home/*/dotagents/bin/remote-setup.sh 2>/dev/null | head -1)"
+```
+
+`remote-setup.sh` is idempotent: it ensures `jq`, finds the dotagents checkout, then runs `dotagents install --profile remote`. The setup script's filesystem is snapshotted and reused, so later sessions start instantly — but it only re-runs when you edit the environment or the snapshot expires (~7 days), never on resume.
+
+**Per-session freshness.** Because the setup step is cached, a SessionStart hook (`patches/remote/refresh.sh`, gated on `$CLAUDE_CODE_REMOTE`) runs `git pull --ff-only` on `~/.dotagents` each session, so pushes to AGENTS.md / commands / preloaded skills land without a container rebuild — those resolve through symlinks into the repo. New *plugins* or `settings.json` changes still need a rebuild (Claude Code reads settings once at launch and doesn't hot-load plugins).
+
+**Configure once.** Environments are reusable across sessions; set this one as the `--remote` default with `/remote-env` in your terminal.
 
 ## Local overrides
 

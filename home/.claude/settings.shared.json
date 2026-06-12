@@ -18,6 +18,16 @@
   "hooks": {
     "SessionStart": [
       {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.dotagents/patches/remote/refresh.sh",
+            "timeout": 15,
+            "statusMessage": "Refreshing dotagents..."
+          }
+        ]
+      },
+      {
         "matcher": "startup|resume|clear|compact",
         "hooks": [
           {
