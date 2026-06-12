@@ -1,12 +1,12 @@
 # Agent Instructions
 
-Behavioral spec for any CLI agent (Claude Code today; Codex/others later). Installs to `~/.agents/AGENTS.md`; per-agent files (e.g. `~/.claude/CLAUDE.md`) symlink here.
+Behavioral spec for any CLI agent (Claude Code today; Codex/others later). Managed by the dotagents repo — edit the source there (`home/.agents/AGENTS.md`), never the installed copies. Installs to `~/.agents/AGENTS.md`; per-agent files (e.g. `~/.claude/CLAUDE.md`) symlink here.
 
 When reporting information be extremely concise and sacrifice grammar for the sake of concision.
 
 ## Writing Quality
 
-Applies to artifacts: docs, specs, briefs, reports, proposals, slide content, deliverables. Not tutorials, training material, or telegram-style logs. Write like a person with a deadline.
+Applies to artifacts: docs, specs, briefs, reports, proposals, slide content, deliverables, instruction files (AGENTS.md/CLAUDE.md), config and code comments. Not tutorials, training material, or telegram-style logs. Write like a person with a deadline.
 
 Forbidden:
 - Empty adjectives: world-class, robust, comprehensive, seamless, cutting-edge, holistic, transformative, crucial, pivotal.
@@ -21,7 +21,7 @@ Structural rules:
 2. **Rewrite as first draft.** Never preserve "originally we had X but pivoted" or chat-decision history in the doc body. Current truth in the doc; history lives in logs.
 3. **Extend, don't invent.** Before proposing new structure (file, table, config, module, abstraction), check what existing structure absorbs the change. Default = extend; new structure carries burden of proof.
 
-Clean-slate test, per paragraph: would this exist in a one-shot draft by someone who already knew the answer? If it survives only because the conversation debated, corrected, or circled — cut it. Watch for: negative definitions ("X is not Y" left over from rejecting a proposal), defensive justification chains, restatements, worked examples generated to clarify in chat. Conclusion in the artifact; argument stays in the transcript. Quoting slop to show what's wrong (in review) is fine — never in your own voice.
+Clean-slate test, per paragraph: would this exist in a one-shot draft by someone who already knew the answer? If it survives only because the conversation debated, corrected, or circled — cut it. Watch for: negative definitions ("X is not Y" left over from rejecting a proposal), defensive justification chains, restatements, worked examples generated to clarify in chat, and the rationale the user attached to a change request — it shapes the change, never gets written alongside it unless explicitly asked. Conclusion in the artifact; argument stays in the transcript. Quoting slop to show what's wrong (in review) is fine — never in your own voice.
 
 ## Delegation
 
@@ -37,6 +37,10 @@ Clean-slate test, per paragraph: would this exist in a one-shot draft by someone
 - Tool/solution category questions: research options, surface tradeoffs, ask preference before recommending one.
 - Don't create .md files unless explicitly requested in *this* prompt — don't carry the instruction forward. Short agent notes go in CLAUDE.md; human notes in README.md.
 - Assume files are large: check size or read a slice before reading in full.
+
+## Memory (memsearch)
+
+Cross-session memory = memsearch. Search before working when the task touches past decisions ("why did we", "what did I decide"), prior sessions' work, recurring bugs, or project history. Main thread: invoke `memsearch:memory-recall` (forked skill, near-zero context cost). Subagents/no Skill tool: `memsearch search "<query>" --top-k 5 --json-output`, then `memsearch expand <hash>` on best hits. When briefing a subagent on work with history, tell it to search first.
 
 ## Environment
 
