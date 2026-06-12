@@ -8,17 +8,19 @@
 # Idempotent and non-interactive — intended as the environment "Setup script".
 # Container state is cached after it runs, so subsequent sessions are instant.
 #
-# Usage (paste ONE of these into the environment's Setup script field):
+# Delivery: dotagents is private, so the sandbox can only clone it with the
+# scoped credential the harness wires for repos added to the environment. Add
+# `kzarzycki/dotagents` (and `kzarzycki/agent-skills-private` for the private
+# marketplaces) to the environment's repositories; the harness checks them out
+# into the workspace, and this script finds and installs from that checkout.
+# A plain `git clone https://github.com/...` of a *private* repo fails in the
+# sandbox — the clone fallback below only succeeds if the repo is public.
 #
-#   # A) dotagents added as a workspace source repo (no external egress needed
-#   #    for the repo itself; preferred under a GitHub-scoped network policy):
+# Setup script field (paste this):
 #   bash "$(ls -d "$HOME"/*/dotagents/bin/remote-setup.sh /home/*/dotagents/bin/remote-setup.sh 2>/dev/null | head -1)"
 #
-#   # B) fetch + run directly (needs raw.githubusercontent.com egress):
-#   curl -fsSL https://raw.githubusercontent.com/kzarzycki/dotagents/main/bin/remote-setup.sh | bash
-#
 # Override defaults via env: DOTAGENTS_PROFILE (default: remote),
-# DOTAGENTS_REPO_URL (default: the public GitHub repo).
+# DOTAGENTS_REPO_URL (clone fallback target; only works if dotagents is public).
 set -euo pipefail
 
 REPO_URL="${DOTAGENTS_REPO_URL:-https://github.com/kzarzycki/dotagents}"
@@ -66,9 +68,14 @@ if SRC_REPO="$(find_checkout)"; then
   fi
   "$SRC_REPO/bin/dotagents" install --profile "$PROFILE" --no-pull
 else
-  log "no checkout found — cloning $REPO_URL -> $DEST"
-  git clone --depth 1 "$REPO_URL" "$DEST"
-  "$DEST/bin/dotagents" install --profile "$PROFILE" --no-pull
+  log "no checkout found — trying to clone $REPO_URL -> $DEST"
+  log "(this only works if dotagents is public; if private, add it as an environment repo instead)"
+  if git clone --depth 1 "$REPO_URL" "$DEST" 2>&1; then
+    "$DEST/bin/dotagents" install --profile "$PROFILE" --no-pull
+  else
+    log "ERROR: could not obtain dotagents. Add kzarzycki/dotagents to the environment's repositories, or make it public." >&2
+    exit 1
+  fi
 fi
 
 log "ready: ~/.claude/settings.json generated (profile: $PROFILE). Claude Code will install enabled plugins on session start."
