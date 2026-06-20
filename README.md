@@ -61,7 +61,7 @@ Committed files (e.g. `home/.claude/settings.shared.json` hook commands) referen
 Some configuration is machine-class-specific (xebia-only marketplaces and plugins on Mac and on xebia worker machines; nothing extra on a personal VPS). To handle this without per-machine repo forks, dotagents uses profiles:
 
 - `home/.claude/settings.shared.json` — config common to every machine.
-- `home/.claude/settings.<profile>.json` — per-profile overlay (e.g. `mac`, `vps`, `xebia-remote`).
+- `home/.claude/settings.<profile>.json` — per-profile overlay (e.g. `mac`, `vps`, `remote`).
 - `~/.dotagents-profile` — single line naming the profile for this machine. Per-machine, not committed.
 
 `bin/dotagents install` resolves the profile in this order: `--profile <name>` flag, existing `~/.dotagents-profile`, interactive prompt (TTY only). The resolved value is written to `~/.dotagents-profile` so subsequent runs need no flag. Install deep-merges shared + profile (profile wins per key; nested objects merge, arrays replace — so profiles must not define `hooks`; install warns if one does) and writes the result to `~/.claude/settings.json` — Claude Code's only user-scope settings file (user-level `settings.local.json` is not read by CC). Regenerated on every install, diff printed when it changes. To change managed config: edit the repo files and re-run `dotagents install`, never the generated file. Add new profiles by creating new `home/.claude/settings.<name>.json` files; no install-script change needed.
