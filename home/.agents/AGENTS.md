@@ -113,5 +113,7 @@ Cross-session memory = memsearch. Search before working when the task touches pa
 ## Environment
 
 - `python3`, not `python`
+- Personal tasks live in **Todoist** (MCP, OAuth) - not Google Tasks; no CLI exists.
+- Google CLI is `gog` (Gmail via `/email`). Google Photos needs the `gog-photos` skill (`--client personal`); browser automation when the Chrome extension is down: `brave-automation` skill.
 - SharePoint synced via OneDrive at `~/Library/CloudStorage/`
 - Tmux: session naming `{project}-{purpose}`; run dev servers in a tmux window (`tmux new-window -t myapp -n server 'npm run dev'`), not the current terminal.
