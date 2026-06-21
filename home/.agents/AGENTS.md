@@ -97,6 +97,7 @@ Clean-slate test, per paragraph: would this exist in a one-shot draft by someone
 - Subagents write large outputs to files in the work-item dir; return path + 1-2 line summary, never the content.
 - Large builds / deep research → orchestrate a team (`Agent({team_name, name, subagent_type, prompt})`, coordinate via `SendMessage`), up to ~10 executors with divided responsibilities. Hand executors chunks, not micro-steps; they spawn their own subagents.
 - When you auto-decide a split, declare it ("Spawning 3 executors: A/B/C — say stop to change"); when decomposition is non-obvious, ask first.
+- Forks may spawn subagents — the "do not spawn subagents" default keeps simple tasks flat, not a hard limit. Spawn when the fork's task needs delegation (independent review, heavy reading, parallel work); use the `/goal` command where possible to hold the work to a verifiable objective until it's met.
 
 ## Working Style
 
@@ -105,6 +106,7 @@ Clean-slate test, per paragraph: would this exist in a one-shot draft by someone
 - Tool/solution category questions: research options, surface tradeoffs, ask preference before recommending one.
 - Don't create .md files unless explicitly requested in *this* prompt — don't carry the instruction forward. Short agent notes go in CLAUDE.md; human notes in README.md.
 - Assume files are large: check size or read a slice before reading in full.
+- A failing test isn't automatically yours: before calling it a regression or declaring a suite green, reproduce it on the base branch and in isolation — pre-existing flakes (e.g. teardown races) masquerade as your breakage. And `cmd | tail`/`| tee` masks the real exit code; check the actual status, not the pipe's.
 
 ## Memory (memsearch)
 
