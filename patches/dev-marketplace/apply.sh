@@ -44,6 +44,14 @@ fi
 while IFS=$'\t' read -r name target srcdir; do
   [ -n "$target" ] && [ -n "$srcdir" ] || continue
   [ -f "$srcdir/.claude-plugin/plugin.json" ] || continue
+  # Remove the stray self-referential symlink (<plugin>/<plugin> -> <plugin>)
+  # that marketplace refreshes occasionally drop inside the working tree. Guarded
+  # to a symlink pointing at its own parent — never touches a real dir.
+  selflink="$srcdir/$(basename "$srcdir")"
+  if [ -L "$selflink" ] && [ "$(readlink "$selflink")" = "$srcdir" ]; then
+    rm -f "$selflink"
+    echo "[dev-marketplace] removed stray self-link $selflink" >&2
+  fi
   if [ -L "$target" ] && [ "$(readlink "$target")" = "$srcdir" ]; then
     continue  # already live
   fi
