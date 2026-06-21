@@ -139,6 +139,8 @@ Machine-class config belongs in the committed profile overlay (`home/.claude/set
 
 The repo ships a `.gitleaks.toml` (default ruleset, `useDefault = true`) so `gitleaks dir .` and `gitleaks git .` confirm no token, key, or credential ever lands in the tree or history — both scan clean today. Secrets belong in the machine-local `.env*` / `*.local.*` files install skips, never in committed config. The one ID-shaped value present, `BRANDFETCH_CLIENT_ID` in `settings.mac.json`, is a public client identifier (sent in client-side logo-API URLs), not a secret.
 
+The scan runs automatically: `.githooks/pre-commit` blocks any commit that stages a secret (gitleaks), invalid JSON (would break `install`'s `jq` merge), or a dangling in-repo symlink (the class of bug that once shipped a broken `commands/flow` link) — the repo invariants previously left to a human to eyeball. `dotagents install` enables the hook by pointing `core.hooksPath` at `.githooks`; since that's per-clone local config, a fresh clone arms it on the first install. `gitleaks` is the only extra dependency (`brew install gitleaks`); the hook degrades to a warning if it's absent.
+
 ### Marketplace overrides
 
 `home/.claude/settings.shared.json` declares shared marketplaces. Prefer `github` sources for portable repos. For shared local marketplaces that are expected to exist on every machine, use `~` paths rather than absolute user paths; Claude resolves `~/...` at runtime.

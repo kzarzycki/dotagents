@@ -125,6 +125,17 @@ if (( ! NO_PULL )); then
   fi
 fi
 
+# 1.5 Enable the repo's tracked git hooks on this clone. core.hooksPath is
+# per-clone local config (not committable), so wire it here — the install
+# everyone already runs becomes the one-step opt-in. Idempotent.
+if [ -d "$REPO_ROOT/.git" ] && [ -d "$REPO_ROOT/.githooks" ]; then
+  current_hooks=$(git -C "$REPO_ROOT" config --local --get core.hooksPath || true)
+  if [ "$current_hooks" != ".githooks" ]; then
+    run git -C "$REPO_ROOT" config --local core.hooksPath .githooks
+    printf 'HOOKED: %s git hooks -> .githooks (gitleaks/json/symlink pre-commit)\n' "$REPO_ROOT"
+  fi
+fi
+
 # 2. Ensure $HOME/.dotagents resolves to $REPO_ROOT. Committed
 # settings.shared.json references this path for hook commands.
 #   - Repo cloned at $HOME/.dotagents itself: nothing to do.

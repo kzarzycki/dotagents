@@ -1,0 +1,61 @@
+#!/bin/sh
+# dotagents pre-commit. Enforces the repo invariants that were previously
+# left to a human/agent to eyeball. Enabled per-clone via core.hooksPath,
+# which `bin/dotagents install` sets automatically. Run manually:
+#   gitleaks git --staged --no-banner --redact
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+# Staged files being added/copied/modified (not deletions).
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+
+fail=0
+
+# 1. Secret scan — block staged secrets/tokens.
+if command -v gitleaks >/dev/null 2>&1; then
+  if ! gitleaks git --staged --no-banner --redact; then
+    echo "pre-commit: gitleaks found a staged secret (see above) — commit blocked." >&2
+    echo "  If it's a false positive, add an [allowlist] entry to .gitleaks.toml." >&2
+    fail=1
+  fi
+else
+  echo "pre-commit: gitleaks not installed — skipping secret scan (brew install gitleaks)." >&2
+fi
+
+# 2. JSON validity — install deep-merges settings with jq; broken JSON breaks
+#    install on every machine. Validate the STAGED blob, not the working tree.
+if command -v jq >/dev/null 2>&1; then
+  for f in $staged; do
+    case "$f" in
+      *.json)
+        if ! git show ":$f" | jq empty >/dev/null 2>&1; then
+          echo "pre-commit: invalid JSON staged: $f" >&2
+          fail=1
+        fi
+        ;;
+    esac
+  done
+else
+  echo "pre-commit: jq not installed — skipping JSON validation." >&2
+fi
+
+# 3. Dangling in-repo symlinks — a staged symlink whose target does not resolve
+#    (the bug that shipped the broken commands/flow link). Symlink blob content
+#    is its target path; resolve relative to the link's own directory.
+for f in $staged; do
+  mode=$(git ls-files --stage -- "$f" | awk '{print $1}')
+  [ "$mode" = "120000" ] || continue
+  target=$(git show ":$f")
+  case "$target" in
+    /*) resolved="$target" ;;                 # absolute (discouraged, but check)
+    *)  resolved="$(dirname "$f")/$target" ;; # relative to link location
+  esac
+  if [ ! -e "$resolved" ]; then
+    echo "pre-commit: dangling symlink staged: $f -> $target" >&2
+    fail=1
+  fi
+done
+
+exit "$fail"
