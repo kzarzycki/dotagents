@@ -16,7 +16,6 @@ A dotfiles-style repo whose `home/` directory mirrors what the user wants under 
 - **In-repo symlinks use relative paths.** E.g. `home/.claude/CLAUDE.md → ../.agents/AGENTS.md`. Keep them relative so they resolve correctly inside the repo regardless of where it's cloned.
 - **Per-agent files that are agent-specific (settings, hooks, slash commands) live inside `home/<agent-dotdir>/`** — never lift them into `home/.agents/` unless they're genuinely shared across agents.
 - **Do not vendor skill payloads or skill lockfiles in this repo.** Configure Claude plugins and marketplaces in `home/.claude/settings.json` or `home/.claude/settings.<profile>.json`; skills live in their source plugin/marketplace repos.
-- **No secrets in the repo** — tokens, API keys, private keys never get committed; they belong in machine-local `.env*` / `*.local.*` files, which install skips. The one ID-shaped value present, `BRANDFETCH_CLIENT_ID` in `settings.mac.json`, is a **public** client identifier (sent in client-side logo-API URLs), not a secret — leave it; it is not a PII/secret-scan finding.
 
 ## When changing the install script
 

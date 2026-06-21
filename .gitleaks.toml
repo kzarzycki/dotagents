@@ -1,0 +1,7 @@
+# gitleaks config for this repo. Extends the built-in ruleset.
+# Repo passes clean today; add an [[rules]] / [allowlist] entry only if a real
+# false positive ever appears (e.g. a value that LOOKS like a secret but is a
+# public identifier). BRANDFETCH_CLIENT_ID in settings.mac.json is a public
+# client id and is NOT flagged by the default rules, so it needs no entry.
+[extend]
+useDefault = true

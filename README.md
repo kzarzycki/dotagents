@@ -135,6 +135,10 @@ Machine-class config belongs in the committed profile overlay (`home/.claude/set
 - Runtime prefs Claude writes into `~/.claude/settings.json` — machine-local until the next install resets them
 - Files matching `*.local.*`, `.env*` under managed dotdirs — left alone by install
 
+### Secret scanning
+
+The repo ships a `.gitleaks.toml` (default ruleset, `useDefault = true`) so `gitleaks dir .` and `gitleaks git .` confirm no token, key, or credential ever lands in the tree or history — both scan clean today. Secrets belong in the machine-local `.env*` / `*.local.*` files install skips, never in committed config. The one ID-shaped value present, `BRANDFETCH_CLIENT_ID` in `settings.mac.json`, is a public client identifier (sent in client-side logo-API URLs), not a secret.
+
 ### Marketplace overrides
 
 `home/.claude/settings.shared.json` declares shared marketplaces. Prefer `github` sources for portable repos. For shared local marketplaces that are expected to exist on every machine, use `~` paths rather than absolute user paths; Claude resolves `~/...` at runtime.
