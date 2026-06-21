@@ -87,6 +87,18 @@ It (a) installs `memsearch` via `uv tool install`, (b) writes `~/.memsearch/stan
 
 Requirements: `uv` (https://docs.astral.sh/uv/), running Docker daemon, `python3`, `flock` (Linux: built-in; macOS: `brew install flock`). After bootstrap, restart Claude Code so the SessionStart hook applies the patches.
 
+### pixelrag bootstrap (per machine)
+
+`settings.shared.json` declares the `pixelrag-plugins` marketplace and enables `pixelbrowse@pixelrag-plugins` — a skill that screenshots URLs/PDFs with the `pixelshot` binary so Claude reads them visually. The skill shells out to `pixelshot`, which isn't a dotagents symlink, so install it once per machine:
+
+```sh
+~/.dotagents/patches/pixelrag/bootstrap.sh
+```
+
+It `uv tool install pixelrag` (isolated env — not the README's global `pip install`). Idempotent. Requires `uv`. Until it runs, the plugin loads but the skill can't capture anything.
+
+`pixelshot`'s default `cdp` backend launches its own headless browser from `$CHROME_PATH`; its bundled auto-download is linux-x64 only, so on macOS `home/.agents/env.sh` points `CHROME_PATH` at an installed Brave/Chrome (open a new shell after install), and on linux-x64 it self-provisions on first run.
+
 ### dev marketplace (live local plugins)
 
 `home/.claude/settings.shared.json` declares a `dev` directory marketplace at `~/dev` and wires a SessionStart hook that runs `patches/dev-marketplace/apply.sh`, which:

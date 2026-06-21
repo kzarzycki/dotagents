@@ -11,3 +11,15 @@ esac
 
 # memsearch global memory store
 [ -d "$HOME/dev/kb/memory" ] && export MEMSEARCH_DIR="$HOME/dev/kb/memory"
+
+# pixelshot (pixelbrowse skill) browser: its cdp backend can't self-provision a
+# browser on macOS (auto-download is linux-x64 only), so point it at an installed
+# Chromium-based one. Brave preferred, Chrome fallback. No-op elsewhere / on Linux.
+if [ -z "${CHROME_PATH:-}" ]; then
+  for _b in \
+    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" \
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"; do
+    [ -x "$_b" ] && { export CHROME_PATH="$_b"; break; }
+  done
+  unset _b
+fi
