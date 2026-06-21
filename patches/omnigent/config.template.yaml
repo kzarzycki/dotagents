@@ -1,0 +1,27 @@
+# Omnigent user configuration — TEMPLATE.
+#
+# patches/omnigent/bootstrap.sh copies this to ~/.omnigent/config.yaml ONLY when
+# that file does not yet exist. After that, OMNIGENT owns the live file: it
+# rewrites it at runtime to add the per-machine `host:` block (host_id +
+# hostname) and to re-materialize providers. So this template is intentionally
+# minimal and machine-independent — no `host:` block (auto-generated per machine).
+#
+# Secrets are NEVER kept here. claude/codex use `kind: subscription` and
+# authenticate via the logged-in `claude`/`codex` CLIs (no key in this file).
+# Real provider keys live in the OS keychain (keyring service 'omnigent') or are
+# referenced as `env:<VAR>` / `keychain:<name>`. Run `omnigent setup` after
+# bootstrap to log in the CLIs and populate credentials.
+#
+# Local providers (e.g. a localhost ollama) are machine-specific and are added
+# per machine via `omnigent setup`; they are deliberately omitted here.
+providers:
+  claude:
+    cli: claude
+    default: !!bool 'true'
+    kind: subscription
+  codex:
+    cli: codex
+    default: !!bool 'true'
+    kind: subscription
+tui:
+  theme: dark
