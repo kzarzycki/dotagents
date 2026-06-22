@@ -14,6 +14,7 @@ dotagents/
 ├── patches/            ← overlay scripts run by SessionStart hooks
 │   ├── memsearch/      ← memsearch plugin patches + per-machine bootstrap
 │   ├── dev-marketplace/← live-dev plugin linker + tracked marketplace.json
+│   ├── pixelrag/       ← per-machine pixelshot binary bootstrap
 │   └── remote/         ← Claude Code on the web per-session dotagents pull
 └── home/               ← install payload; 1:1 mirror of ~/
     ├── .agents/
