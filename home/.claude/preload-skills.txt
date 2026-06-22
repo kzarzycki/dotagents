@@ -15,7 +15,7 @@
 # Keep total content under ~9.5KB - Claude Code diverts hook output >10KB to a
 # file instead of context.
 
-~/dev/agent-skills/experimental/skills/communicating-in-html
-communicating-in-html
+~/dev/agent-skills/experimental/skills/communicating-in-mdx
+communicating-in-mdx
 
 memsearch:memory-recall
