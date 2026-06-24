@@ -76,6 +76,23 @@ dotagents install --profile mac
 dotagents install
 ```
 
+### Per-directory config homes (`CLAUDE_CONFIG_DIR`)
+
+Orthogonal to machine Profiles above (those overlay one `~/.claude`; this picks *which* config home). `home/.agents/env.sh` exports `CLAUDE_CONFIG_DIR` from the cwd, so every tool that honors it — claude, omnigent, oh-my-pi — shares one config home (plugins, MCP, history, settings) per project group. Under `~/knowledge/*` it points at `~/.claude-knowledge`; everywhere else it's unset, so tools fall back to their own default `~/.claude` — the dev profile. A forgotten group dir, a GUI/Dock launch, and a daemon started without the var therefore all land on dev.
+
+The dev profile *is* `~/.claude` — the tool's own hardcoded fallback — so it needs no var and no setup; that's why a forgotten var lands there. `~/.claude-dev` exists as a symlink onto it, so the name `.claude-dev` is available for explicit references (e.g. a daemon plist) and resolves to the same dev config.
+
+Add a group: one `case` line in `env.sh` plus `mkdir ~/.claude-<group>` (a config home is created lazily; `{}` in `settings.json` is enough to start). The fallback (dev) needs nothing.
+
+Auto-started daemons have no cwd or shell, so pin the var in the launcher instead. launchd:
+
+```xml
+<key>EnvironmentVariables</key>
+<dict><key>CLAUDE_CONFIG_DIR</key><string>/Users/you/.claude-knowledge</string></dict>
+```
+
+Omit it (or point at `~/.claude-dev`) to get dev. Shell coverage is bash/zsh (env.sh is POSIX, same as the rest of the repo).
+
 ### memsearch bootstrap (per machine)
 
 `home/.claude/settings.shared.json` enables the memsearch plugin and wires a SessionStart hook that runs `patches/memsearch/apply.sh` (idempotent, fast no-op once patched). The hook patches the installed plugin: PreCompact transcript capture, flock-guarded markdown writes, and a Milvus flush fix (upstream bug #534). To make memsearch actually function on a fresh machine, run once:
