@@ -152,7 +152,8 @@
     "voice-personal@kzarzycki-agent-skills-private": true,
     "memsearch@memsearch-plugins": true,
     "drawio@365-skills": true,
-    "pixelbrowse@pixelrag-plugins": true
+    "pixelbrowse@pixelrag-plugins": true,
+    "ponytail@ponytail": true
   },
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {
@@ -219,6 +220,12 @@
       "source": {
         "source": "github",
         "repo": "StarTrail-org/PixelRAG"
+      }
+    },
+    "ponytail": {
+      "source": {
+        "source": "github",
+        "repo": "DietrichGebert/ponytail"
       }
     }
   },
