@@ -54,14 +54,24 @@ things:
    and `pre-commit init-templatedir` there. Any repo cloned/init'd afterward
    auto-arms. (Folds in the `init.templateDir` setup currently inline in
    section 1.6 of `bin/dotagents`.)
-3. **Existing-repo sweep.** For each `--root`, find git repos containing a
-   `.pre-commit-config.yaml` (depth-limited, ~maxdepth 4, to stay fast and
-   avoid `node_modules`/large trees) and run `pre-commit install` in each.
-   Catches repos cloned *before* setup — the container gap.
+3. **Existing-repo sweep.** For each `--root`, find *every* git repo
+   (depth-limited, ~maxdepth 5, pruning `node_modules`/`.venv`) and install the
+   pre-commit dispatcher — not only repos with a `.pre-commit-config.yaml`
+   today. The dispatcher no-ops where there's no config, so a config *added
+   later* to an already-swept repo runs automatically. Catches repos cloned
+   *before* setup (the container gap) and makes "add a config later" work
+   without a re-sweep.
 
-`pre-commit install` honors each repo's `default_install_hook_types`, so
-`commit-msg`/`pre-push`/multi-stage hooks are installed too — installed, never
-overridden.
+   The sweep never touches a maintainer's own hook setup:
+   - **Skip repos with `core.hooksPath` set** (husky, tracked `.githooks`, …) —
+     git bypasses `.git/hooks` there, so installing would be dead or fight their
+     setup.
+   - **Skip repos that already have a non-pre-commit `.git/hooks/pre-commit`** —
+     left strictly alone, not chained via `.legacy`.
+   - Repos already carrying the pre-commit dispatcher are skipped (idempotent).
+
+A fresh install honors the repo's `default_install_hook_types`, so
+`commit-msg`/`pre-push`/multi-stage hooks are installed too.
 
 ## Wiring
 
@@ -100,10 +110,13 @@ the first commit pays the cost once. Optional `--install-hooks` flag pre-warms
    a re-commit succeeds.
 2. **Container:** after `remote-setup.sh`, an already-checked-out work repo has
    a firing `.git/hooks/pre-commit`.
-3. **No override:** a repo with its own `commit-msg` hook still runs it after
-   arming.
-4. **Idempotent:** a second `install`/`arm-hooks` makes no changes.
-5. **Best-effort:** with `pre-commit` uninstallable, setup completes with a
+3. **Add config later:** a repo with no config at sweep time still gets the
+   dispatcher; adding a config afterward runs it on the next commit.
+4. **Maintainer-safe:** a repo using `core.hooksPath` is skipped (its setup
+   untouched); a repo with its own `.git/hooks/pre-commit` is left intact (no
+   `.legacy` chaining).
+5. **Idempotent:** a second `install`/`arm-hooks` makes no changes.
+6. **Best-effort:** with `pre-commit` uninstallable, setup completes with a
    warning rather than failing.
 
 ## Testing
