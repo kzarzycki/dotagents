@@ -67,11 +67,16 @@ if SRC_REPO="$(find_checkout)"; then
     git -C "$DEST" pull --ff-only 2>/dev/null || log "pull skipped (offline or non-ff)"
   fi
   "$SRC_REPO/bin/dotagents" install --profile "$PROFILE" --no-pull
+  # Arm pre-commit in repos the harness checked out BEFORE this setup ran (so
+  # init.templateDir misses them). They land beside the dotagents checkout or
+  # in the work dir. Best-effort: never fail container setup over it.
+  "$SRC_REPO/bin/dotagents" arm-hooks --root "$(dirname "$SRC_REPO")" --root "$PWD" || true
 else
   log "no checkout found — trying to clone $REPO_URL -> $DEST"
   log "(this only works if dotagents is public; if private, add it as an environment repo instead)"
   if git clone --depth 1 "$REPO_URL" "$DEST" 2>&1; then
     "$DEST/bin/dotagents" install --profile "$PROFILE" --no-pull
+    "$DEST/bin/dotagents" arm-hooks --root "$(dirname "$DEST")" --root "$PWD" || true
   else
     log "ERROR: could not obtain dotagents. Add kzarzycki/dotagents to the environment's repositories, or make it public." >&2
     exit 1
