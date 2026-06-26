@@ -3,6 +3,11 @@
   "owner": { "name": "Krzysztof Zarzycki" },
   "plugins": [
     {
+      "name": "playwright",
+      "source": "./agent-skills/playwright",
+      "description": "Live working-tree copy of playwright MCP plugin (published as playwright@kzarzycki-agent-skills)"
+    },
+    {
       "name": "experimental",
       "source": "./agent-skills/experimental",
       "description": "Live working-tree experimental skills (communicating-in-html, update-delta-audit)"
