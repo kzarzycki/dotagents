@@ -27,10 +27,12 @@
     "research@dev": true,
     "engineering@dev": true,
     "content@dev": true,
+    "playwright@dev": true,
     "workflow@kzarzycki-agent-skills": false,
     "research@kzarzycki-agent-skills": false,
     "engineering@kzarzycki-agent-skills": false,
-    "content@kzarzycki-agent-skills": false
+    "content@kzarzycki-agent-skills": false,
+    "playwright@kzarzycki-agent-skills": false
   },
   "theme": "dark-daltonized",
   "voiceEnabled": true
