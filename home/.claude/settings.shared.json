@@ -148,6 +148,7 @@
     "engineering@kzarzycki-agent-skills": true,
     "content@kzarzycki-agent-skills": true,
     "workflow@kzarzycki-agent-skills": true,
+    "playwright@kzarzycki-agent-skills": true,
     "comms-personal@kzarzycki-agent-skills-private": true,
     "voice-personal@kzarzycki-agent-skills-private": true,
     "memsearch@memsearch-plugins": true,
