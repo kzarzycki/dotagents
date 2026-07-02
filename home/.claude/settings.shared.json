@@ -133,11 +133,11 @@
     "command": "bash $HOME/.claude/statusline.sh"
   },
   "enabledPlugins": {
-    "claude-code-setup@claude-plugins-official": true,
-    "claude-md-management@claude-plugins-official": true,
+    "claude-code-setup@claude-plugins-official": false,
+    "claude-md-management@claude-plugins-official": false,
     "code-review@claude-plugins-official": true,
     "document-skills@anthropic-agent-skills": true,
-    "cli-anything@cli-anything": true,
+    "cli-anything@cli-anything": false,
     "skill-creator@claude-plugins-official": false,
     "codex@openai-codex": true,
     "powerpoint-mcp@powerpoint-mcp": true,
@@ -150,10 +150,10 @@
     "workflow@kzarzycki-agent-skills": true,
     "playwright@kzarzycki-agent-skills": true,
     "comms-personal@kzarzycki-agent-skills-private": true,
-    "voice-personal@kzarzycki-agent-skills-private": true,
+    "voice-personal@kzarzycki-agent-skills-private": false,
     "memsearch@memsearch-plugins": true,
-    "drawio@365-skills": true,
-    "pixelbrowse@pixelrag-plugins": true,
+    "drawio@365-skills": false,
+    "pixelbrowse@pixelrag-plugins": false,
     "ponytail@ponytail": true
   },
   "extraKnownMarketplaces": {
