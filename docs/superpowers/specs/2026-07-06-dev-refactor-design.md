@@ -11,11 +11,15 @@ Toolkit inventory after this work: ownership bases `personal`, `xebia`, `agents`
 
 ## Target layout
 
+Non-dev work (chat-driven, documents, knowledge bases — no code) leaves `~/dev` entirely: personal non-dev to the existing `~/personal/`, Xebia non-dev to a new `~/xebia/`. Toolkit anchoring is walk-up, so those roots carry parent `.agents-toolkit` files too. `~/dev` keeps code repos only. Phase 2 classifies each entry dev vs non-dev (code manifests present vs mostly documents).
+
 | Group | Toolkit default | Members |
 |---|---|---|
-| `xebia/` | `xebia` | existing children + `projects/`→`xebia/consulting/`, `xebia-ai-skills`, `xebia-rfp-toolkit`, `kb/team-xebia-cee` |
-| `agents/` | `agents` | `dotagents`, `agent-skills`, `agent-skills-private`, `project-templates`, `Auto-Claude`, `claude-kanban`, `CLI-Anything`, `codex-enhanced`, `spec-kit`, `simonc602-agentic-os`, `cloud-harness`, `flowbench` (override: `flowbench`), `mcp servers: outlook-mcp, powerpoint-mcp, akiflow-mcp, brave-browser-control` under `agents/mcp/` |
-| `personal/` | `personal` | existing `personal/` content, `life-os`, `cookidoo-recipes(+mealplan)`, `personal-finance`, `invoice-automation`, `OverKeys`, `xkb-lens`, `lego-sorter`, `kb/personal`, `computer`, `hetzner-vps` |
+| `~/xebia/` (non-dev) | `xebia` | `projects/`→`~/xebia/consulting/` (decks, presales, offerings), `kb/team-xebia-cee` |
+| `dev/xebia/` | `xebia dev` | existing children (`feedbacks-app`, `flowbench-scenarios`, `flowbench-runs`), `xebia-ai-skills`, `xebia-rfp-toolkit` |
+| `dev/agents/` | `agents` | `dotagents`, `agent-skills`, `agent-skills-private`, `project-templates`, `Auto-Claude`, `claude-kanban`, `CLI-Anything`, `codex-enhanced`, `spec-kit`, `simonc602-agentic-os`, `cloud-harness`, `flowbench` (override: `flowbench`), `mcp servers: outlook-mcp, powerpoint-mcp, akiflow-mcp, brave-browser-control` under `dev/agents/mcp/` |
+| `~/personal/` (non-dev) | `personal` | existing `dev/personal/` content, `kb/personal`, `personal-finance`, `invoice-automation` (if non-dev per Phase 2) |
+| `dev/personal/` | `personal dev` | `life-os`, `cookidoo-recipes(+mealplan)`, `OverKeys`, `xkb-lens`, `lego-sorter`, `computer`, `hetzner-vps` |
 | `ext/` | `base` | unchanged (upstream clones) |
 | `trading/` | `personal` | unchanged in place |
 | `archive/` | none | + `ai-flink-app`, `claude-code-hooks-mastery`, `streaming-ai-demo` (top-level; likely duplicate of `projects/streaming-ai-demo` — Phase 2 confirms), `reversing`, `agentdesk`, `dotagents-omnigent-wt` |
