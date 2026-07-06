@@ -349,6 +349,27 @@ def build_additional_context(name, tmd, preload_entries):
             "Treat each as an active skill for this whole session - no Skill tool "
             "invocation needed.\n\n" + "\n\n".join(sections)
         )
+    # Over the diversion threshold the whole payload lands in a file, not
+    # context - worse than truncation. Trim the largest sections to fit,
+    # leaving a pointer to read the rest on demand.
+    for _ in range(len(sections)):  # bounded: each pass shrinks one section
+        if len(context) <= SOFT_LIMIT:
+            break
+        i = max(range(len(sections)), key=lambda j: len(sections[j]))
+        path_line = sections[i].splitlines()[1]  # "Base directory: ..."
+        note = (
+            f"\n[... truncated by toolkit hook to fit context budget - "
+            f"read SKILL.md under the {path_line} for the rest]"
+        )
+        keep = len(sections[i]) - (len(context) - SOFT_LIMIT) - len(note)
+        if keep < 500:  # too small to be useful truncated
+            break
+        sections[i] = sections[i][:keep] + note
+        context = f"TOOLKIT: {name}\n\n{tmd}" + (
+            "\n\nThe following skills were preloaded by the toolkit hook. "
+            "Treat each as an active skill for this whole session - no Skill tool "
+            "invocation needed.\n\n" + "\n\n".join(sections)
+        )
     return context, loaded, missing
 
 

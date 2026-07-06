@@ -29,17 +29,6 @@
         ]
       },
       {
-        "matcher": "startup|resume|clear|compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 $HOME/.claude/hooks/preload-skills.py",
-            "timeout": 10,
-            "statusMessage": "Preloading skills..."
-          }
-        ]
-      },
-      {
         "hooks": [
           {
             "type": "command",
