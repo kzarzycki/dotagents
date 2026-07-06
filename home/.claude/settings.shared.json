@@ -1,5 +1,6 @@
 {
   "cleanupPeriodDays": 999999,
+  "claudeInChromeDefaultEnabled": false,
   "env": {
     "BRIDGE_TLS": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
@@ -49,6 +50,17 @@
             "type": "command",
             "command": "bash $HOME/.dotagents/patches/dev-marketplace/apply.sh",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 $HOME/.claude/hooks/toolkit.py",
+            "timeout": 10,
+            "statusMessage": "Applying toolkit..."
           }
         ]
       }

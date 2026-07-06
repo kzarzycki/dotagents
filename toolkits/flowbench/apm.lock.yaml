@@ -1,0 +1,42 @@
+lockfile_version: '1'
+generated_at: '2026-07-06T08:36:19.711667+00:00'
+apm_version: 0.23.1
+dependencies:
+- repo_url: anthropics/skills
+  name: skills
+  host: github.com
+  resolved_commit: 9d2f1ae187231d8199c64b5b762e1bdf2244733d
+  version: unknown
+  virtual_path: skills/frontend-design
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/frontend-design
+  - .agents/skills/frontend-design/LICENSE.txt
+  - .agents/skills/frontend-design/SKILL.md
+  - .claude/skills/frontend-design
+  - .claude/skills/frontend-design/LICENSE.txt
+  - .claude/skills/frontend-design/SKILL.md
+  deployed_file_hashes:
+    .agents/skills/frontend-design/LICENSE.txt: sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594
+    .agents/skills/frontend-design/SKILL.md: sha256:1608ea77fbb6fc30d13a97d12cfa8ebf31358d40f0dd97beed24829d6b3f45dd
+    .claude/skills/frontend-design/LICENSE.txt: sha256:0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594
+    .claude/skills/frontend-design/SKILL.md: sha256:1608ea77fbb6fc30d13a97d12cfa8ebf31358d40f0dd97beed24829d6b3f45dd
+  content_hash: sha256:4eabc66183767153e404b39d1b839b1c37f2d82d86f0a0d7e880a579d8d62336
+mcp_servers:
+- perplexity
+mcp_configs:
+  perplexity:
+    name: perplexity
+    transport: stdio
+    env:
+      PERPLEXITY_API_KEY: ${env:PERPLEXITY_API_KEY}
+    args:
+    - -y
+    - '@perplexity-ai/mcp-server'
+    registry: false
+    command: npx
+local_deployed_files:
+- .claude/rules/flowbench.md
+local_deployed_file_hashes:
+  .claude/rules/flowbench.md: sha256:42b7b172d221b1e00b0f16b3c58130a42483890694750d2137025ed0d24cb329

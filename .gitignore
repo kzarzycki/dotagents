@@ -2,6 +2,8 @@
 **/*.local.*
 **/.env*
 **/settings.local.json
+home/.agents/mcp-registry.local.json
+**/mcp-registry.local.json
 
 # Claude's runtime settings file lives only at ~/.claude/settings.json;
 # the committed sources are settings.shared.json + settings.<profile>.json

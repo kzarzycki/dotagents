@@ -1,0 +1,7 @@
+{
+  "plugins": null,
+  "preloadSkills": ["communicating-in-mdx", "memsearch:memory-recall"],
+  "mcp": ["todoist", "gemini-cli", "perplexity", "tavily", "exa", "browser-local", "cookidoo"],
+  "skills": ["gog-photos", "grill-me", "wrapping-up", "brave-automation"],
+  "claudeInChrome": true
+}

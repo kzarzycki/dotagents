@@ -1,0 +1,69 @@
+{
+  "perplexity": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["-y", "@perplexity-ai/mcp-server"],
+    "env": {}
+  },
+  "todoist": {
+    "type": "http",
+    "url": "https://ai.todoist.net/mcp"
+  },
+  "microsoft-docs": {
+    "type": "http",
+    "url": "https://learn.microsoft.com/api/mcp"
+  },
+  "office-js-docs": {
+    "type": "http",
+    "url": "https://gitmcp.io/OfficeDev/office-js-docs-pr"
+  },
+  "office-js-reference": {
+    "type": "http",
+    "url": "https://gitmcp.io/OfficeDev/office-js-docs-reference"
+  },
+  "gemini-cli": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["-y", "gemini-mcp-tool"],
+    "env": {}
+  },
+  "tavily": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["-y", "tavily-mcp"],
+    "env": {}
+  },
+  "exa": {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["-y", "exa-mcp-server", "--tools=web_search_exa,crawling,deep_researcher_start,deep_researcher_check"],
+    "env": {}
+  },
+  "cookidoo": {
+    "type": "http",
+    "url": "https://cookidoo.zarz.net/mcp"
+  },
+  "browser-local": {
+    "type": "http",
+    "url": "https://browser-local.zarz.net/mcp",
+    "headers": {
+      "CF-Access-Client-Id": "${env:BROWSER_LOCAL_CF_ACCESS_CLIENT_ID}",
+      "CF-Access-Client-Secret": "${env:BROWSER_LOCAL_CF_ACCESS_CLIENT_SECRET}"
+    }
+  },
+  "minecraft": {
+    "type": "stdio",
+    "command": "npx",
+    "args": [
+      "-y",
+      "github:yuniko-software/minecraft-mcp-server",
+      "--host",
+      "localhost",
+      "--port",
+      "25565",
+      "--username",
+      "ClaudeBot"
+    ],
+    "env": {}
+  }
+}
