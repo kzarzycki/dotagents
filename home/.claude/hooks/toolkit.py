@@ -23,7 +23,9 @@ import re
 import sys
 
 HOME = os.path.expanduser("~")
-TOOLKITS_DIR = os.environ.get("AGENTS_TOOLKITS_DIR", os.path.join(HOME, "dev", "dotagents", "toolkits"))
+# repo root derived from this file's real location (home/.claude/hooks/toolkit.py)
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
+TOOLKITS_DIR = os.environ.get("AGENTS_TOOLKITS_DIR", os.path.join(_REPO_ROOT, "toolkits"))
 SKILLS_POOL = os.path.join(TOOLKITS_DIR, "_skills")
 REGISTRY_PATH = os.path.join(HOME, ".agents", "mcp-registry.json")
 REGISTRY_LOCAL_PATH = os.path.join(HOME, ".agents", "mcp-registry.local.json")
@@ -420,12 +422,27 @@ def main():
         hook_input = {}
     cwd = hook_input.get("cwd") or os.getcwd()
 
-    project_root = find_toolkit_file(cwd)
-    if project_root:
-        with open(os.path.join(project_root, ".agents-toolkit"), encoding="utf-8") as f:
+    pointer_dir = find_toolkit_file(cwd)
+    if pointer_dir:
+        with open(os.path.join(pointer_dir, ".agents-toolkit"), encoding="utf-8") as f:
             names = parse_toolkit_names(f.read()) or ["base"]
     else:
         names = ["base"]  # unbound dir: no project to materialize into, inject base context only
+
+    # The pointer may sit in a parent group dir (folder-level default), but
+    # Claude Code only reads .mcp.json/.claude at the session's project root:
+    # the git toplevel of cwd, or cwd itself outside a repo.
+    project_root = None
+    if pointer_dir:
+        import subprocess
+        try:
+            r = subprocess.run(["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+                               capture_output=True, text=True, timeout=5)
+            top = r.stdout.strip()
+        except Exception:
+            top = ""
+        # a repo above the pointer dir (e.g. ~/dev itself) is not the project
+        project_root = top if top and top.startswith(pointer_dir.rstrip("/")) else cwd
 
     loaded_toolkits = []
     for n in names:
