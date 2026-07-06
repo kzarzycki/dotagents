@@ -1,0 +1,6 @@
+{
+  "plugins": ["superpowers@claude-plugins-official", "memsearch@memsearch-plugins"],
+  "preloadSkills": ["memsearch:memory-recall"],
+  "mcp": ["microsoft-docs", "perplexity"],
+  "skills": ["grill-me", "wrapping-up"]
+}

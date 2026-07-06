@@ -1,0 +1,4 @@
+{
+  "plugins": ["research@dev"],
+  "mcp": ["perplexity", "tavily", "exa", "gemini-cli"]
+}

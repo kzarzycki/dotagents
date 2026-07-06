@@ -2,8 +2,9 @@
 """SessionStart hook: materialize + inject a project's toolkit (see
 docs/proposals/toolkits.md, Option A / Layer 3).
 
-Reads `.agents-toolkit` (walking up from cwd) to find the toolkit name, loads
-`toolkits/<name>/{toolkit.json,CLAUDE.md}` from the dotagents checkout, and:
+Reads `.agents-toolkit` (walking up from cwd) to find one or more whitespace-
+separated toolkit names, loads each `toolkits/<name>/{toolkit.json,CLAUDE.md}`
+from the dotagents checkout, merges them left-to-right, and:
 
   - materializes gitignored project files (.claude/settings.local.json,
     .mcp.json, .codex/config.toml) when the toolkit definition's hash has
@@ -123,6 +124,44 @@ def find_toolkit_file(start):
         if parent == d:
             return None
         d = parent
+
+
+def parse_toolkit_names(content):
+    """Whitespace-separated toolkit names, one or more per line; '#' starts a
+    comment, blank lines ignored."""
+    names = []
+    for line in content.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            names.extend(line.split())
+    return names
+
+
+def merge_toolkit_json(tjsons):
+    """Merge toolkit.json dicts left-to-right. List keys (plugins, mcp,
+    skills, preloadSkills) union preserving order, skipping duplicates; if
+    every toolkit has plugins=null the result is null. Other keys: later
+    toolkit wins (only among toolkits that define the key)."""
+    list_keys = ("plugins", "mcp", "skills", "preloadSkills")
+    merged = {}
+    for key in list_keys:
+        values = [t.get(key) for t in tjsons]
+        if all(v is None for v in values):
+            merged[key] = None
+            continue
+        union, seen = [], set()
+        for v in values:
+            for item in v or []:
+                if item not in seen:
+                    seen.add(item)
+                    union.append(item)
+        merged[key] = union
+    other_keys = {k for t in tjsons for k in t} - set(list_keys)
+    for key in other_keys:
+        for t in tjsons:
+            if key in t:
+                merged[key] = t[key]
+    return merged
 
 
 def load_toolkit(name):
@@ -384,15 +423,23 @@ def main():
     project_root = find_toolkit_file(cwd)
     if project_root:
         with open(os.path.join(project_root, ".agents-toolkit"), encoding="utf-8") as f:
-            name = f.read().strip()
+            names = parse_toolkit_names(f.read()) or ["base"]
     else:
-        name = "base"  # unbound dir: no project to materialize into, inject base context only
+        names = ["base"]  # unbound dir: no project to materialize into, inject base context only
 
-    loaded_toolkit = load_toolkit(name)
-    if not loaded_toolkit:
-        print(json.dumps({"systemMessage": f"toolkit: error - '{name}' not found under {TOOLKITS_DIR}"}))
-        return
-    _tdir, tjson_raw, tjson, tmd_path, tmd = loaded_toolkit
+    loaded_toolkits = []
+    for n in names:
+        loaded = load_toolkit(n)
+        if not loaded:
+            print(json.dumps({"systemMessage": f"toolkit: error - '{n}' not found under {TOOLKITS_DIR}"}))
+            return
+        loaded_toolkits.append(loaded)
+
+    name = " ".join(names)
+    tjson_raw = "\n".join(t[1] for t in loaded_toolkits)
+    tjson = merge_toolkit_json([t[2] for t in loaded_toolkits])
+    tmd_path = loaded_toolkits[-1][3]
+    tmd = "\n\n".join(t[4] for t in loaded_toolkits if t[4])
 
     registry = {}
     registry_raw = ""

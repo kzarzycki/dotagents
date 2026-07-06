@@ -1,0 +1,11 @@
+{
+  "plugins": [
+    "superpowers@claude-plugins-official",
+    "code-review@claude-plugins-official",
+    "engineering@kzarzycki-agent-skills",
+    "memsearch@memsearch-plugins"
+  ],
+  "preloadSkills": ["memsearch:memory-recall"],
+  "mcp": ["perplexity"],
+  "skills": ["grill-me", "wrapping-up"]
+}
