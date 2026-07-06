@@ -35,5 +35,6 @@
     "playwright@kzarzycki-agent-skills": false
   },
   "theme": "dark-daltonized",
-  "voiceEnabled": true
+  "voiceEnabled": true,
+  "effortLevel": "medium"
 }
