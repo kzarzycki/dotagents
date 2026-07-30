@@ -35,6 +35,16 @@ Every direct child of `home/` becomes a `~/`-level entry of the same name. The d
 
 Skills are not vendored here. Claude skills come from plugins and marketplaces declared in `home/.claude/settings.shared.json` and profile overlays.
 
+## Repository development agent layer
+
+The repository root is an APM consumer for work on dotagents itself. Run:
+
+```sh
+mise run agent-sync
+```
+
+The task installs the locked `engineering` capability pack and compiles project configuration for the supported coding agents, currently Claude Code and Codex. Pass `-- --refresh` to resolve a newer compatible release or `-- --frozen` to verify committed state. For each future coding agent, add its target in `apm.yml`, then add its native-output validation and generated-output paths to both frozen checks in `mise.toml`. Root project files stay in this repository; `home/` remains the payload installed under `~/`.
+
 ## Install
 
 First time on a machine:
