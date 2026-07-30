@@ -166,3 +166,8 @@ def test_agent_sync_leaves_home_tree_byte_identical():
         check=True,
     )
     assert tree_digest(ROOT / "home") == before
+
+
+def test_home_configuration_does_not_enable_direct_matt_plugin():
+    for path in (ROOT / "home/.claude").glob("settings.*.json"):
+        assert "mattpocock-skills" not in path.read_text(), path
