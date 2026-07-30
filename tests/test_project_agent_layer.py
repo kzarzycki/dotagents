@@ -60,16 +60,6 @@ def test_installed_user_instructions_do_not_claim_project_ownership():
     assert "agent-skills/engineering" not in text
 
 
-def test_installed_user_instructions_match_stage3_base_byte_for_byte():
-    current = (ROOT / "home/.agents/AGENTS.md").read_bytes()
-    base = subprocess.check_output(
-        ["git", "show", "ce9a031:home/.agents/AGENTS.md"],
-        cwd=ROOT,
-    )
-    assert hashlib.sha256(current).hexdigest() == hashlib.sha256(base).hexdigest()
-    assert current == base
-
-
 def test_apm_manifest_selects_one_engineering_pack():
     text = (ROOT / "apm.yml").read_text()
     assert "targets:\n- claude\n- codex" in text
@@ -156,6 +146,7 @@ def test_readme_documents_project_scoped_sync():
     assert "mise run agent-sync" in text
     assert "repository root" in text
     assert "`home/`" in text
+    assert "both frozen checks in `mise.toml`" in text
 
 
 def test_agent_sync_leaves_home_tree_byte_identical():

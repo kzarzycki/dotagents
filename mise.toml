@@ -42,6 +42,7 @@ if [ -z "$agent_targets" ]; then
   exit 2
 fi
 if [ "$mode" = frozen ]; then
+  # Add every implemented coding agent's generated paths to both frozen checks.
   frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- \
     apm.yml apm.lock.yaml .apm AGENTS.md CLAUDE.md \
     ':(glob)**/AGENTS.md' ':(glob)**/CLAUDE.md' \
@@ -68,6 +69,7 @@ apm audit --ci --no-policy
 if [ -f .mcp.json ]; then python3 -m json.tool .mcp.json >/dev/null; fi
 if [ -f .codex/config.toml ]; then python3 -c 'import tomllib; tomllib.load(open(".codex/config.toml", "rb"))'; fi
 if [ "$mode" = frozen ]; then
+  # Add every implemented coding agent's generated paths to both frozen checks.
   frozen_changes="$(git status --porcelain=v1 --untracked-files=all -- \
     apm.yml apm.lock.yaml .apm AGENTS.md CLAUDE.md \
     ':(glob)**/AGENTS.md' ':(glob)**/CLAUDE.md' \
