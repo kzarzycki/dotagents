@@ -35,5 +35,10 @@ home/.claude/plugins/
 # Memsearch runtime (per-repo memory snapshot if memsearch runs inside this dir)
 .memsearch/
 
+# Project coding-agent installed payload and caches
+apm_modules/
+.agents/skills/
+.claude/skills/
+
 # Per-machine profile marker (~/.dotagents-profile is per-machine; not in repo
 # but the .gitignore note documents the convention)
