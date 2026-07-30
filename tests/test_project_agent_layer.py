@@ -7,6 +7,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def tree_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix().encode()
+        digest.update(relative)
+        if path.is_symlink():
+            digest.update(b"link\0")
+            digest.update(path.readlink().as_posix().encode())
+        elif path.is_file():
+            digest.update(b"file\0")
+            digest.update(path.read_bytes())
+        else:
+            digest.update(b"dir\0")
+    return digest.hexdigest()
+
+
+def skill_tree_manifest(root: Path) -> dict[str, str]:
+    return {
+        path.relative_to(root).as_posix(): hashlib.sha256(
+            path.read_bytes()
+        ).hexdigest()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
+
+
 def test_project_agent_layer_is_not_part_of_home_payload():
     forbidden = (
         "apm.yml",
@@ -123,3 +149,20 @@ def test_installed_skill_trees_are_ignored_but_claude_rules_are_tracked():
         cwd=ROOT,
     )
     assert rules.returncode == 1
+
+
+def test_readme_documents_project_scoped_sync():
+    text = (ROOT / "README.md").read_text()
+    assert "mise run agent-sync" in text
+    assert "repository root" in text
+    assert "`home/`" in text
+
+
+def test_agent_sync_leaves_home_tree_byte_identical():
+    before = tree_digest(ROOT / "home")
+    subprocess.run(
+        ["mise", "run", "agent-sync"],
+        cwd=ROOT,
+        check=True,
+    )
+    assert tree_digest(ROOT / "home") == before
