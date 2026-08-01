@@ -184,8 +184,12 @@ def load_toolkit(name):
 
 # --- materialization ---
 
+STAMP_VERSION = "3"  # bump to force re-materialization after hook behavior changes
+
+
 def compute_stamp(tjson_raw, tmd, registry_raw):
     h = hashlib.sha256()
+    h.update(STAMP_VERSION.encode("utf-8"))
     h.update(tjson_raw.encode("utf-8"))
     h.update(tmd.encode("utf-8"))
     h.update(registry_raw.encode("utf-8"))
@@ -283,6 +287,8 @@ def toml_value(v):
         return str(v)
     if isinstance(v, list):
         return "[" + ", ".join(toml_value(x) for x in v) + "]"
+    if isinstance(v, dict):
+        return "{ " + ", ".join(f"{toml_escape(str(k))} = {toml_value(x)}" for k, x in v.items()) + " }"
     raise ValueError(f"unsupported TOML value: {v!r}")
 
 
@@ -313,7 +319,25 @@ def write_codex_config(project_root, mcp_names, registry):
     for name in mcp_names:
         if name not in registry:
             continue
-        server = expand_env_placeholders(registry[name])
+        source = registry[name]
+        if source.get("type") == "http":
+            static_headers = {}
+            env_headers = {}
+            for header, value in source.get("headers", {}).items():
+                match = ENV_PLACEHOLDER_RE.fullmatch(value)
+                if match:
+                    env_headers[header] = match.group(1) or match.group(2)
+                else:
+                    static_headers[header] = expand_env_placeholders(value)
+            lines.append(f"[mcp_servers.{name}]")
+            lines.append(f"url = {toml_value(expand_env_placeholders(source['url']))}")
+            if static_headers:
+                lines.append(f"http_headers = {toml_value(static_headers)}")
+            if env_headers:
+                lines.append(f"env_http_headers = {toml_value(env_headers)}")
+            lines.append("")
+            continue
+        server = expand_env_placeholders(source)
         lines.append(f"[mcp_servers.{name}]")
         for key in ("command", "args"):
             if key in server:

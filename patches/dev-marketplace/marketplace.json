@@ -4,37 +4,37 @@
   "plugins": [
     {
       "name": "playwright",
-      "source": "./agent-skills/playwright",
+      "source": "./agents/agent-skills/playwright",
       "description": "Live working-tree copy of playwright MCP plugin (published as playwright@kzarzycki-agent-skills)"
     },
     {
       "name": "experimental",
-      "source": "./agent-skills/experimental",
+      "source": "./agents/agent-skills/experimental",
       "description": "Live working-tree experimental skills (communicating-in-html, update-delta-audit)"
     },
     {
       "name": "xebia-personal",
-      "source": "./agent-skills-private/xebia-personal",
+      "source": "./agents/agent-skills-private/xebia-personal",
       "description": "Private personal skills (delegacja, playbook-review, submit-monthly-invoice)"
     },
     {
       "name": "workflow",
-      "source": "./agent-skills/workflow",
+      "source": "./agents/agent-skills/workflow",
       "description": "Live working-tree copy of workflow (published as workflow@kzarzycki-agent-skills)"
     },
     {
       "name": "research",
-      "source": "./agent-skills/research",
+      "source": "./agents/agent-skills/research",
       "description": "Live working-tree copy of research (published as research@kzarzycki-agent-skills)"
     },
     {
       "name": "engineering",
-      "source": "./agent-skills/engineering",
+      "source": "./agents/agent-skills/engineering",
       "description": "Live working-tree copy of engineering (published as engineering@kzarzycki-agent-skills)"
     },
     {
       "name": "content",
-      "source": "./agent-skills/content",
+      "source": "./agents/agent-skills/content",
       "description": "Live working-tree copy of content (published as content@kzarzycki-agent-skills)"
     }
   ]

@@ -162,3 +162,16 @@ def test_agent_sync_leaves_home_tree_byte_identical():
 def test_home_configuration_does_not_enable_direct_matt_plugin():
     for path in (ROOT / "home/.claude").glob("settings.*.json"):
         assert "mattpocock-skills" not in path.read_text(), path
+
+
+def test_runtime_artifacts_are_ignored():
+    for path in (
+        ".playwright-cli/session.log",
+        ".work/research.md",
+        "tests/__pycache__/test_toolkit.pyc",
+    ):
+        result = subprocess.run(
+            ["git", "check-ignore", "--no-index", "--quiet", path],
+            cwd=ROOT,
+        )
+        assert result.returncode == 0, path

@@ -91,13 +91,11 @@ Structural rules:
 
 Clean-slate test, per paragraph: would this exist in a one-shot draft by someone who already knew the answer? If it survives only because the conversation debated, corrected, or circled — cut it. Watch for: negative definitions ("X is not Y" left over from rejecting a proposal), defensive justification chains, restatements, worked examples generated to clarify in chat, and the rationale the user attached to a change request — it shapes the change, never gets written alongside it unless explicitly asked. Conclusion in the artifact; argument stays in the transcript. Quoting slop to show what's wrong (in review) is fine — never in your own voice.
 
-## Delegation
+## Delegation and Review
 
-- Heavy reading (unfamiliar repos, SharePoint/OneDrive, log scans, pattern checks) → Explore/research subagent. Keep main context clean of raw tool output.
-- Subagents write large outputs to files in the work-item dir; return path + 1-2 line summary, never the content.
-- Large builds / deep research → orchestrate a team (`Agent({team_name, name, subagent_type, prompt})`, coordinate via `SendMessage`), up to ~10 executors with divided responsibilities. Hand executors chunks, not micro-steps; they spawn their own subagents.
-- When you auto-decide a split, declare it ("Spawning 3 executors: A/B/C — say stop to change"); when decomposition is non-obvious, ask first.
-- Forks may spawn subagents — the "do not spawn subagents" default keeps simple tasks flat, not a hard limit. Spawn when the fork's task needs delegation (independent review, heavy reading, parallel work); use the `/goal` command where possible to hold the work to a verifiable objective until it's met.
+Delegate independent work when parallel execution or context isolation provides a clear benefit; keep dependent work in one execution stream.
+
+After material code changes, use a fresh read-only reviewer with the request, final diff, and verification results. The implementer addresses accepted findings; re-review only when warranted.
 
 ## Working Style
 
@@ -107,6 +105,9 @@ Clean-slate test, per paragraph: would this exist in a one-shot draft by someone
 - Don't create .md files unless explicitly requested in *this* prompt — don't carry the instruction forward. Short agent notes go in CLAUDE.md; human notes in README.md.
 - Assume files are large: check size or read a slice before reading in full.
 - A failing test isn't automatically yours: before calling it a regression or declaring a suite green, reproduce it on the base branch and in isolation — pre-existing flakes (e.g. teardown races) masquerade as your breakage. And `cmd | tail`/`| tee` masks the real exit code; check the actual status, not the pipe's.
+- Shell guards fail silently, then look like "the feature just doesn't run". Under `set -o pipefail`, `producer | grep -q x` can report failure on an early match if the still-writing producer gets SIGPIPE; read into a variable and match with a herestring. zsh does not word-split unquoted variables, so `set -- $pair` assigns the whole string to `$1`. When a guard is load-bearing, run it once under `bash -x` and confirm which branch it actually took.
+- Scheduled jobs on a laptop: a fixed clock time is not a schedule. macOS runs launchd work during DarkWake (seconds long, no network yet), so `StartCalendarInterval` jobs that fetch or take minutes will mostly fail. `StartInterval` doesn't wake the machine and fires once on the next real wake; gate the run on the user actually being present (`pmset -g assertions` holds `Prevent sleep while display is on`).
+- Author date is not push date. `git log -1 --format=%ad` says nothing about when a branch last moved — use the reflog before diagnosing "nothing has been pushed in weeks".
 
 ## Memory (memsearch)
 

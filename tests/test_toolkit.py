@@ -1,5 +1,7 @@
+import json
 import os
 import sys
+import tomllib
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "home", ".claude", "hooks"))
 
@@ -57,6 +59,57 @@ def test_merge_toolkit_json_scalar_kept_if_only_earlier_defines_it():
     overlay = {"plugins": [], "mcp": [], "skills": [], "preloadSkills": []}
     merged = toolkit.merge_toolkit_json([base, overlay])
     assert merged["claudeInChrome"] is True
+
+
+def test_merge_settings_local_disables_global_plugins_outside_toolkit(tmp_path, monkeypatch):
+    user_settings = tmp_path / "user-settings.json"
+    user_settings.write_text(json.dumps({"enabledPlugins": {"global@source": True}}))
+    monkeypatch.setattr(toolkit, "USER_SETTINGS_PATH", str(user_settings))
+
+    path = toolkit.merge_settings_local(str(tmp_path / "project"), ["project@source"])
+
+    assert json.loads(open(path, encoding="utf-8").read())["enabledPlugins"] == {
+        "global@source": False,
+        "project@source": True,
+    }
+
+
+def test_write_codex_config_http_server_gets_url_key(tmp_path):
+    registry = {"todoist": {"type": "http", "url": "https://ai.todoist.net/mcp"}}
+    path = toolkit.write_codex_config(str(tmp_path), ["todoist"], registry)
+    content = open(path, encoding="utf-8").read()
+    assert "[mcp_servers.todoist]" in content
+    assert 'url = "https://ai.todoist.net/mcp"' in content
+
+
+def test_write_codex_config_http_headers_preserve_env_indirection(tmp_path, monkeypatch):
+    monkeypatch.setenv("CF_ID", "secret-that-must-not-be-materialized")
+    monkeypatch.setenv("MCP_HOST", "browser-local.example")
+    registry = {
+        "browser-local": {
+            "type": "http",
+            "url": "https://${env:MCP_HOST}/mcp",
+            "headers": {
+                "CF-Access-Client-Id": "${env:CF_ID}",
+                "X-Client": "dotagents",
+            },
+        }
+    }
+    path = toolkit.write_codex_config(str(tmp_path), ["browser-local"], registry)
+    content = open(path, encoding="utf-8").read()
+    server = tomllib.loads(content)["mcp_servers"]["browser-local"]
+    assert server["url"] == "https://browser-local.example/mcp"
+    assert server["env_http_headers"] == {"CF-Access-Client-Id": "CF_ID"}
+    assert server["http_headers"] == {"X-Client": "dotagents"}
+    assert "secret-that-must-not-be-materialized" not in content
+
+
+def test_write_codex_config_stdio_server_unchanged(tmp_path):
+    registry = {"perplexity": {"type": "stdio", "command": "npx", "args": ["-y", "@perplexity-ai/mcp-server"]}}
+    path = toolkit.write_codex_config(str(tmp_path), ["perplexity"], registry)
+    content = open(path, encoding="utf-8").read()
+    assert "[mcp_servers.perplexity]" in content
+    assert 'command = "npx"' in content
 
 
 def test_parent_pointer_materializes_at_session_git_root(tmp_path):
