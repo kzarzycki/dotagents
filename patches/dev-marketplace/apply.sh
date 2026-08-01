@@ -2,7 +2,7 @@
 # Live-dev linker for the `dev` directory marketplace.
 #
 # The dev marketplace (~/dev/.claude-plugin/marketplace.json) registers plugins
-# from working trees under ~/dev via local "./repo/plugin" sources. For each such
+# from working trees under ~/dev via local "./agents/repo/plugin" sources. For each such
 # plugin that Claude has installed, this symlinks its cache install dir -> the
 # working tree, so editing the plugin + /reload-plugins is enough (no re-copy,
 # no GitHub push).
@@ -66,7 +66,7 @@ market = json.load(open(marketfile))
 plugins = json.load(open(installed)).get("plugins", {})
 for p in market.get("plugins", []):
     name, src = p.get("name"), p.get("source")
-    # local directory sources only ("./repo/plugin"); skip github/object sources
+    # local directory sources only ("./agents/repo/plugin"); skip github/object sources
     if not name or not isinstance(src, str) or not src.startswith("./"):
         continue
     srcdir = os.path.normpath(os.path.join(dev_root, src))
