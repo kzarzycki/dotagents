@@ -35,6 +35,11 @@ home/.claude/plugins/
 # Memsearch runtime (per-repo memory snapshot if memsearch runs inside this dir)
 .memsearch/
 
+# Local research, browser captures, and Python bytecode
+.work/
+.playwright-cli/
+__pycache__/
+
 # Project coding-agent installed payload and caches
 apm_modules/
 .agents/skills/
