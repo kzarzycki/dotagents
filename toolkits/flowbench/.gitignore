@@ -1,9 +1,0 @@
-
-# APM dependencies
-apm_modules/
-# APM install/compile outputs (regenerate with `apm install` / `apm compile`)
-.claude/
-.agents/
-.codex/
-.mcp.json
-AGENTS.md

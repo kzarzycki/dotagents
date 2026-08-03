@@ -4,11 +4,11 @@
     "MEMSEARCH_DIR": "/home/agent/dev/kb/memory"
   },
   "enabledPlugins": {
-    "workflow@dev": true,
-    "research@dev": true,
-    "engineering@dev": true,
-    "content@dev": true,
-    "xebia-personal@kzarzycki-agent-skills-private": true,
+    "workflow@dev": false,
+    "research@dev": false,
+    "engineering@dev": false,
+    "content@dev": false,
+    "xebia-personal@kzarzycki-agent-skills-private": false,
     "workflow@kzarzycki-agent-skills": false,
     "research@kzarzycki-agent-skills": false,
     "engineering@kzarzycki-agent-skills": false,

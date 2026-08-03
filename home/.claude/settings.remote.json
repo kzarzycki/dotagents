@@ -5,6 +5,6 @@
   "enabledPlugins": {
     "memsearch@memsearch-plugins": false,
     "experimental@dev": false,
-    "experimental@kzarzycki-agent-skills": true
+    "experimental@kzarzycki-agent-skills": false
   }
 }

@@ -41,17 +41,6 @@
             "timeout": 10
           }
         ]
-      },
-      {
-        "matcher": "startup|resume|clear|compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 $HOME/.claude/hooks/toolkit.py",
-            "timeout": 10,
-            "statusMessage": "Applying toolkit..."
-          }
-        ]
       }
     ],
     "UserPromptSubmit": [
@@ -136,13 +125,13 @@
   "enabledPlugins": {
     "claude-code-setup@claude-plugins-official": false,
     "claude-md-management@claude-plugins-official": false,
-    "code-review@claude-plugins-official": true,
+    "code-review@claude-plugins-official": false,
     "document-skills@anthropic-agent-skills": false,
     "cli-anything@cli-anything": false,
     "skill-creator@claude-plugins-official": false,
     "codex@openai-codex": false,
     "powerpoint-mcp@powerpoint-mcp": false,
-    "superpowers@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": false,
     "google-workspace@kzarzycki-agent-skills": false,
     "experimental@dev": false,
     "research@kzarzycki-agent-skills": false,
@@ -155,8 +144,8 @@
     "memsearch@memsearch-plugins": true,
     "drawio@365-skills": false,
     "pixelbrowse@pixelrag-plugins": false,
-    "ponytail@ponytail": true,
-    "goal-creator@kzarzycki-agent-skills": true
+    "ponytail@ponytail": false,
+    "goal-creator@kzarzycki-agent-skills": false
   },
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {

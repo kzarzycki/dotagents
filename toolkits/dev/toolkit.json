@@ -1,7 +1,0 @@
-{
-  "plugins": [
-    "superpowers@claude-plugins-official",
-    "code-review@claude-plugins-official",
-    "engineering@kzarzycki-agent-skills"
-  ]
-}
