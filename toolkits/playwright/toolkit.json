@@ -1,4 +1,0 @@
-{
-  "plugins": ["playwright@dev"],
-  "claudeInChrome": true
-}

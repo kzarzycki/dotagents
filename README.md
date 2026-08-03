@@ -25,17 +25,14 @@ dotagents/
     │   ├── settings.shared.json ← config common to every machine
     │   ├── settings.<profile>.json
     │   ├── statusline.sh
-    │   ├── commands/
-    │   ├── hooks/
-    │   │   └── preload-skills.py ← SessionStart skill preloader
-    │   └── preload-skills.txt    ← list of skills to preload every session
+    │   └── commands/
     └── .codex/
         └── AGENTS.md             ← in-repo symlink → ../.agents/AGENTS.md
 ```
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
 
-Skills are not vendored here. Claude skills come from plugins and marketplaces declared in `home/.claude/settings.shared.json` and profile overlays.
+The installed user baseline enables only `memsearch`. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
 
 ## Repository development agent layer
 
@@ -46,6 +43,8 @@ mise run agent-sync
 ```
 
 The task installs the locked `engineering` capability pack and compiles project configuration for the supported coding agents, currently Claude Code and Codex. Pass `-- --refresh` to resolve a newer compatible release or `-- --frozen` to verify committed state. For each future coding agent, add its target in `apm.yml`, then add its native-output validation and generated-output paths to both frozen checks in `mise.toml`. Root project files stay in this repository; `home/` remains the payload installed under `~/`.
+
+MCPs and project skills belong in `apm.yml`, not user-global agent configuration. `agent-sync` compiles only the dependencies declared by the repository. Codex plugins are user-global in the current Codex release and cannot be disabled reliably by project configuration; keep only genuinely universal plugins installed globally. Package project capabilities for APM, or use an isolated `CODEX_HOME` when a plugin cannot be represented as project files.
 
 ## Install
 
@@ -71,7 +70,7 @@ Committed files (e.g. `home/.claude/settings.shared.json` hook commands) referen
 
 ### Profiles (`~/.dotagents-profile`)
 
-Some configuration is machine-class-specific (xebia-only marketplaces and plugins on Mac and on xebia worker machines; nothing extra on a personal VPS). To handle this without per-machine repo forks, dotagents uses profiles:
+Some configuration is machine-class-specific, such as environment variables, local marketplace locations, UI preferences, and remote constraints. To handle this without per-machine repo forks, dotagents uses profiles:
 
 - `home/.claude/settings.shared.json` — config common to every machine.
 - `home/.claude/settings.<profile>.json` — per-profile overlay (e.g. `mac`, `vps`, `remote`).
@@ -119,13 +118,13 @@ Requirements: `uv` (https://docs.astral.sh/uv/), running Docker daemon, `python3
 
 ### pixelrag bootstrap (per machine)
 
-`settings.shared.json` declares the `pixelrag-plugins` marketplace and enables `pixelbrowse@pixelrag-plugins` — a skill that screenshots URLs/PDFs with the `pixelshot` binary so Claude reads them visually. The skill shells out to `pixelshot`, which isn't a dotagents symlink, so install it once per machine:
+`settings.shared.json` declares the optional `pixelrag-plugins` marketplace but leaves `pixelbrowse@pixelrag-plugins` disabled globally. A project that enables it also needs the `pixelshot` binary installed once per machine:
 
 ```sh
 ~/.dotagents/patches/pixelrag/bootstrap.sh
 ```
 
-It `uv tool install pixelrag` (isolated env — not the README's global `pip install`). Idempotent. Requires `uv`. Until it runs, the plugin loads but the skill can't capture anything.
+It runs `uv tool install pixelrag` in an isolated environment. Idempotent; requires `uv`.
 
 `pixelshot`'s default `cdp` backend launches its own headless browser from `$CHROME_PATH`; its bundled auto-download is linux-x64 only, so on macOS `home/.agents/env.sh` points `CHROME_PATH` at an installed Brave/Chrome (open a new shell after install), and on linux-x64 it self-provisions on first run.
 
@@ -136,26 +135,20 @@ It `uv tool install pixelrag` (isolated env — not the README's global `pip ins
 1. Symlinks `~/dev/.claude-plugin/marketplace.json` to the repo-tracked copy at `patches/dev-marketplace/marketplace.json` — the marketplace definition is versioned here, not a loose machine-local file.
 2. For every installed `<name>@dev` plugin with a local `./agents/repo/plugin` source, symlinks its plugin-cache install dir to the working tree under `~/dev` — editing the plugin source plus `/reload-plugins` is enough, no re-copy or push.
 
-To add a plugin: add its `./agents/repo/plugin` entry to `patches/dev-marketplace/marketplace.json`, enable `<name>@dev` in the profile overlay. The hook is a silent no-op on machines without `~/dev` or without the plugin's source repo.
-
-### Skill preloading (always-on skills)
-
-Claude Code loads a skill's full SKILL.md only when the model decides to invoke it — there is no native "always load" flag. For skills that must be active from turn 1 in every session (e.g. `communicating-in-html`), `home/.claude/settings.shared.json` wires a SessionStart hook (matcher `startup|resume|clear|compact`, so content is re-injected after `/clear` and compaction) that runs `home/.claude/hooks/preload-skills.py`. The script reads `home/.claude/preload-skills.txt` (installed as `~/.claude/preload-skills.txt`), resolves each entry to a SKILL.md, and injects the contents as `additionalContext`, marked as active skills with their base directory — so progressive disclosure is preserved: only SKILL.md enters context, `references/` and `assets/` are read on demand.
-
-Entry forms in `preload-skills.txt`: bare skill name (searched in `~/.claude/skills/` and all plugin marketplaces + cache, newest copy by mtime wins), `plugin:skill-name`, or an absolute/`~` path to a skill dir. Duplicate names load once — first entry wins, so list a machine-specific dev checkout before a portable fallback name. Fail-safe: entries that don't resolve on a machine are skipped, and every session start prints a `preload-skills: loaded: ... / NOT FOUND (skipped): ...` note. Keep total preloaded content under ~9.5KB; Claude Code diverts hook output above 10KB to a file instead of context (the script warns when exceeded).
+To add a plugin: add its `./agents/repo/plugin` entry to `patches/dev-marketplace/marketplace.json`, then enable `<name>@dev` in the consuming project's Claude settings. The hook is a silent no-op on machines without `~/dev` or without the plugin's source repo.
 
 ### Remote sessions (Claude Code on the web)
 
-Cloud sessions run in an ephemeral container, so dotagents re-applies itself per container build. The `remote` profile plus `bin/remote-setup.sh` make a fresh container come up with full desktop parity — same plugins, hooks, statusline, model, permissions — adapted only where the container can't comply.
+Cloud sessions run in an ephemeral container, so dotagents re-applies the user baseline per container build. Project capabilities remain the repository's responsibility.
 
-**How it fits together.** The harness runs the environment's setup script *before* Claude Code launches. `bin/remote-setup.sh` runs `dotagents install --profile remote` there, writing `~/.claude/settings.json` before Claude Code reads it. Claude Code then auto-installs every `enabledPlugins` entry from the declared `extraKnownMarketplaces` on session start (declarative — no `claude plugin install` calls), and wires the SessionStart hooks, statusline, and `env`. dotagents only writes user-scope `~/.claude/settings.json`; the harness keeps its own git-identity / stop-gate hooks in a separate layer, and Claude Code *merges* `hooks` across layers rather than overriding, so both run.
+**How it fits together.** The harness runs the environment's setup script before Claude Code launches. `bin/remote-setup.sh` runs `dotagents install --profile remote`, writing user-scope settings and hooks. The repository setup installs and compiles its own APM dependencies. The harness keeps git-identity and stop-gate hooks in a separate layer; Claude Code merges hooks across layers.
 
-**The `remote` profile (`settings.remote.json`)** keeps everything from `shared` — model pin, auto-permissions, tmux teammates, private marketplaces — and deviates only where the container physically can't comply: `memsearch` off (ephemeral container has no persistent Milvus to remember into) and `experimental@dev` off (no `~/dev` live-dev tree), with `experimental@kzarzycki-agent-skills` enabled as the public source for those same skills. It sets `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` so marketplace clones use HTTPS. The shared `patches/memsearch` and `patches/dev-marketplace` SessionStart hooks stay wired but self-guard to a silent no-op when their infra is absent.
+**The `remote` profile (`settings.remote.json`)** disables `memsearch` because the container has no persistent Milvus store. It also disables local development plugins and sets `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1`. Shared bootstrap hooks stay wired but self-guard to a silent no-op when their infrastructure is absent.
 
 **Delivery — private repos need the harness credential.** A fresh container can clone *public* GitHub repos directly (the default **Trusted** network policy allowlists `github.com`), so public marketplace plugins install with no extra config. A *private* repo can only be cloned with the scoped credential the harness wires for repos **added to the environment** — a plain `git clone` or `raw.githubusercontent` fetch of a private repo fails in the sandbox. So:
 
 - Add **`kzarzycki/dotagents`** to the environment's repositories — the harness checks it out into the workspace, and `remote-setup.sh` finds and installs from that checkout.
-- Add **`kzarzycki/agent-skills-private`** too, so the `comms-personal` / `voice-personal` plugins can clone+install at session start. Without it those two may silently fail to install.
+- Add any private capability repository referenced by the project's `apm.yml`.
 
 Then paste this into the environment's **Setup script** field (Claude Code on the web → environment settings):
 
@@ -165,7 +158,7 @@ bash "$(ls -d "$HOME"/*/dotagents/bin/remote-setup.sh /home/*/dotagents/bin/remo
 
 `remote-setup.sh` is idempotent: it ensures `jq`, finds the dotagents checkout, then runs `dotagents install --profile remote`. The setup script's filesystem is snapshotted and reused, so later sessions start instantly — but it only re-runs when you edit the environment or the snapshot expires (~7 days), never on resume.
 
-**Per-session freshness.** Because the setup step is cached, a SessionStart hook (`patches/remote/refresh.sh`, gated on `$CLAUDE_CODE_REMOTE`) runs `git pull --ff-only` on `~/.dotagents` each session, so pushes to AGENTS.md / commands / preloaded skills land without a container rebuild — those resolve through symlinks into the repo. New *plugins* or `settings.json` changes still need a rebuild (Claude Code reads settings once at launch and doesn't hot-load plugins).
+**Per-session freshness.** Because the setup step is cached, a SessionStart hook (`patches/remote/refresh.sh`, gated on `$CLAUDE_CODE_REMOTE`) runs `git pull --ff-only` on `~/.dotagents` each session. User instruction and command changes resolve through symlinks; settings changes need a rebuild because Claude Code reads them at launch.
 
 **Configure once.** Environments are reusable across sessions; set this one as the `--remote` default with `/remote-env` in your terminal.
 
