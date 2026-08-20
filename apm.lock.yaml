@@ -304,7 +304,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:7255b6bdfd3ff25c6427cab1978ba6dfedfe5dfc8a5ace04d57df0e88dfe0735
+  content_hash: sha256:ece97c233ebd3573e0248f448b4a67090090e362f17a01b36aadc8faba42cae8
 - kind: project-relative
   target: claude
   value: .claude/skills/ask-matt
@@ -1748,4 +1748,4 @@ deployments:
 local_deployed_files:
 - .claude/rules/project.md
 local_deployed_file_hashes:
-  .claude/rules/project.md: sha256:7255b6bdfd3ff25c6427cab1978ba6dfedfe5dfc8a5ace04d57df0e88dfe0735
+  .claude/rules/project.md: sha256:ece97c233ebd3573e0248f448b4a67090090e362f17a01b36aadc8faba42cae8

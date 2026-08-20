@@ -8,6 +8,14 @@ set -eu
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
+# Git hooks run non-interactive, so a shell that activates mise per-session
+# leaves its shims off PATH and every tool check below skips. Append (never
+# prepend) so a real system install always wins.
+if [ -d "$HOME/.local/share/mise/shims" ]; then
+  PATH="$PATH:$HOME/.local/share/mise/shims"
+  export PATH
+fi
+
 # Staged files being added/copied/modified (not deletions).
 staged=$(git diff --cached --name-only --diff-filter=ACM)
 

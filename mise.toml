@@ -1,4 +1,5 @@
 [tools]
+gitleaks = "8"
 python = "3.14"
 "github:microsoft/apm" = "0.26.0"
 
