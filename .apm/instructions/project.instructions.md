@@ -42,15 +42,3 @@ HOME=/tmp/dotagents-test bin/dotagents install --no-pull
 2. If the agent has a per-user behavioral file, make it an in-repo symlink to `../.agents/AGENTS.md` (adjust the `..` depth for nested locations).
 3. Update `README.md` if the addition changes user-facing instructions.
 4. Sandbox-test the install. Confirm the agent's expected files land at the right `~/`-paths.
-
-## Scope boundaries
-
-`home/` contains user- and machine-scope configuration installed under `~/`.
-Repository-root agent configuration serves dotagents development and follows the
-same APM and mise contract as other projects.
-
-The installed `home/` payload excludes:
-
-- project-scoped agent state, generated targets, and dependency locks;
-- cloud or remote project-session state;
-- copied skill payloads.
