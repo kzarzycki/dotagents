@@ -228,5 +228,6 @@
   "skipWorkflowUsageWarning": true,
   "verbose": false,
   "autoCompactEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "outputStyle": "Concise"
 }
