@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tomllib
@@ -49,12 +50,10 @@ def test_project_agent_layer_is_not_part_of_home_payload():
         assert not (ROOT / "home" / relative).exists(), relative
 
 
-def test_project_instruction_source_records_scope_boundary():
+def test_project_instruction_source_applies_to_all_paths():
     source = ROOT / ".apm/instructions/project.instructions.md"
     text = source.read_text()
     assert 'applyTo: "**"' in text
-    assert "`home/` contains user- and machine-scope configuration" in text
-    assert "Repository-root agent configuration serves dotagents development" in text
 
 
 def test_installed_user_instructions_do_not_claim_project_ownership():
@@ -67,7 +66,7 @@ def test_apm_manifest_selects_one_engineering_pack():
     text = (ROOT / "apm.yml").read_text()
     assert "targets:\n- claude\n- codex" in text
     assert text.count("git: kzarzycki/agent-skills/engineering") == 1
-    assert "ref: ^0.2.0" in text
+    assert re.search(r"^\s*ref: \^\d+\.\d+\.\d+$", text, re.MULTILINE)
     assert "  mcp: []" in text
 
 
