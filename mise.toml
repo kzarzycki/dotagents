@@ -1,5 +1,6 @@
 [tools]
 gitleaks = "8"
+"pipx:pytest" = "8"
 python = "3.14"
 "github:microsoft/apm" = "0.26.0"
 
@@ -83,3 +84,7 @@ if [ "$mode" = frozen ]; then
   fi
 fi
 """
+
+[tasks.test]
+description = "Run the project test suite."
+run = "pytest -q"
