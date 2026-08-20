@@ -175,7 +175,18 @@ def test_home_configuration_does_not_enable_direct_matt_plugin():
         assert "mattpocock-skills" not in path.read_text(), path
 
 
-def test_home_claude_global_plugin_allowlist_is_memory_only():
+# A plugin may be enabled for every machine only when its scope is the user, not
+# a project: memory that follows you across repos, or a behavioral disposition
+# about how you want code written. Capability -- tools, MCP servers, domain
+# knowledge -- stays with the project that needs it, via that project's APM
+# manifest. Adding to this set means arguing the plugin carries no capability.
+USER_SCOPED_PLUGINS = {
+    "memsearch@memsearch-plugins",  # memory: your history, every repo
+    "ponytail@ponytail",  # disposition: prefer the simplest thing that works
+}
+
+
+def test_home_claude_global_plugins_are_user_scoped_only():
     settings = sorted((ROOT / "home/.claude").glob("settings.*.json"))
     for path in settings:
         enabled = {
@@ -185,11 +196,11 @@ def test_home_claude_global_plugin_allowlist_is_memory_only():
             .items()
             if value
         }
-        assert enabled <= {"memsearch@memsearch-plugins"}, path
+        assert enabled <= USER_SCOPED_PLUGINS, path
     shared = json.loads((ROOT / "home/.claude/settings.shared.json").read_text())
     assert {
         name for name, value in shared["enabledPlugins"].items() if value
-    } == {"memsearch@memsearch-plugins"}
+    } == USER_SCOPED_PLUGINS
 
 
 def test_install_removes_retired_toolkit_symlinks(tmp_path):
