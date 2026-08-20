@@ -26,13 +26,15 @@ dotagents/
     │   ├── settings.<profile>.json
     │   ├── statusline.sh
     │   └── commands/
-    └── .codex/
-        └── AGENTS.md             ← in-repo symlink → ../.agents/AGENTS.md
+    ├── .codex/
+    │   └── AGENTS.md             ← in-repo symlink → ../.agents/AGENTS.md
+    └── .config/
+        └── ponytail/            ← machine-wide default intensity (lite)
 ```
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
 
-The installed user baseline enables only `memsearch`. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
+The installed user baseline enables only user-scoped plugins: `memsearch` (memory that follows you across repos) and `ponytail` (a disposition about how code gets written). Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
 
 ## Repository development agent layer
 
