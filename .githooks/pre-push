@@ -1,0 +1,69 @@
+#!/bin/sh
+# dotagents pre-push. This repo has no CI, so this is the only place the test
+# suite and the APM frozen check actually run — a push is the last point where
+# breakage is still cheap to fix. Enabled per-clone via core.hooksPath, which
+# `bin/dotagents install` sets automatically.
+#   Bypass:  git push --no-verify
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+# Git hooks run non-interactive, so a shell that activates mise per-session
+# leaves its shims off PATH. Append (never prepend) so a real install wins.
+if [ -d "$HOME/.local/share/mise/shims" ]; then
+  PATH="$PATH:$HOME/.local/share/mise/shims"
+  export PATH
+fi
+
+# stdin: "<local ref> <local sha> <remote ref> <remote sha>" per ref pushed.
+pushing=0
+force_frozen=0
+changed=""
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  # An all-zero local sha is a branch deletion — nothing to verify.
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac
+  pushing=1
+  case "$remote_sha" in
+    # Known remote tip: only the paths this push actually publishes matter.
+    *[!0]*) changed="$changed
+$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || true)" ;;
+    # New remote branch: no baseline to diff against, so check everything.
+    *) force_frozen=1 ;;
+  esac
+done
+
+[ "$pushing" = 1 ] || exit 0
+
+fail=0
+
+# 1. Test suite. Fast enough to run on every push; the only thing standing
+#    between a bad commit and origin.
+if command -v pytest >/dev/null 2>&1; then
+  echo "pre-push: running test suite..." >&2
+  if ! pytest -q; then
+    echo "pre-push: tests failed — push blocked (override: git push --no-verify)." >&2
+    fail=1
+  fi
+else
+  echo "pre-push: pytest not installed — skipping tests (run 'mise install')." >&2
+fi
+
+# 2. APM frozen check: verifies the committed lock and generated agent files
+#    match their sources. Costs ~20s and can only fail on these paths, so it is
+#    gated on them rather than run every push.
+# Mirrors the pathspec that `mise run agent-sync --frozen` actually inspects.
+apm_paths='(^\.apm/|^apm\.yml$|^apm\.lock\.yaml$|(^|/)(AGENTS|CLAUDE)\.md$|^\.agents/|^\.claude/|^\.codex/|^\.github/instructions/)'
+if [ "$force_frozen" = 1 ] || printf '%s\n' "$changed" | grep -qE "$apm_paths"; then
+  if command -v mise >/dev/null 2>&1; then
+    echo "pre-push: APM paths in this push — verifying frozen agent configuration..." >&2
+    if ! mise run agent-sync --frozen; then
+      echo "pre-push: agent configuration out of sync — run 'mise run agent-sync' and commit the result." >&2
+      fail=1
+    fi
+  else
+    echo "pre-push: mise not installed — skipping frozen check (run 'mise install')." >&2
+  fi
+fi
+
+exit "$fail"
