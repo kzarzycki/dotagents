@@ -12,6 +12,11 @@ esac
 # memsearch global memory store
 [ -d "$HOME/dev/kb/memory" ] && export MEMSEARCH_DIR="$HOME/dev/kb/memory"
 
+# herdr: canonical config follows the repo, so prefix/ui settings are identical on
+# every machine. ~/.config/herdr/ stays machine-local (sessions, logs, plugins) —
+# only the config file is tracked. Read at herdr launch, so a new shell suffices.
+[ -f "$HOME/.agents/herdr.toml" ] && export HERDR_CONFIG_PATH="$HOME/.agents/herdr.toml"
+
 # Per-directory agent config profile. Sets CLAUDE_CONFIG_DIR by cwd so every tool
 # that honors it (claude, omnigent, oh-my-pi) shares one config home per project
 # group. Outside a group the var is unset → tools use their own default ~/.claude,
