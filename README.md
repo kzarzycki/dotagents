@@ -130,6 +130,16 @@ It runs `uv tool install pixelrag` in an isolated environment. Idempotent; requi
 
 `pixelshot`'s default `cdp` backend launches its own headless browser from `$CHROME_PATH`; its bundled auto-download is linux-x64 only, so on macOS `home/.agents/env.sh` points `CHROME_PATH` at an installed Brave/Chrome (open a new shell after install), and on linux-x64 it self-provisions on first run.
 
+### user-global skills bootstrap (per machine)
+
+dotagents does not vendor skills (the install skip-list and a test forbid `home/.claude/skills`); capability stays with its source repo. The few *user-global* skills that should follow you everywhere are installed from their source repos via the `skills` CLI, so `skills update` keeps working. Run once per machine:
+
+```sh
+~/.dotagents/patches/skills/bootstrap.sh
+```
+
+Installs `herdr` (control the Herdr multiplexer; upstream `herdrdev/herdr`) and `orchestrating-agents` (Herdr vs SendMessage vs tmux decision guide; first-party, `kzarzycki/agent-skills` experimental pack). Idempotent; requires `npx`. Herdr's *config* travels separately: `home/.agents/herdr.toml` is tracked and `env.sh` points `HERDR_CONFIG_PATH` at it, so the prefix/UI settings are identical everywhere while `~/.config/herdr/` runtime stays machine-local. Project skills still come from each project's APM manifest, not here.
+
 ### dev marketplace (live local plugins)
 
 `home/.claude/settings.shared.json` declares a `dev` directory marketplace at `~/dev` and wires a SessionStart hook that runs `patches/dev-marketplace/apply.sh`, which:
