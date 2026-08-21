@@ -9,10 +9,13 @@ repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
 # Git hooks run non-interactive, so a shell that activates mise per-session
-# leaves its shims off PATH and every tool check below skips. Append (never
-# prepend) so a real system install always wins.
+# leaves its shims off PATH and every tool check below skips. Prepend, so the
+# versions pinned in mise.toml win: appending lets any system install shadow
+# them (a brew apm regenerating AGENTS.md with its own version stamp is enough
+# to fail the frozen check below), and a hook that verifies this repo must use
+# this repo's toolchain.
 if [ -d "$HOME/.local/share/mise/shims" ]; then
-  PATH="$PATH:$HOME/.local/share/mise/shims"
+  PATH="$HOME/.local/share/mise/shims:$PATH"
   export PATH
 fi
 
