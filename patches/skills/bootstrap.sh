@@ -21,8 +21,17 @@ if ! command -v npx >/dev/null 2>&1; then
 fi
 
 echo "[skills-bootstrap] installing user-global skills..."
-npx --yes skills add herdrdev/herdr --skill herdr -g -y
-npx --yes skills add kzarzycki/agent-skills --skill orchestrating-agents -g -y --full-depth
+
+# One unavailable skill must not abort the rest: `skills add` exits non-zero when
+# a --skill name is missing upstream (unmerged, renamed, moved), and under set -e
+# that would skip every later install. Warn and continue instead.
+add() {
+  npx --yes skills add "$@" -g -y ||
+    echo "[skills-bootstrap] WARN: skipped 'skills add $*' -- not available upstream" >&2
+}
+
+add herdrdev/herdr --skill herdr
+add kzarzycki/agent-skills --skill orchestrating-agents --full-depth
 
 echo "[skills-bootstrap] done. Installed global skills:"
 npx --yes skills list -g 2>/dev/null || true

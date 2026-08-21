@@ -9,6 +9,16 @@ case ":$PATH:" in
   *) export PATH="$HOME/.local/bin:$PATH" ;;
 esac
 
+# mise global tools (e.g. herdr). mise is not shell-activated here, so its shims
+# dir is the only way `mise use -g` tools resolve by name in an interactive shell.
+# Append, never prepend, so a real system install always wins over a shim.
+if [ -d "$HOME/.local/share/mise/shims" ]; then
+  case ":$PATH:" in
+    *":$HOME/.local/share/mise/shims:"*) ;;
+    *) export PATH="$PATH:$HOME/.local/share/mise/shims" ;;
+  esac
+fi
+
 # memsearch global memory store
 [ -d "$HOME/dev/kb/memory" ] && export MEMSEARCH_DIR="$HOME/dev/kb/memory"
 
