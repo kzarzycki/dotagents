@@ -406,12 +406,18 @@ for agent_dir in "$SRC"/*/; do
 done
 
 # 3.5 Shell rc hook. Tools linked above need env vars/PATH in every shell;
-# ~/.agents/env.sh carries those extensions, and each interactive rc file gets
-# a single source line appended once. The rc files themselves stay
-# machine-owned — never symlinked or rewritten.
+# ~/.agents/env.sh carries those extensions, and each rc file gets a single
+# source line appended once. The rc files themselves stay machine-owned —
+# never symlinked or rewritten.
+#
+# ~/.profile is in the list for GUI-launched agent apps. They inherit the bare
+# launchd environment (PATH=/usr/bin:/bin:/usr/sbin:/sbin, nothing else), so a
+# var exported from .zshrc never reaches them. Hermes, for one, snapshots its
+# environment from `bash -l -c` sourcing ~/.profile, ~/.bash_profile, ~/.bashrc
+# — no zsh file is ever read. .profile is the only rc every such app agrees on.
 ENV_SOURCE_LINE='[ -f "$HOME/.agents/env.sh" ] && . "$HOME/.agents/env.sh"  # dotagents'
 rc_found=0
-for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+for rc in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
   [ -f "$rc" ] || continue
   rc_found=1
   if ! grep -Fq '.agents/env.sh' "$rc"; then
@@ -424,7 +430,7 @@ for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
   fi
 done
 if (( ! rc_found )); then
-  printf 'WARNING: no ~/.bashrc or ~/.zshrc found; add manually: %s\n' "$ENV_SOURCE_LINE" >&2
+  printf 'WARNING: no ~/.profile, ~/.bashrc or ~/.zshrc found; add manually: %s\n' "$ENV_SOURCE_LINE" >&2
 fi
 
 # 4. Settings assembly. Claude Code's only user-scope settings file is
