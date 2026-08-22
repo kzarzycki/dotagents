@@ -59,3 +59,9 @@ if [ -z "${CHROME_PATH:-}" ]; then
   done
   unset _b
 fi
+
+# gemini CLI OAuth callback port. gemini picks a free port with a wildcard bind
+# but then serves the callback on 127.0.0.1 — so a loopback-only listener is
+# invisible to the probe and login dies with EADDRINUSE. Pinning a port outside
+# the ephemeral range (49152-65535) sidesteps the probe entirely.
+export OAUTH_CALLBACK_PORT=47563
