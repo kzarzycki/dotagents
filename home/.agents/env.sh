@@ -65,3 +65,9 @@ fi
 # invisible to the probe and login dies with EADDRINUSE. Pinning a port outside
 # the ephemeral range (49152-65535) sidesteps the probe entirely.
 export OAUTH_CALLBACK_PORT=47563
+
+# agent-browser daemons are per-namespace and never exit on their own (upstream
+# default: no idle timeout). A namespace-per-topic caller leaked 64 of them here,
+# each squatting a loopback ephemeral port. 10 min outlives a normal agent turn
+# but reaps anything abandoned.
+export AGENT_BROWSER_IDLE_TIMEOUT_MS=600000
