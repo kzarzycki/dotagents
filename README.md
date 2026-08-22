@@ -28,6 +28,8 @@ dotagents/
     │   └── commands/
     ├── .codex/
     │   └── AGENTS.md             ← in-repo symlink → ../.agents/AGENTS.md
+    ├── .gemini/
+    │   └── GEMINI.md             ← in-repo symlink → ../.agents/AGENTS.md
     └── .config/
         └── ponytail/            ← machine-wide default intensity (lite)
 ```
