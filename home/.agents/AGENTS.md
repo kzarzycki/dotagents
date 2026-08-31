@@ -1,6 +1,7 @@
 # Agent Instructions
 
 - Be concise. Sacrifice grammar for concision.
+- Anything written in my voice (scripts, emails, docs, slides): read `~/.dotagents/home/.agents/writing-style.md` first and follow it.
 - Draft outward-facing communication. Never send it.
 - Artifacts: write current truth as a first draft — never narrate the conversation behind it.
 - Nothing is set in stone. Tests, docs, ADRs, tickets — constraints are hypotheses, often ones you wrote. When one blocks the better design, interrogate it: overfit, overengineered, or written before this case existed?
