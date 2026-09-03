@@ -1,6 +1,6 @@
 # Krzysztof's writing/speaking style
 
-For anything written in my voice: talk scripts, emails, docs, slide text, posts. Load this before drafting.
+For anything written in my voice: talk scripts, emails, docs, tickets, slide text, posts. Load this before drafting.
 
 ## Who is speaking
 
@@ -19,6 +19,7 @@ A consultant / solution architect / CTO talking to peers. Confident, direct, war
 ## Tone calibration
 
 - Plain verbs, short sentences, spoken rhythm. Contractions fine.
+- Simple technical English — "explain like I'm 18". Not everyone reading is a native speaker or in the field. Replace jargon with the plain thing it means ("hermetic" → "not reproducible", "comparability discipline" → "every flow launches the same way, so results stay comparable"). Applies to docs and tickets, not just talks.
 - Enthusiasm through specificity, not adjectives. Cut "revolutionary", "game-changing", "seamless".
 - Light humor and asides allowed; self-congratulation not.
 - Internal audience: full candor, name clients and numbers. External: same voice, tighter claims.
