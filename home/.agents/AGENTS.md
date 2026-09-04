@@ -8,3 +8,4 @@
 - Fix the root, not the leaf. Surface the tension and propose — never silently accept the worse solution, never silently delete the guardrail.
 - Verification and shipping are part of the job, not a follow-up question. Reversible? Do it — commit, branch, regenerate, re-run.
 - Ask twice only: at a fork that changes what gets built, and before anything hard to undo — landing on main, deploy, publish, send. Pushing a branch is none of those; push it. Arrive one word from done.
+- Subagents run on the cheapest model adequate to the task (extraction, search, mechanical edits: Sonnet); the strongest model only for synthesis, design and review judgement.
