@@ -16,3 +16,4 @@
 - If a fix I asked for is in flight, wait for it and rebase; never route around another session's landing work.
 - Record the reasoning for a decision once, in one place (vocabulary or contract text), not narrated across issues.
 - Report the real exit code of every step; a chain's status is the last command's, not the one that mattered.
+- Subagents run on the cheapest model adequate to the task (extraction, search, mechanical edits: Sonnet); the strongest model only for synthesis, design and review judgement.
