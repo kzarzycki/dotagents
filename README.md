@@ -142,6 +142,18 @@ dotagents does not vendor skills (the install skip-list and a test forbid `home/
 
 Installs `herdr` (control the Herdr multiplexer; upstream `herdrdev/herdr`) and `orchestrating-agents` (Herdr vs SendMessage vs tmux decision guide; first-party, `kzarzycki/agent-skills` experimental pack). Idempotent; requires `npx`. Herdr's *config* travels separately: `home/.agents/herdr.toml` is tracked and `env.sh` points `HERDR_CONFIG_PATH` at it, so the prefix/UI settings are identical everywhere while `~/.config/herdr/` runtime stays machine-local. Project skills still come from each project's APM manifest, not here.
 
+### Omnigent (per workspace machine)
+
+Omnigent is a local agent runtime. Its configuration is versioned here as a template, but it runs only on workspace machines (mac/vps) — **not in remote Claude Code sessions** (web / ephemeral containers), which must keep no footprint. There is no plugin, marketplace entry, or SessionStart hook; install it once per workspace machine:
+
+```sh
+~/.dotagents/patches/omnigent/bootstrap.sh
+```
+
+It (a) `uv tool install omnigent` if the `omnigent` CLI isn't already on PATH (no silent upgrade), (b) ensures `~/.omnigent/` (0700) and seeds `~/.omnigent/config.yaml` from `patches/omnigent/config.template.yaml` only if it's missing. omnigent owns the live file — it rewrites the per-machine `host:` block (host_id + hostname) and providers at runtime — so the bootstrap never overwrites an existing config and the file is never symlinked back into the repo. The script no-ops when `CLAUDE_CODE_REMOTE=true`. Idempotent; safe to re-run.
+
+Requirements: `uv` (https://docs.astral.sh/uv/). For the claude/codex/pi harnesses: Python 3.12+, Node.js 22 LTS+ with `npm`, `tmux`, and `bwrap` on Linux (`apt install bubblewrap`) — the script warns about any that are missing rather than failing. After bootstrap, run `omnigent setup` to log in the `claude`/`codex` CLIs and populate credentials. Secrets stay machine-local (OS keychain / `omnigent setup`) and are never committed — the template carries no keys and no host_id.
+
 ### dev marketplace (live local plugins)
 
 `home/.claude/settings.shared.json` declares a `dev` directory marketplace at `~/dev` and wires a SessionStart hook that runs `patches/dev-marketplace/apply.sh`, which:
