@@ -16,6 +16,7 @@ MAGENTA='\033[35m'
 
 # ── Parse JSON fields ─────────────────────────────────────────────────────────
 model=$(echo "$input" | jq -r '.model.display_name // "unknown"')
+effort=$(echo "$input" | jq -r '.effort.level // "auto"')
 session_id=$(echo "$input" | jq -r '.session_id // ""')
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // .cwd // ""')
 used_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty')
@@ -106,6 +107,7 @@ format_reset() {
 
 # ── LINE 1: Model | dir | git | diff | vim | agent | worktree ────────────────
 line1=$(printf "${CYAN}${BOLD}%s${RESET}" "$model")
+line1+=$(printf " ${YELLOW}[%s]${RESET}" "$effort")
 [ -n "$version" ] && line1+=$(printf " ${DIM}v%s${RESET}" "$version")
 line1+=$(printf "  ${DIM}│${RESET}  ${BOLD}%s${RESET}" "$dir_base")
 [ -n "$git_branch" ] && [ "$git_branch" != "HEAD" ] && \
