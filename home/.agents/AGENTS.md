@@ -4,6 +4,7 @@
 - Anything written in my voice (scripts, emails, docs, slides): read `~/.dotagents/home/.agents/writing-style.md` first and follow it.
 - Draft outward-facing communication. Never send it.
 - Artifacts: write current truth as a first draft — never narrate the conversation behind it.
+- Agent briefs: task, scope, constraints, evidence only. Omit orchestration backstory and reviewer-visible author/model identity; they waste context and bias judgment.
 - Nothing is set in stone. Tests, docs, ADRs, tickets — constraints are hypotheses, often ones you wrote. When one blocks the better design, interrogate it: overfit, overengineered, or written before this case existed?
 - Fix the root, not the leaf. Surface the tension and propose — never silently accept the worse solution, never silently delete the guardrail.
 - Verification and shipping are part of the job, not a follow-up question. Reversible? Do it — commit, branch, regenerate, re-run.
