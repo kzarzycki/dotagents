@@ -1,6 +1,6 @@
 lockfile_version: '2'
-generated_at: '2026-08-20T06:34:59.155943+00:00'
-apm_version: 0.26.0
+generated_at: '2026-09-08T12:58:28.459101+00:00'
+apm_version: 0.30.0
 dependencies:
 - repo_url: kzarzycki/agent-skills
   name: engineering
@@ -10,7 +10,7 @@ dependencies:
   version: 0.3.0
   virtual_path: engineering
   is_virtual: true
-  package_type: marketplace_plugin
+  package_type: skill_bundle
   deployed_files:
   - .agents/skills/ask-matt
   - .agents/skills/ask-matt/PHASE-BOUNDARIES.md

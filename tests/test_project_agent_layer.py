@@ -72,8 +72,10 @@ def test_apm_manifest_selects_one_engineering_pack():
 
 def test_mise_exposes_one_public_sync_operation():
     config = tomllib.loads((ROOT / "mise.toml").read_text())
-    assert config["tools"]["github:microsoft/apm"] == "0.26.0"
+    apm_pin = config["tools"]["github:microsoft/apm"]
     sync = config["tasks"]["agent-sync"]
+    # The task's error message must name the pinned version, not a stale one.
+    assert f"apm {apm_pin} is required" in sync["run"]
     assert "--refresh" in sync["usage"]
     assert "--frozen" in sync["usage"]
     assert "apm update --yes" in sync["run"]
