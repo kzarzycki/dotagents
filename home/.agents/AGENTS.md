@@ -17,4 +17,4 @@
 - If a fix I asked for is in flight, wait for it and rebase; never route around another session's landing work.
 - Record the reasoning for a decision once, in one place (vocabulary or contract text), not narrated across issues.
 - Report the real exit code of every step; a chain's status is the last command's, not the one that mattered.
-- Subagents: scale effort, not model. Judgment work (implementing, synthesis, design, review) runs the vendor's strongest model; routine tasks get `low` effort, retried at `high` on a gate failure. Only mechanical work with no judgment call (running suites, extraction, file scans, summarizing logs) drops to Sonnet. Cost per completed task, not per token: strongest-at-`low` solves more and costs less than Sonnet at default.
+- Subagents: scale effort, not model — strongest model at `low` for judgment work; Sonnet only for judgment-free mechanics. Projects own the specifics.
