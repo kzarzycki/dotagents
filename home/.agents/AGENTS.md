@@ -12,9 +12,8 @@
 - Human on the loop, not in it: never ask me to review code. That means gates, deterministic tests (incl. e2e), validation loops, and an independent verifier do the checking; I am the last verifier if at all, async when revertible. I review specs and PRDs only.
 
 - Prove a limitation of an external system with a call before asking me to change anything about it; I am usually right that it worked before.
-- When code looks right but output is wrong, suspect stale data first (rows written before the column or projection existed): rebuild, then diagnose.
 - Landing policy belongs to the project. Follow its instructions for merge criteria and authorization.
 - If a fix I asked for is in flight, wait for it and rebase; never route around another session's landing work.
 - Record the reasoning for a decision once, in one place (vocabulary or contract text), not narrated across issues.
 - Report the real exit code of every step; a chain's status is the last command's, not the one that mattered.
-- Subagents run on the cheapest model adequate to the task (extraction, search, mechanical edits: Sonnet); the strongest model only for synthesis, design and review judgement.
+- Subagents: scale effort, not model — strongest model at `low` for judgment work; Sonnet only for judgment-free mechanics. Projects own the specifics.
