@@ -167,6 +167,11 @@ arm_precommit_hooks() {
         ( cd "$repo" && pre-commit install ${extra[@]+"${extra[@]}"} ) >/dev/null 2>&1 || true
       fi
       run mkdir -p "$repo/.git/hooks"
+      # A `pre-commit install` run over an older guard parked it as .legacy;
+      # pre-commit would keep running that stale copy before ours. Drop it.
+      if [ -f "$hook.legacy" ] && grep -q "dotagents-hook-guard" "$hook.legacy" 2>/dev/null; then
+        run rm "$hook.legacy"
+      fi
       if cp "$guard" "$hook" && chmod +x "$hook"; then
         printf 'HOOKED: %s\n' "$repo"
       else

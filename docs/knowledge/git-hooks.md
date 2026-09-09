@@ -45,3 +45,14 @@ The generated `.git/hooks/pre-commit` bakes in
 `INSTALL_PYTHON=/Users/.../uv/tools/pre-commit/bin/python`. That path is
 machine-specific and breaks in containers/other machines. A portable hook should
 `exec pre-commit hook-impl …` guarded by `command -v pre-commit` only.
+
+## `pre-commit install` over a foreign hook parks it as `<hook>.legacy` and runs it first
+
+`pre-commit install` (no `-f`) moves an existing non-pre-commit `.git/hooks/pre-commit`
+to `pre-commit.legacy` and its generated hook runs that copy, with
+`PRE_COMMIT_RUNNING_LEGACY=1`, before its own `hook-impl`. A legacy hook that itself
+delegates to `pre-commit hook-impl` recurses, and pre-commit aborts the commit with
+"bug: pre-commit's script is installed in migration mode". Any hook that delegates to
+pre-commit must skip that step when `PRE_COMMIT_RUNNING_LEGACY` is set (the guard
+does). Templated projects run `pre-commit install` from their mise postinstall, so
+this happens on every `mise install`, not just by hand.

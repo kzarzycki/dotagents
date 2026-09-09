@@ -33,7 +33,12 @@ if [ -z "$(git config --get core.hooksPath 2>/dev/null || true)" ]; then
 fi
 
 # (2) pre-commit framework delegation (mirrors pre-commit's generated hook).
-if [ -f .pre-commit-config.yaml ]; then
+# Not when pre-commit's own hook is the one that called us: `pre-commit install`
+# over this guard parks it as pre-commit.legacy and runs it with
+# PRE_COMMIT_RUNNING_LEGACY=1 before its own delegation; delegating again from
+# here would recurse and pre-commit aborts the commit ("installed in migration
+# mode"). Section (1) has run; the framework is pre-commit's job in that case.
+if [ -f .pre-commit-config.yaml ] && [ -z "${PRE_COMMIT_RUNNING_LEGACY:-}" ]; then
   ARGS=(hook-impl --config=.pre-commit-config.yaml --hook-type=pre-commit)
   HERE="$(cd "$(dirname "$0")" && pwd)"
   ARGS+=(--hook-dir "$HERE" -- "$@")
