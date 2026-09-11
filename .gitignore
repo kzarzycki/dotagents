@@ -44,3 +44,22 @@ apm_modules/
 
 # Per-machine profile marker (~/.dotagents-profile is per-machine; not in repo
 # but the .gitignore note documents the convention)
+
+# omp (oh-my-pi) runtime state — only config is tracked under home/.omp/
+home/.omp/agent/*.db*
+home/.omp/agent/auth.json
+home/.omp/agent/sessions/
+home/.omp/agent/terminal-sessions/
+home/.omp/agent/blobs/
+home/.omp/agent/cache/
+home/.omp/agent/skills/
+home/.omp/agent/last-changelog-version
+home/.omp/logs/
+home/.omp/run/
+home/.omp/cache/
+home/.omp/natives/
+home/.omp/puppeteer/
+home/.omp/security/
+home/.omp/install-id
+home/.omp/*.json
+home/.omp/*.db*

@@ -1,0 +1,98 @@
+setupVersion: 2
+enabledProviders:
+  - claude
+modelRoles:
+  smol: google-antigravity/gemini-3.8-flash:auto
+  commit: anthropic/claude-opus-5
+  plan: anthropic/claude-fable-5-1:auto
+  task: anthropic/claude-opus-5:auto
+  advisor: anthropic/claude-fable-5-1:auto
+  slow: anthropic/claude-fable-5-1:auto
+  default: anthropic/claude-fable-5-1
+defaultThinkingLevel: auto
+contextPromotion:
+  enabled: false
+compaction:
+  enabled: true
+  thresholdPercent: 75
+  methodOrder:
+    - shake
+    - remote
+    - soft
+  thresholdTokens: 300000
+dev:
+  autoqaConsent: denied
+  autoqa: false
+hideThinkingBlock: true
+composer:
+  shape: band
+retry:
+  waitForUsageReset: true
+  usageAwareFallback: true
+advisor:
+  enabled: true
+  syncBacklog: "1"
+prewalk:
+  enabled: true
+images:
+  urls:
+    backends:
+      - tailscale
+      - cloudflared
+      - litterbox
+    enabled: true
+steeringMode: all
+followUpMode: all
+interruptMode: immediate
+doubleEscapeAction: tree
+treeFilterMode: default
+tools:
+  approvalMode: yolo
+error:
+  notify: "on"
+branchSummary:
+  enabled: true
+providers:
+  webSearchOrder:
+    - anthropic
+    - codex
+    - gemini
+    - public
+    - exa
+  webSearchGeminiModel: gemini-3.8-flash
+startup:
+  checkUpdate: false
+edit:
+  autoRepair:
+    enabled: true
+read:
+  summarize:
+    prose: true
+bash:
+  allowCompoundCommands: true
+python:
+  kernelMode: session
+astGrep:
+  enabled: true
+github:
+  enabled: true
+security:
+  enabled: true
+todo:
+  eager: preferred
+task:
+  eager: preferred
+  enableEffort: true
+  maxRecursionDepth: -1
+  prewalk: true
+  showResolvedModelBadge: true
+display:
+  cacheMissMarker: true
+  showTokenUsage: true
+  showTurnTime: true
+ttsr:
+  enabled: true
+  builtinRules: true
+autolearn:
+  enabled: true
+  autoContinue: true

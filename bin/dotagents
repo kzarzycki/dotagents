@@ -3,10 +3,12 @@
 # Usage:
 #   dotagents install [--no-pull] [--dry-run] [--profile <name>]
 #
-# Install is idempotent. Each direct child of <repo>/home/ becomes a ~/-level
-# entry; for each item inside, a symlink is created at $HOME/<dotdir>/<item>
-# pointing back into the repo. Existing real files at destinations are left
-# alone and reported as conflicts. Local-override patterns are skipped.
+# Install is idempotent. The tree under <repo>/home/ is mirrored into $HOME:
+# directories are recreated as real directories, files are symlinked back into
+# the repo (so home/.omp/agent/config.yml lands at ~/.omp/agent/config.yml
+# without swallowing the live state next to it). Existing real files at
+# destinations are left alone and reported as conflicts. Local-override
+# patterns are skipped.
 #
 # Profile: machine-class overlay name (mac, vps, xebia-remote, ...). If not
 # supplied via --profile and $HOME/.dotagents-profile is missing, prompts on
@@ -385,22 +387,38 @@ is_skipped() {
 }
 
 linked=0; skipped=0; conflicts=0; agents_seen=0
-for agent_dir in "$SRC"/*/; do
-  [ -d "$agent_dir" ] || continue
-  agents_seen=$((agents_seen + 1))
-  name=$(basename "$agent_dir")        # .claude, .agents, ...
-  dest="$HOME/$name"
 
-  run mkdir -p "$dest"
-
-  for entry in "$agent_dir"*; do
+# Mirror the repo tree: directories are recreated as real dirs at the
+# destination, only files are symlinked. Linking a whole directory would make
+# an agent's live state (~/.omp/agent holds sqlite dbs and sessions) land
+# inside the repo, so dirs are never links — nesting like
+# home/.omp/agent/config.yml installs to the matching ~/-path.
+link_tree() {
+  local src_dir="$1" dest_dir="$2" entry item target
+  run mkdir -p "$dest_dir"
+  for entry in "$src_dir"/*; do
     item=$(basename "$entry")
     if is_skipped "$item"; then
       skipped=$((skipped + 1))
       continue
     fi
-
-    target="$dest/$item"
+    target="$dest_dir/$item"
+    if [ -d "$entry" ] && [ ! -L "$entry" ]; then
+      # Older installs linked the directory itself; replace that link with a
+      # real dir so per-file links can be placed inside it.
+      if [ -L "$target" ]; then
+        case "$(readlink "$target")" in
+          "$SRC"/*|"$DOTAGENTS_LINK"/*) run rm "$target" ;;
+        esac
+      fi
+      if [ -e "$target" ] && [ ! -d "$target" ]; then
+        printf 'CONFLICT: %s exists and is not a directory — leaving alone\n' "$target"
+        conflicts=$((conflicts + 1))
+        continue
+      fi
+      link_tree "$entry" "$target"
+      continue
+    fi
     if [ -e "$target" ] && [ ! -L "$target" ]; then
       printf 'CONFLICT: %s exists and is not a symlink — leaving alone\n' "$target"
       conflicts=$((conflicts + 1))
@@ -409,6 +427,13 @@ for agent_dir in "$SRC"/*/; do
     run ln -sfn "$entry" "$target"
     linked=$((linked + 1))
   done
+}
+
+for agent_dir in "$SRC"/*/; do
+  [ -d "$agent_dir" ] || continue
+  agents_seen=$((agents_seen + 1))
+  name=$(basename "$agent_dir")        # .claude, .agents, ...
+  link_tree "${agent_dir%/}" "$HOME/$name"
 done
 
 # 3.5 Shell rc hook. Tools linked above need env vars/PATH in every shell;
