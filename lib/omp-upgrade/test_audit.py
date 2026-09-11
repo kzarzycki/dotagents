@@ -27,8 +27,8 @@ def release(version="18.1.14", digest="c" * 64, size=audit.MIN_ASSET):
     tag = "v" + version
     return {"draft": False, "prerelease": False, "tag_name": tag,
             "html_url": f"https://github.com/can1357/oh-my-pi/releases/tag/{tag}", "body": "- Public feature claim",
-            "assets": [{"name": "omp-linux-x64", "state": "uploaded", "size": size, "digest": "sha256:" + digest,
-                        "browser_download_url": f"https://github.com/can1357/oh-my-pi/releases/download/{tag}/omp-linux-x64"}]}
+            "assets": [{"name": audit.ASSET, "state": "uploaded", "size": size, "digest": "sha256:" + digest,
+                        "browser_download_url": f"https://github.com/can1357/oh-my-pi/releases/download/{tag}/{audit.ASSET}"}]}
 
 
 def model_stream(stop="stop", end=True, **overrides):
@@ -88,7 +88,7 @@ class VerdictTests(unittest.TestCase):
             audit.split_diff(DIFF)
 
     def test_wrong_asset_url_or_digest_cannot_become_target(self):
-        for changed in ({"browser_download_url": "https://example.com/omp-linux-x64"},
+        for changed in ({"browser_download_url": f"https://example.com/{audit.ASSET}"},
                         {"digest": None}, {"digest": "sha256:" + "g" * 64}, {"size": True}):
             data = release()
             data["assets"][0].update(changed)
@@ -211,7 +211,7 @@ class StateTests(unittest.TestCase):
         content = b"untrusted binary bytes"
         response = io.BytesIO(content)
         response.headers = {"Content-Length": str(len(content))}
-        target = {"asset_url": "https://github.com/can1357/oh-my-pi/releases/download/v18.1.14/omp-linux-x64",
+        target = {"asset_url": f"https://github.com/can1357/oh-my-pi/releases/download/v18.1.14/{audit.ASSET}",
                   "size": len(content), "sha256": "0" * 64}
         with mock.patch.object(audit, "open_public", return_value=response), self.assertRaises(audit.Hold):
             audit.stage_asset(target)

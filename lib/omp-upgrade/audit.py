@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import selectors
 import signal
@@ -26,7 +27,16 @@ REAL = ROOT / "omp-real"
 REPO = STATE / "upstream.git"
 API = "https://api.github.com/repos/can1357/oh-my-pi"
 UPSTREAM = "https://github.com/can1357/oh-my-pi.git"
-ASSET = "omp-linux-x64"
+# Release asset for this host. An unknown platform gets no asset name, so the
+# gate refuses to resolve a release rather than guessing one.
+ASSETS = {
+    ("Linux", "x86_64"): "omp-linux-x64",
+    ("Linux", "aarch64"): "omp-linux-arm64",
+    ("Linux", "arm64"): "omp-linux-arm64",
+    ("Darwin", "arm64"): "omp-darwin-arm64",
+    ("Darwin", "x86_64"): "omp-darwin-x64",
+}
+ASSET = ASSETS.get((platform.system(), platform.machine()))
 VERSION = re.compile(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z")
 SHA = re.compile(r"[0-9a-f]{64}\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
@@ -201,6 +211,7 @@ def api_json(suffix):
 
 
 def release_identity(value):
+    require(ASSET, f"No published asset for {platform.system()}/{platform.machine()}")
     require(value.get("draft") is False and value.get("prerelease") is False, "Release is not stable and public")
     tag = value.get("tag_name")
     require(isinstance(tag, str) and tag.startswith("v") and VERSION.fullmatch(tag[1:]), "Invalid stable release tag")

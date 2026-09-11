@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import re
 import signal
 import stat
@@ -19,6 +20,14 @@ ROOT = Path.home() / ".local/lib/omp-upgrade"
 STATE = Path.home() / ".local/state/omp-upgrade"
 REAL = ROOT / "omp-real"
 AUDIT = ROOT / "audit.py"
+# Mirrors audit.ASSETS; the launcher stays standalone (no import at startup).
+ASSET = {
+    ("Linux", "x86_64"): "omp-linux-x64",
+    ("Linux", "aarch64"): "omp-linux-arm64",
+    ("Linux", "arm64"): "omp-linux-arm64",
+    ("Darwin", "arm64"): "omp-darwin-arm64",
+    ("Darwin", "x86_64"): "omp-darwin-x64",
+}.get((platform.system(), platform.machine()))
 MIN_SIZE = 1024 * 1024
 MAX_SIZE = 1024 * 1024 * 1024
 REPORT_LIMIT = 2 * 1024 * 1024
@@ -185,7 +194,9 @@ def validate_approval(approval, installed):
         raise Hold("Approval was audited against a different installed baseline")
     if type(approval["size"]) is not int or not MIN_SIZE <= approval["size"] <= MAX_SIZE:
         raise Hold("Approved binary size is outside release bounds")
-    expected = f"https://github.com/can1357/oh-my-pi/releases/download/v{approval['version']}/omp-linux-x64"
+    if not ASSET:
+        raise Hold(f"No published asset for {platform.system()}/{platform.machine()}")
+    expected = f"https://github.com/can1357/oh-my-pi/releases/download/v{approval['version']}/{ASSET}"
     if approval["asset_url"] != expected:
         raise Hold("Approval does not name the official version-pinned Linux x64 asset")
     if digest(REAL) != installed["sha256"]:

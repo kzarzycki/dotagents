@@ -22,7 +22,8 @@ class LauncherTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="test-omp-launcher-")
         self.addCleanup(self.temp.cleanup)
-        self.base = Path(self.temp.name)
+        # resolve(): macOS hands out /var/... which the child reports as /private/var
+        self.base = Path(self.temp.name).resolve()
         self.root = self.base / "lib"
         self.state = self.base / "state"
         self.root.mkdir(mode=0o700)
@@ -36,7 +37,7 @@ class LauncherTests(unittest.TestCase):
         self.new = {"version": "18.1.14", "commit": "b" * 40, "sha256": self.sha(self.new_bytes)}
         self.approval = {
             **self.new, "size": len(self.new_bytes), "base_sha256": self.old["sha256"],
-            "asset_url": "https://github.com/can1357/oh-my-pi/releases/download/v18.1.14/omp-linux-x64",
+            "asset_url": f"https://github.com/can1357/oh-my-pi/releases/download/v18.1.14/{launcher.ASSET}",
         }
         for name, value in (("ROOT", self.root), ("STATE", self.state), ("REAL", self.real), ("MIN_SIZE", 4)):
             patch = mock.patch.object(launcher, name, value)

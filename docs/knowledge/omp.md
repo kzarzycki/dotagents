@@ -33,9 +33,21 @@ activate only a pinned, approved release.
 Wiring (per machine, once):
 
 ```sh
-lib/omp-upgrade/install.sh        # adopt the binary, link the scripts, bootstrap the manifest
-lib/omp-upgrade/install.sh --uninstall   # put the real binary back on PATH
+lib/omp-upgrade/install.sh                       # adopt the omp already on PATH
+lib/omp-upgrade/install.sh --adopt-release 18.0.0   # or download + verify that release
+lib/omp-upgrade/install.sh --uninstall           # put the real binary back on PATH
 ```
+
+`--adopt-release` is for machines whose omp is not a release binary (macOS via
+bun/npm, say): it downloads this platform's asset, checks it against the SHA256
+GitHub publishes, and records it as the baseline. Adoption is the trust
+baseline — adopt the version you already run, not the newest one, and let the
+audit gate everything after it.
+
+It needs python 3.11+ with a populated CA store; `install.sh` probes for one and
+records the resolved interpreter in the shim (`PYTHON=` overrides). macOS's
+`/usr/bin/python3` (3.9, no `tomllib`) and an uninitialised python.org framework
+build are both rejected.
 
 It moves the installed binary to `~/.local/lib/omp-upgrade/omp-real`, writes a
 `~/.local/bin/omp` shim that execs `launcher.py`, and records the identity the
@@ -62,8 +74,18 @@ reviews the chunks with a model, and only writes `approved.json` when the verdic
 holds. A model verdict is treated as review, not attestation: the binary digest
 and asset URL are pinned independently.
 
-The release asset is `omp-linux-x64`, so activation only works on Linux; on
-macOS the shim and status commands work but no release will ever pass staging.
+The asset is picked per platform (`omp-linux-x64`, `omp-darwin-arm64`, …); an
+unrecognised platform gets no asset name and the gate refuses rather than
+guessing.
+
+**Known limitation — multi-release hops always HOLD.** The audit targets the
+*latest* release and diffs installed → target in one go, bounded by `MAX_SOURCE`
+(512 KB) and 12 × 64 KB chunks. Upstream ships several releases a week, so a gap
+of more than a release or two exceeds the bound and the verdict is
+`HOLD / "Subprocess output exceeded bound; not reviewed"` with zero model
+reviews — 18.1.13 → 18.1.17 and 18.0.0 → 18.1.17 both fail this way. Options:
+walk one release at a time (target the oldest release newer than installed, not
+the latest), or raise the bounds and pay for a much larger review.
 
 The audit used to be triggered through a systemd user unit; it is now a detached
 child process (`request_audit` in `launcher.py`) — the audit serializes itself
