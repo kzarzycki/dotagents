@@ -19,7 +19,9 @@ dotagents/
 └── home/               ← install payload; 1:1 mirror of ~/
     ├── .agents/
     │   ├── AGENTS.md   ← canonical user behavioral spec
-    │   └── env.sh      ← shell extensions for managed tools (PATH, MEMSEARCH_DIR)
+    │   ├── env.sh      ← shell extensions for managed tools (PATH, MEMSEARCH_DIR)
+    │   └── rules/
+    │       └── ponytail.md ← lazy senior dev ruleset across harnesses
     ├── .claude/
     │   ├── CLAUDE.md            ← in-repo symlink → ../.agents/AGENTS.md
     │   ├── settings.shared.json ← config common to every machine
