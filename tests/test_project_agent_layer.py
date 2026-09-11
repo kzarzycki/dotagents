@@ -209,6 +209,7 @@ def test_install_removes_retired_toolkit_symlinks(tmp_path):
     stale = (
         tmp_path / ".agents/mcp-registry.json",
         tmp_path / ".claude/hooks",
+        tmp_path / ".agents/rules",
     )
     for path in stale:
         path.parent.mkdir(parents=True, exist_ok=True)

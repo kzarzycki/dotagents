@@ -19,9 +19,7 @@ dotagents/
 └── home/               ← install payload; 1:1 mirror of ~/
     ├── .agents/
     │   ├── AGENTS.md   ← canonical user behavioral spec
-    │   ├── env.sh      ← shell extensions for managed tools (PATH, MEMSEARCH_DIR)
-    │   └── rules/
-    │       └── ponytail.md ← lazy senior dev ruleset across harnesses
+    │   └── env.sh      ← shell extensions for managed tools (PATH, MEMSEARCH_DIR)
     ├── .claude/
     │   ├── CLAUDE.md            ← in-repo symlink → ../.agents/AGENTS.md
     │   ├── settings.shared.json ← config common to every machine
@@ -33,7 +31,7 @@ dotagents/
     ├── .gemini/
     │   └── GEMINI.md             ← in-repo symlink → ../.agents/AGENTS.md
     └── .config/
-        └── ponytail/            ← machine-wide default intensity (lite)
+        └── ponytail/            ← machine-wide default intensity (full)
 ```
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
