@@ -51,28 +51,30 @@ build are both rejected.
 
 It moves the installed binary to `~/.local/lib/omp-upgrade/omp-real`, writes a
 `~/.local/bin/omp` shim that execs `launcher.py`, and records the identity the
-audit diffs against (version, source tag commit, sha256) in
+installed binary uses (version, source tag commit, sha256) in
 `~/.local/state/omp-upgrade/installed.json`. `launcher.py` and `audit.py` are
 symlinks into this repo, so a `git pull` updates the gate itself.
 
 Day to day:
 
 ```sh
-omp --upgrade-status   # last audit verdict: CURRENT / HOLD / INSTALLED, features, risks
-omp --upgrade-check    # request a background audit (at most one per day)
-omp update             # blocked: bypasses the audit
+omp --upgrade-status   # last result, features and remaining risks
+omp --upgrade-check    # background check, daily interval
+omp --upgrade-apply    # activate a staged release; checksum, smoke and rollback still apply
+omp update             # blocked: bypasses the gate
 ```
 
 An interactive `omp` launch does three things: activates an already-approved
 release (verifying size and sha256 against the approval, with a rollback
 journal), prints the audit notice once per verdict, and kicks off the next
-background check. Non-interactive and piped invocations never upgrade.
+background check. Other non-interactive invocations never upgrade; `--upgrade-apply`
+is the explicit exception and does not start an agent session.
 
 The audit itself (`audit.py check`) fetches release metadata from the GitHub API,
 shallow-fetches the upstream tag, diffs explicitly accepted source → target commit,
-reviews the chunks with a model, and only writes `approved.json` when the verdict
-holds. A model verdict is treated as review, not attestation: the binary digest
-and asset URL are pinned independently.
+reviews the chunks with a model, and writes `approved.json` only after a complete,
+SAFE final review or explicit target-specific user acceptance. Review is not attestation:
+the binary digest and asset URL are pinned independently.
 
 The asset is picked per platform (`omp-linux-x64`, `omp-darwin-arm64`, …); an
 unrecognised platform gets no asset name and the gate refuses rather than
@@ -103,6 +105,48 @@ evidence-grounded resolution for every concern. `chunk_findings` retains the
 original findings and resolutions; `risks` contains unresolved final findings.
 The composed final input retains its existing 1 MiB limit; overflow HOLDs without
 truncating the diff or discarding concerns.
+
+### Repeatable per-release audit
+
+```sh
+# Check now. Pin a version to avoid reviewing a moving "latest".
+python3 -I ~/.local/lib/omp-upgrade/audit.py check --version VERSION
+# Supply missing public helper code from that exact commit, not a working tree.
+python3 -I ~/.local/lib/omp-upgrade/audit.py check --version VERSION --context packages/utils/src/file-lock.ts
+# Deliberately discard model-review reuse, without weakening checks.
+python3 -I ~/.local/lib/omp-upgrade/audit.py check --version VERSION --fresh-reviews
+omp --upgrade-apply
+omp --version
+```
+
+Complete reviews are cached by the exact input (source, identities, dependency
+evidence, context and prior findings), policy, configured model, gate code and
+reviewer binary digest. Changed input reruns that review. Adding final-review
+context reuses unchanged chunks. Malformed/incomplete responses are never reused.
+Unchanged installed releases need no model calls or binary download.
+
+Stop after one complete review and, when needed, one context-supplement pass.
+Separate evidence gaps from concrete behavior changes. Do not keep rewording the
+prompt to chase SAFE. External dependency changes still need real static review;
+neither cache nor a user exception bypasses that prerequisite.
+
+### Explicit acceptance of a held release
+
+Only after the user accepts all reported findings and remaining uncertainty:
+
+```sh
+python3 -I ~/.local/lib/omp-upgrade/audit.py accept-reviewed \
+  --version VERSION --commit COMMIT --sha256 ARTIFACT_SHA256 \
+  --report-sha256 REPORT_SHA256 --detail 'Explicit user decision and accepted risks'
+omp --upgrade-apply
+```
+
+`REPORT_SHA256` is the digest of the exact `report.json` shown to the user.
+Acceptance requires complete chunk and final reviews, valid dependency evidence,
+and matching public tag/asset identities. It records the full held report and a
+separate `user-accepted` record under `evidence/VERSION/`; the model verdict stays
+HOLD. Source trust advances for the next delta, but the exception cannot authorize
+another artifact or future finding. `ACCEPTED` means staged, not yet installed.
 
 The audit used to be triggered through a systemd user unit; it is now a detached
 child process (`request_audit` in `launcher.py`) — the audit serializes itself

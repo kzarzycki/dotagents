@@ -350,5 +350,137 @@ class StateTests(unittest.TestCase):
         self.assertFalse((self.state / "approved.json").exists())
 
 
+class AcceptanceTests(unittest.TestCase):
+    setUp = StateTests.setUp
+    def held_report(self):
+        target = {**audit.release_identity(release()), "commit": "e" * 40}
+        chunk = verdict(verdict="HOLD", risks=["example.py:1 changed behavior"])
+        whole = verdict(chunk_id="whole-release", verdict="HOLD", risks=["example.py:1 changed behavior"],
+                        resolved_concerns=[])
+        report = audit.now_report()
+        report.update(status="HOLD", target=target, version=target["version"], reviews=[chunk],
+                      coherence_review=whole, diff_sha256=hashlib.sha256(DIFF.encode()).hexdigest(),
+                      accepted_source=audit.source_baselines()[0], risks=whole["risks"])
+        audit.persist_report(report)
+        digest = hashlib.sha256((self.state / "report.json").read_bytes()).hexdigest()
+        return target, digest
+
+    def test_changed_or_incomplete_report_never_stages(self):
+        target, digest = self.held_report()
+        with mock.patch.object(audit, "stage_asset") as stage, self.assertRaises(audit.Hold):
+            audit.accept_reviewed(target["version"], target["commit"], target["sha256"], "0" * 64, "accept")
+        stage.assert_not_called()
+        report = json.loads((self.state / "report.json").read_text())
+        report["reviews"][0]["reviewed"] = False
+        audit.persist_report(report)
+        digest = hashlib.sha256((self.state / "report.json").read_bytes()).hexdigest()
+        with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+             mock.patch.object(audit, "source_diff", return_value=(DIFF, ["example.py"])), \
+             mock.patch.object(audit, "stage_asset") as stage, self.assertRaises(audit.Hold):
+            audit.accept_reviewed(target["version"], target["commit"], target["sha256"], digest, "accept")
+        stage.assert_not_called()
+        self.assertFalse((self.state / "approved.json").exists())
+
+    def test_explicit_acceptance_preserves_hold_and_binds_artifact(self):
+        target, digest = self.held_report()
+        with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+             mock.patch.object(audit, "source_diff", return_value=(DIFF, ["example.py"])), \
+             mock.patch.object(audit, "dependency_risks", return_value=([], [])), \
+             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "tag_commit", return_value=target["commit"]), \
+             mock.patch.object(audit, "stage_asset"), contextlib.redirect_stdout(io.StringIO()):
+            audit.accept_reviewed(target["version"], target["commit"], target["sha256"], digest, "Explicit user decision")
+        approved = json.loads((self.state / "approved.json").read_text())
+        self.assertEqual(approved, {**target, "base_sha256": BASE["sha256"]})
+        report = json.loads((self.state / "report.json").read_text())
+        self.assertEqual(report["coherence_review"]["verdict"], "HOLD")
+        self.assertEqual(report["acceptance"]["basis"], "user-accepted")
+        self.assertEqual(report["acceptance"]["report_sha256"], digest)
+        self.assertEqual(audit.source_baselines()[-1]["basis"], "user-accepted")
+
+
+class ReviewReuseTests(unittest.TestCase):
+    setUp = StateTests.setUp
+
+    @contextlib.contextmanager
+    def environment(self):
+        yield self.state, {}, "openai-codex/gpt-6-astra:medium"
+
+    def test_exact_input_reuses_review_but_policy_and_source_changes_do_not(self):
+        with mock.patch.object(audit, "model_environment", self.environment), \
+             mock.patch.object(audit, "run_bounded", return_value=model_stream()) as run:
+            args = (DIFF, "chunk-001-of-001", ["example.py"], "", {}, self.state)
+            audit.review_chunk(*args)
+            audit.review_chunk(*args)
+            self.assertEqual(run.call_count, 1)
+            with mock.patch.object(audit, "SYSTEM", audit.SYSTEM + "\nStricter policy"):
+                audit.review_chunk(*args)
+            self.assertEqual(run.call_count, 2)
+            with mock.patch.object(audit, "REUSE_REVIEWS", False):
+                audit.review_chunk(*args)
+            self.assertEqual(run.call_count, 3)
+            changed = DIFF.replace("x = 2", "x = 3")
+            changed_verdict = verdict(source_sha256=hashlib.sha256(changed.encode()).hexdigest())
+            stream = model_stream(content=[{"type": "text", "text": json.dumps(changed_verdict)}])
+            run.return_value = stream
+            audit.review_chunk(changed, *args[1:])
+            self.assertEqual(run.call_count, 4)
+
+    def test_incomplete_reviews_are_not_reused(self):
+        stream = model_stream(content=[{"type": "text", "text": json.dumps(verdict(reviewed=False))}])
+        with mock.patch.object(audit, "model_environment", self.environment), \
+             mock.patch.object(audit, "run_bounded", return_value=stream) as run:
+            for _ in range(2):
+                audit.review_chunk(DIFF, "chunk-001-of-001", [], "", {}, self.state)
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(list((self.state / "review-cache").iterdir()), [])
+
+
+    def test_model_smoke_checks_live_model_even_after_success(self):
+        def respond(*args):
+            prompt = json.loads(args[-1])
+            answer = verdict(chunk_id=prompt["chunk_id"], source_sha256=prompt["source_sha256"])
+            return model_stream(content=[{"type": "text", "text": json.dumps(answer)}])
+        with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+             mock.patch.object(audit, "model_environment", self.environment), \
+             mock.patch.object(audit, "run_bounded", side_effect=respond) as run, \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(audit.model_smoke(), 0)
+            run.side_effect = audit.Hold("Provider unavailable")
+            self.assertEqual(audit.model_smoke(), 1)
+        self.assertEqual(run.call_count, 2)
+
+    def test_pinned_current_release_avoids_model_and_uses_exact_endpoint(self):
+        report = audit.now_report()
+        report["requested_version"] = BASE["version"]
+        with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+             mock.patch.object(audit, "api_json", return_value=release(BASE["version"], BASE["sha256"])) as api, \
+             mock.patch.object(audit, "tag_commit", return_value=BASE["commit"]), \
+             mock.patch.object(audit, "review_chunk") as review:
+            audit.audit_release(report)
+        api.assert_called_once_with(f"/releases/tags/v{BASE['version']}")
+        review.assert_not_called()
+        self.assertEqual(report["status"], "CURRENT")
+
+
+class ContextReuseTests(unittest.TestCase):
+    setUp = StateTests.setUp
+    environment = ReviewReuseTests.environment
+
+    def test_supplemental_context_invalidates_only_matching_final_review(self):
+        stream = model_stream(content=[{"type": "text", "text": json.dumps(
+            verdict(chunk_id="whole-release", resolved_concerns=[]))}])
+        args = (DIFF, "whole-release", ["example.py"], "", {}, self.state)
+        first = [{"path": "helper.py", "commit": "e" * 40, "source": "value = 1"}]
+        second = [{"path": "helper.py", "commit": "e" * 40, "source": "value = 2"}]
+        with mock.patch.object(audit, "model_environment", self.environment), \
+             mock.patch.object(audit, "run_bounded", return_value=stream) as run:
+            for context in (first, first, second):
+                audit.review_chunk(*args, coherence=True, prior_reviews=[verdict()], context_files=context)
+        self.assertEqual(run.call_count, 2)
+        payload = json.loads((self.state / "whole-release.input.txt").read_text())
+        self.assertEqual(payload["untrusted_context_files"], second)
+
+
 if __name__ == "__main__":
     unittest.main()

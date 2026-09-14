@@ -336,7 +336,7 @@ def recover_transaction():
         (STATE / "approved.json").unlink(missing_ok=True)
         (STATE / "candidate").unlink(missing_ok=True)
         sync_directory(STATE)
-        report(status="INSTALLED", version=new["version"], summary=f"Audited OMP {new['version']} activated; interrupted transaction cleanup recovered")
+        report(status="INSTALLED", version=new["version"], summary=f"OMP {new['version']} activated; interrupted transaction cleanup recovered")
         finish_transaction()
         return "committed"
     if installed != old:
@@ -406,7 +406,7 @@ def activate_if_ready(allow_install=True):
             write_json(STATE / "installed.json", updated)
             (STATE / "approved.json").unlink()
             (STATE / "candidate").unlink(missing_ok=True)
-            report(status="INSTALLED", version=release, summary=f"Audited OMP {release} activated; version and native-read smoke passed")
+            report(status="INSTALLED", version=release, summary=f"OMP {release} activated; version and native-read smoke passed")
             finish_transaction()
         except (OSError, ValueError, Hold, subprocess.SubprocessError) as error:
             try:
@@ -553,7 +553,7 @@ def show_status():
                 print(f"  - {safe_text(item)}")
     if value.get("service_error"):
         print(f"Scheduling: {safe_text(value['service_error'])}")
-    print("Checks run in the background, at most daily. Only a later interactive launch activates an approved release.")
+    print("Checks run in the background, at most daily. Use omp --upgrade-apply to activate a staged release, or launch interactively.")
     return 0
 
 
@@ -566,6 +566,21 @@ def main(argv=None):
         error = request_audit()
         print(error or "Background audit requested (daily interval applies); inspect omp --upgrade-status.")
         return 1 if error else 0
+    if routed == ["--upgrade-apply"]:
+        if not (STATE / "approved.json").exists() and not (STATE / "transaction.json").exists():
+            print("No reviewed release staged; inspect omp --upgrade-status.", file=sys.stderr)
+            return 1
+        try:
+            activate_if_ready()
+            value = read_json(STATE / "report.json")
+            if value.get("status") == "INSTALLED" and not (STATE / "approved.json").exists():
+                print(safe_text(value.get("summary", "Release installed")))
+                return 0
+            print("Release not activated (audit/activation may be busy): "
+                  + safe_text(value.get("summary", "Inspect omp --upgrade-status")), file=sys.stderr)
+        except (OSError, ValueError, Hold) as error:
+            print("Release not activated: " + safe_text(str(error)), file=sys.stderr)
+        return 1
     if routed and routed[0] == "update":
         print("Direct omp update is disabled: it bypasses the managed source audit. Use omp --upgrade-check, then omp --upgrade-status; approved releases activate on an interactive launch.", file=sys.stderr)
         return 2

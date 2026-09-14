@@ -46,6 +46,7 @@ MAX_NOTES, MAX_JSON, MAX_OUTPUT = 64 * 1024, 2 * 1024 * 1024, 4 * 1024 * 1024
 MAX_WHOLE_INPUT, MAX_DEPENDENCY_INPUT = 1024 * 1024, 4 * 1024 * 1024
 MODEL_SECONDS = 240
 MAX_LEDGER, MAX_LEDGER_ENTRIES = 256 * 1024, 256
+REUSE_REVIEWS = True
 HINT = "python3 -I ~/.local/lib/omp-upgrade/audit.py"
 ABSENT = "absent"
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z|sha512:[0-9a-f]{128}\Z|sha512-[A-Za-z0-9+/]{86}==\Z")
@@ -55,7 +56,7 @@ EVIDENCE_KEYS = {"path", "base_commit", "target_commit", "target_version", "befo
                  "reviewer", "summary", "artifacts", "recorded_at", "recorded_at_epoch"}
 ARTIFACT_KEYS = {"name", "version", "digest", "note"}
 BASELINE = [
-    "Artifact signatures are platform-specific; Darwin 18.1.21 verified Developer ID VTLHGQC72S with hardened runtime. Source-to-binary attestation and notarization remain unestablished; SHA256 alone is integrity, not provenance.",
+    "Release signatures must be checked per artifact. SHA256 is integrity, not provenance; source-to-binary attestation and notarization may remain unestablished.",
     "Project-local plugins and custom tools can execute local code in ordinary OMP sessions.",
     "Project ACP configuration permits yolo execution.",
     "Opt-in speech may use transient dependencies; opt-in browser relay and local statistics exist.",
@@ -365,7 +366,7 @@ def release_identity(value):
     assets = value.get("assets")
     require(isinstance(assets, list), "Missing release assets")
     matches = [item for item in assets if isinstance(item, dict) and item.get("name") == ASSET]
-    require(len(matches) == 1, "Missing or ambiguous Linux x64 asset")
+    require(len(matches) == 1, f"Missing or ambiguous {ASSET} asset")
     asset = matches[0]
     url = f"https://github.com/can1357/oh-my-pi/releases/download/{tag}/{ASSET}"
     require(asset.get("browser_download_url") == url and asset.get("state") == "uploaded", "Asset identity mismatch")
@@ -796,7 +797,7 @@ def open_risks(concerns):
 
 
 def review_chunk(chunk, chunk_id, inventory, notes, identities, evidence_dir, *, coherence=False, prior_reviews=None,
-                 concerns=(), dependency_evidence=()):
+                 concerns=(), dependency_evidence=(), context_files=(), reuse=True):
     source_sha256 = hashlib.sha256(chunk.encode()).hexdigest()
     prompt = {"chunk_id": chunk_id, "source_sha256": source_sha256, "identities": identities,
               "accepted_baseline_risks": BASELINE, "changed_file_inventory": inventory,
@@ -809,6 +810,7 @@ def review_chunk(chunk, chunk_id, inventory, notes, identities, evidence_dir, *,
         prompt["untrusted_prior_chunk_reviews"] = prior_reviews
         # Carried chunk findings are open questions for this review, never pre-cleared conclusions.
         prompt["untrusted_unresolved_chunk_concerns"] = list(concerns)
+        prompt["untrusted_context_files"] = list(context_files)
     payload = json.dumps(prompt, ensure_ascii=True).encode()
     system = SYSTEM + (
         "\nCURRENT SCOPE: whole-release coherence. Include resolved_concerns in addition to the eight standard keys."
@@ -819,6 +821,25 @@ def review_chunk(chunk, chunk_id, inventory, notes, identities, evidence_dir, *,
     require(len(payload) + len(system.encode()) <= limit, "Encoded complete review input exceeds bound; no truncation permitted")
     atomic_bytes(evidence_dir / f"{chunk_id}.input.txt", payload)
     with model_environment() as (cwd, environment, model):
+        # Exact-input memoization, not transferable trust. Policy/code, model and reviewer
+        # binary changes all invalidate it. Incomplete/malformed reviews are never cached.
+        key = hashlib.sha256(json.dumps({
+            "payload_sha256": hashlib.sha256(payload).hexdigest(), "system": system, "model": model,
+            "reviewer_sha256": digest_file(REAL),
+            "gate_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        }, sort_keys=True).encode()).hexdigest()
+        cache_dir = evidence_dir / "review-cache"
+        private_dir(cache_dir)
+        cache = cache_dir / f"{key}.json"
+        if reuse and REUSE_REVIEWS and cache.exists():
+            cached = strict_json(read_bytes(cache, MAX_JSON))
+            require(isinstance(cached, dict) and set(cached) == {"key", "verdict"} and cached["key"] == key,
+                    "Invalid cached review identity")
+            verdict = parse_verdict(json.dumps(cached["verdict"]), chunk_id, source_sha256,
+                                    list(concerns) if coherence else None)
+            require(verdict["reviewed"], "Cached review is incomplete")
+            atomic_json(evidence_dir / f"{chunk_id}.verdict.json", verdict)
+            return verdict
         argv = [str(REAL), "--print", "--mode", "json", "--no-session", "--no-tools", "--no-extensions",
                 "--no-skills", "--no-rules", "--no-lsp", "--no-title", "--no-prewalk", "--no-pty",
                 "--system-prompt", system, "--max-time", str(MODEL_SECONDS), "--model", model]
@@ -827,6 +848,8 @@ def review_chunk(chunk, chunk_id, inventory, notes, identities, evidence_dir, *,
     # Persist only the verdict, not provider internals, account metadata, or logs.
     verdict = parse_verdict(text, chunk_id, source_sha256, list(concerns) if coherence else None)
     atomic_json(evidence_dir / f"{chunk_id}.verdict.json", verdict)
+    if reuse and verdict["reviewed"]:
+        atomic_json(cache, {"key": key, "verdict": verdict})
     return verdict
 
 
@@ -896,7 +919,10 @@ def now_report():
 def audit_release(report):
     base = installed_manifest()
     report["installed_version"] = base["version"]
-    metadata = api_json("/releases/latest")
+    requested = report.get("requested_version")
+    require(requested is None or isinstance(requested, str) and VERSION.fullmatch(requested),
+            "Invalid requested release version")
+    metadata = api_json(f"/releases/tags/v{requested}" if requested else "/releases/latest")
     notes = metadata.get("body")
     require(notes is None or isinstance(notes, str), "Malformed release notes")
     notes = notes or ""
@@ -906,6 +932,7 @@ def audit_release(report):
                           if line.strip().startswith(("- ", "* "))][:100]
     report["version"] = metadata.get("tag_name")
     target = release_identity(metadata)
+    require(requested is None or target["version"] == requested, "Requested release identity mismatch")
     report["version"] = target["version"]
     target["commit"] = tag_commit(target["version"])
     report["target"] = dict(target)
@@ -937,6 +964,16 @@ def audit_release(report):
                   changed_files=paths, chunk_count=len(chunks))
     risks, cleared = dependency_risks(baseline, target, paths)
     report["risks"].extend(risks)
+    context = []
+    for path in sorted(set(report.get("context_paths", []))):
+        bounded_text(path, 512, "Invalid supplemental source path")
+        data = manifest_blob(target["commit"], path, MAX_WHOLE_INPUT)
+        require(data is not None, f"Missing supplemental source: {path}")
+        context.append({"path": path, "commit": target["commit"],
+                        "sha256": hashlib.sha256(data).hexdigest(), "source": data.decode("utf-8")})
+        require(len(json.dumps(context, ensure_ascii=True).encode()) <= MAX_WHOLE_INPUT,
+                "Supplemental source exceeds final input bound")
+    atomic_json(evidence / "context-files.json", context)
     report["dependency_evidence"] = cleared
     require(not report["risks"], "Dependency identity gate lacks external implementation evidence")
     identities = {"base": base, "accepted_source": {key: baseline[key] for key in ("version", "commit", "basis")},
@@ -958,7 +995,8 @@ def audit_release(report):
         require(persist_report(report), "Report exceeded bound; review held")
     require(len(report["reviews"]) == len(chunks), "Model review coverage is incomplete")
     coherence = review_chunk(diff, "whole-release", paths, notes, identities, evidence, coherence=True,
-                             prior_reviews=list(report["reviews"]), concerns=concerns, dependency_evidence=cleared)
+                             prior_reviews=list(report["reviews"]), concerns=concerns, dependency_evidence=cleared,
+                             context_files=context)
     require(coherence["reviewed"] is True, "Whole-release review is incomplete; no verdict counts without complete coverage")
     resolved = {item["concern_id"]: item["resolution"] for item in coherence.get("resolved_concerns", ())
                 if isinstance(item, dict) and isinstance(item.get("concern_id"), str)}
@@ -990,7 +1028,7 @@ def audit_release(report):
     report.update(status="APPROVED", summary="Complete source chunks and whole-release coherence passed both dependency and model gates; verified candidate staged. This is not binary attestation.")
 
 
-def check(force=False):
+def check(force=False, version=None, context_paths=()):
     private_dir(STATE)
     descriptor = os.open(STATE / "update.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor, "a") as lock:
@@ -1002,12 +1040,13 @@ def check(force=False):
             try:
                 previous = strict_json(read_bytes(STATE / "report.json", MAX_JSON))
                 stamp = previous.get("checked_at_epoch")
-                if type(stamp) in (int, float) and 0 <= time.time() - stamp < 86400:
+                if not version and not context_paths and type(stamp) in (int, float) and 0 <= time.time() - stamp < 86400:
                     return 0
             except (OSError, Hold, AttributeError):
                 pass
         clear_approval()
         report = now_report()
+        report.update(requested_version=version, context_paths=list(context_paths))
         persist_report(report)
         try:
             audit_release(report)
@@ -1031,7 +1070,7 @@ def model_smoke():
         installed_manifest()
         chunk = "diff --git a/public-example.py b/public-example.py\n--- a/public-example.py\n+++ b/public-example.py\n@@ -1 +1,2 @@\n+# Return the sum of two integers.\n def add(a, b): return a + b\n"
         verdict = review_chunk(chunk, "smoke-001", ["public-example.py"], "Synthetic complete one-function file: comment-only clarification; no behavior change or dependencies. No upstream release.",
-                               {"synthetic_smoke_only": True}, evidence)
+                               {"synthetic_smoke_only": True}, evidence, reuse=False)
         require(verdict_safe(verdict), "Synthetic model smoke did not pass the strict verdict gate")
         report.update(status="PASS", summary="Actual installed OMP completed isolated, tool-free synthetic model review; no approval written.", verdict=verdict)
     except Exception as exc:
@@ -1078,17 +1117,94 @@ def record_evidence(args):
     return 0
 
 
+def accept_reviewed(version, commit, sha256, report_sha256, detail):
+    """Explicit human exception for one completed review; never a model SAFE verdict."""
+    require(VERSION.fullmatch(version) and COMMIT.fullmatch(commit) and SHA.fullmatch(sha256)
+            and SHA.fullmatch(report_sha256), "Acceptance requires exact release and report identities")
+    require(isinstance(detail, str) and 1 <= len(detail.strip()) <= 4096, "Acceptance requires a reason")
+    private_dir(STATE)
+    descriptor = os.open(STATE / "update.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise Hold("An audit or activation is running; acceptance was not recorded") from exc
+        raw = read_bytes(STATE / "report.json", MAX_JSON)
+        require(hashlib.sha256(raw).hexdigest() == report_sha256, "Report changed since user acceptance")
+        report = strict_json(raw)
+        require(report.get("status") == "HOLD", "Acceptance requires a held, completed review")
+        target = report.get("target", {})
+        require((target.get("version"), target.get("commit"), target.get("sha256")) == (version, commit, sha256),
+                "Acceptance does not match the reviewed release")
+        base = installed_manifest()
+        require(tuple(map(int, version.split("."))) > tuple(map(int, base["version"].split("."))),
+                "Acceptance target must be newer than installed")
+        baseline = report.get("accepted_source")
+        require(isinstance(baseline, dict), "Missing reviewed source baseline")
+        diff, paths = source_diff(baseline, target)
+        require(hashlib.sha256(diff.encode()).hexdigest() == report.get("diff_sha256"), "Reviewed source changed")
+        chunks = split_diff(diff)
+        reviews = report.get("reviews")
+        require(isinstance(reviews, list) and len(reviews) == len(chunks), "Incomplete chunk coverage cannot be accepted")
+        concerns = []
+        for index, (chunk, review) in enumerate(zip(chunks, reviews), 1):
+            parsed = parse_verdict(json.dumps(review), f"chunk-{index:03d}-of-{len(chunks):03d}",
+                                   hashlib.sha256(chunk.encode()).hexdigest())
+            require(parsed["reviewed"], "Incomplete chunk cannot be accepted")
+            concerns.extend(chunk_concerns(parsed))
+        coherence = parse_verdict(json.dumps(report.get("coherence_review")), "whole-release",
+                                  report["diff_sha256"], concerns)
+        require(coherence["reviewed"], "Incomplete whole-release review cannot be accepted")
+        risks, _ = dependency_risks(baseline, target, paths)
+        require(not risks, "Dependency evidence is missing; user acceptance does not replace dependency review")
+        refreshed = release_identity(api_json(f"/releases/tags/v{version}"))
+        require(all(refreshed[key] == target[key] for key in refreshed) and tag_commit(version) == commit,
+                "Public release identity changed since review")
+        # Pin the whole report, not selected favorable findings. Retain the original HOLD verbatim.
+        evidence = STATE / "evidence" / version
+        private_dir(evidence)
+        record = {"target": target, "base_sha256": base["sha256"], "report_sha256": report_sha256,
+                  "detail": detail, "actor": local_actor(), "accepted_at": utc_now()[0],
+                  "basis": "user-accepted", "findings": report["risks"]}
+        clear_approval()
+        try:
+            stage_asset(target)
+            require(installed_manifest() == base, "Installed identity changed during acceptance")
+            require(release_identity(api_json(f"/releases/tags/v{version}")) == refreshed
+                    and tag_commit(version) == commit, "Public release changed during staging")
+            atomic_bytes(evidence / f"accepted-report-{report_sha256}.json", raw)
+            atomic_json(evidence / f"acceptance-{report_sha256}.json", record)
+            save_source_baseline(version, commit, "user-accepted", local_actor(), detail)
+            report.update(status="ACCEPTED", approval_basis="user-accepted", acceptance=record,
+                          summary="User accepted exact reviewed findings and uncertainty; verified candidate staged. Model verdict remains HOLD.")
+            require(persist_report(report), "Accepted report exceeds bound")
+            atomic_json(STATE / "approved.json", {**target, "base_sha256": base["sha256"]})
+        except BaseException:
+            clear_approval()
+            raise
+    print(json.dumps({"status": "ACCEPTED", "version": version, "report_sha256": report_sha256}))
+    return 0
+
+
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("check").add_argument("--force", action="store_true", help="Bypass daily interval only")
+    check_parser = commands.add_parser("check")
+    check_parser.add_argument("--force", action="store_true", help="Bypass daily interval; exact-input reviews may still be reused")
+    check_parser.add_argument("--version", help="Pin a stable target instead of latest; bypass daily interval")
+    check_parser.add_argument("--context", action="append", default=[], metavar="REPO_PATH",
+                              help="Include this full file from the pinned target commit in final review; repeatable")
+    check_parser.add_argument("--fresh-reviews", action="store_true", help="Rerun model reviews instead of reusing exact-input evidence")
     commands.add_parser("model-smoke", help="Exercise real isolated model invocation without writing an approval")
     accept = commands.add_parser("accept-source", help="Record public source you reviewed as the diff baseline; not an approval")
     accept.add_argument("--version", required=True, help="Released version whose exact source you reviewed")
     accept.add_argument("--commit", required=True, help="Commit that version's tag resolves to")
     accept.add_argument("--actor", default=local_actor(), help="Who accepted this source")
     accept.add_argument("--detail", default="", help="What was reviewed and on what evidence")
+    exception = commands.add_parser("accept-reviewed", help="Explicitly accept every finding in an exact completed HOLD report and stage its pinned release")
+    for name in ("version", "commit", "sha256", "report-sha256", "detail"):
+        exception.add_argument("--" + name, required=True)
     evidence = commands.add_parser("record-evidence", help="Record that you reviewed exact changed manifest bytes; not an approval")
     for name, help_text in (("path", "Repository path of the changed manifest"),
                             ("base-commit", "Accepted source commit the change starts from"),
@@ -1104,11 +1220,15 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "check":
-            return check(args.force)
+            global REUSE_REVIEWS
+            REUSE_REVIEWS = not args.fresh_reviews
+            return check(args.force or args.fresh_reviews, args.version, args.context)
         if args.command == "model-smoke":
             return model_smoke()
         if args.command == "accept-source":
             return accept_source(args.version, args.commit, args.actor, args.detail)
+        if args.command == "accept-reviewed":
+            return accept_reviewed(args.version, args.commit, args.sha256, args.report_sha256, args.detail)
         return record_evidence(args)
     except Exception as exc:
         print(json.dumps({"status": "HOLD", "summary": str(exc) if isinstance(exc, Hold) else type(exc).__name__}))

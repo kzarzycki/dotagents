@@ -87,6 +87,25 @@ class LauncherTests(unittest.TestCase):
             launcher.activate_if_ready()
         execute.assert_not_called()
         self.assert_old_held()
+        self.assertIn("native", self.get("report.json")["summary"])
+
+    def test_explicit_apply_activates_without_starting_session(self):
+        self.approve()
+        with mock.patch.object(launcher, "smoke"), mock.patch("builtins.print"), \
+             mock.patch.object(launcher.os, "execv") as execute:
+            self.assertEqual(launcher.main(["--upgrade-apply"]), 0)
+            self.assertEqual(launcher.main(["--upgrade-apply"]), 1)
+        execute.assert_not_called()
+        self.assertEqual(self.get("installed.json")["version"], self.approval["version"])
+        self.assertEqual(self.real.read_bytes(), self.new_bytes)
+
+    def test_apply_reports_gate_failure_without_traceback(self):
+        self.approve()
+        with mock.patch.object(launcher, "activate_if_ready", side_effect=launcher.Hold("Unsafe update lock")), \
+             mock.patch("builtins.print") as output:
+            self.assertEqual(launcher.main(["--upgrade-apply"]), 1)
+        self.assertIn("Unsafe update lock", output.call_args.args[0])
+        self.assertEqual(self.real.read_bytes(), self.old_bytes)
 
     def test_metadata_trust_boundaries_are_rejected_without_execution(self):
         invalid = [
