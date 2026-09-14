@@ -69,7 +69,7 @@ journal), prints the audit notice once per verdict, and kicks off the next
 background check. Non-interactive and piped invocations never upgrade.
 
 The audit itself (`audit.py check`) fetches release metadata from the GitHub API,
-shallow-fetches the upstream tag, diffs installed commit → target commit,
+shallow-fetches the upstream tag, diffs explicitly accepted source → target commit,
 reviews the chunks with a model, and only writes `approved.json` when the verdict
 holds. A model verdict is treated as review, not attestation: the binary digest
 and asset URL are pinned independently.
@@ -78,19 +78,25 @@ The asset is picked per platform (`omp-linux-x64`, `omp-darwin-arm64`, …); an
 unrecognised platform gets no asset name and the gate refuses rather than
 guessing.
 
-**Known limitation — multi-release hops always HOLD.** The audit targets the
-*latest* release and diffs installed → target in one go, bounded by `MAX_SOURCE`
-(512 KB) and 12 × 64 KB chunks. Upstream ships several releases a week, so a gap
-of more than a release or two exceeds the bound and the verdict is
-`HOLD / "Subprocess output exceeded bound; not reviewed"` with zero model
-reviews — 18.1.13 → 18.1.17 and 18.0.0 → 18.1.17 both fail this way. Options:
-walk one release at a time (target the oldest release newer than installed, not
-the latest), or raise the bounds and pay for a much larger review.
+Source trust and binary installation are separate. Record explicit acceptance with
+`python3 -I lib/omp-upgrade/audit.py accept-source --version VERSION --commit COMMIT --detail REASON`.
+This writes `accepted-source.json`, not an approval. Community trust must be
+described as acceptance, never an independent audit. The newest accepted source
+below the target is reviewed; the installed binary SHA256 still binds activation.
+
+Changed dependencies HOLD until exact reviewed manifest bytes and artifact
+digests are recorded with `audit.py record-evidence` (see `--help`). Records in
+`dependency-evidence.json` clear only their exact commit/version/manifest tuple.
+They do not skip model review or attest the release binary. Ledger capacity
+errors preserve previous readable records.
+
+Review retains the 512 KiB source, 64 KiB chunk, and 12-chunk limits; oversized
+changes HOLD without truncation. `audit.py check --force` bypasses only the daily
+cooldown, not security checks. Always check the report's installed version and
+timestamp before attributing an older HOLD to a fresh request.
 
 The audit used to be triggered through a systemd user unit; it is now a detached
 child process (`request_audit` in `launcher.py`) — the audit serializes itself
 with its own lock and daily interval, so the unit bought nothing.
 
 Tests: `cd lib/omp-upgrade && python3 -m unittest test_launcher test_audit`.
-(On macOS `test_actual_exec_preserves_...` fails on the `/private/var` symlink —
-environment artifact, not a regression.)

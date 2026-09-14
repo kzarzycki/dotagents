@@ -33,6 +33,13 @@ MAX_SIZE = 1024 * 1024 * 1024
 REPORT_LIMIT = 2 * 1024 * 1024
 MANIFEST_KEYS = {"version", "commit", "sha256"}
 APPROVAL_KEYS = MANIFEST_KEYS | {"size", "base_sha256", "asset_url"}
+# Executable header identities for the published assets; 64-bit little-endian only.
+ELF_MACHINES = {62: "omp-linux-x64", 183: "omp-linux-arm64"}
+MACH_CPUS = {0x01000007: "omp-darwin-x64", 0x0100000C: "omp-darwin-arm64"}
+MACH_MAGIC = b"\xcf\xfa\xed\xfe"
+FAT_STRIDE = {b"\xca\xfe\xba\xbe": 20, b"\xca\xfe\xba\xbf": 32}
+MAX_SLICES = 16
+HEADER = 8 + MAX_SLICES * 32
 
 
 class Hold(Exception):
@@ -198,9 +205,27 @@ def validate_approval(approval, installed):
         raise Hold(f"No published asset for {platform.system()}/{platform.machine()}")
     expected = f"https://github.com/can1357/oh-my-pi/releases/download/v{approval['version']}/{ASSET}"
     if approval["asset_url"] != expected:
-        raise Hold("Approval does not name the official version-pinned Linux x64 asset")
+        raise Hold(f"Approval does not name the official version-pinned {ASSET} asset")
     if digest(REAL) != installed["sha256"]:
         raise Hold("Installed binary no longer matches its accepted source manifest")
+
+
+def asset_targets(head):
+    """Asset names this executable header can run as; a universal Mach-O names several."""
+    if head[:4] == b"\x7fELF":
+        # 64-bit little-endian ELF; e_machine selects the architecture.
+        machine = int.from_bytes(head[18:20], "little") if len(head) >= 20 and head[4:6] == b"\x02\x01" else None
+        return {ELF_MACHINES[machine]} if machine in ELF_MACHINES else set()
+    if head[:4] == MACH_MAGIC:
+        cpus = [int.from_bytes(head[4:8], "little")] if len(head) >= 8 else []
+    else:
+        # Universal binary: big-endian slice table with cputype first in every entry.
+        stride = FAT_STRIDE.get(head[:4], 0)
+        count = int.from_bytes(head[4:8], "big") if stride and len(head) >= 8 else 0
+        if not 0 < count <= MAX_SLICES or len(head) < 8 + count * stride:
+            return set()
+        cpus = [int.from_bytes(head[8 + index * stride:12 + index * stride], "big") for index in range(count)]
+    return {MACH_CPUS[cpu] for cpu in cpus if cpu in MACH_CPUS}
 
 
 def stage_candidate(approval):
@@ -213,10 +238,10 @@ def stage_candidate(approval):
         with os.fdopen(fd, "wb") as output, regular_file(STATE / "candidate") as (source, info):
             if info.st_size != approval["size"]:
                 raise Hold("Candidate size does not match the approval")
-            if source.read(4) != b"\x7fELF":
-                raise Hold("Candidate is not a native ELF executable")
-            source.seek(0)
             for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                # Identity is checked on the bytes being staged, not an earlier read of the source.
+                if not total and ASSET not in asset_targets(chunk[:HEADER]):
+                    raise Hold(f"Candidate is not a native {ASSET} executable")
                 total += len(chunk)
                 if total > approval["size"]:
                     raise Hold("Candidate grew while staging")

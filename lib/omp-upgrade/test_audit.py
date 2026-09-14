@@ -145,14 +145,13 @@ class DependencyGateTests(unittest.TestCase):
         def git_objects(*args, **kwargs):
             if args[0] == "ls-tree":
                 oid = BASE["commit"] if args[3] == BASE["commit"] else "e" * 40
-                return f"100644 blob {oid}\tpackage.json\0".encode()
+                return f"100644 blob {oid}\t{args[-1]}\0".encode()
             value = "1.0" if args[2] == BASE["commit"] else "2.0"
             return json.dumps({"dependencies": {"external": value}}).encode()
-        with mock.patch.object(audit, "git", side_effect=git_objects):
-            risks = audit.dependency_risks(BASE, {"commit": "e" * 40}, ["package.json", "pnpm-lock.yaml"])
+        with mock.patch.object(audit, "git", side_effect=git_objects), mock.patch.object(audit, "dependency_reviews", return_value=[]):
+            risks, cleared = audit.dependency_risks(BASE, {"commit": "e" * 40, "version": "18.1.14"}, ["package.json", "pnpm-lock.yaml"])
         self.assertEqual(len(risks), 2)
-        self.assertIn("Dependency identities changed", risks[0])
-        self.assertIn("Opaque dependency/build manifest", risks[1])
+        self.assertEqual(cleared, [])
 
 
 class StateTests(unittest.TestCase):
@@ -166,6 +165,36 @@ class StateTests(unittest.TestCase):
             patcher = mock.patch.object(audit, key, value)
             patcher.start()
             self.addCleanup(patcher.stop)
+        audit.save_source_baseline(BASE["version"], BASE["commit"], "user-accepted", "test", "Explicit fixture trust")
+
+    def test_source_trust_can_advance_without_installing_binary(self):
+        target = {"version": "18.1.21", "commit": "e" * 40}
+        accepted = audit.save_source_baseline("18.1.20", "d" * 40, "user-accepted", "test", "Community trust")
+        self.assertEqual(audit.accepted_source(BASE, target), accepted)
+        self.assertNotEqual(accepted["commit"], BASE["commit"])
+
+    def test_oversized_ledger_preserves_previous_readable_records(self):
+        original = (self.state / "accepted-source.json").read_bytes()
+        with mock.patch.object(audit, "MAX_LEDGER", len(original)), self.assertRaises(audit.Hold):
+            audit.save_source_baseline("18.1.20", "d" * 40, "user-accepted", "test", "x" * 4096)
+        self.assertEqual((self.state / "accepted-source.json").read_bytes(), original)
+        self.assertEqual(len(audit.source_baselines()), 1)
+
+    def test_source_selection_excludes_target_and_rejects_ambiguity(self):
+        target = {"version": "18.1.21", "commit": "e" * 40}
+        audit.save_source_baseline("18.1.21", "e" * 40, "user-accepted", "test", "")
+        self.assertEqual(audit.accepted_source(BASE, target)["commit"], BASE["commit"])
+        audit.save_source_baseline(BASE["version"], "f" * 40, "user-accepted", "test", "")
+        with self.assertRaises(audit.Hold):
+            audit.accepted_source(BASE, target)
+
+    def test_dependency_review_requires_exact_identity(self):
+        target = {"version": "18.1.21", "commit": "e" * 40}
+        entry = {"path": "bun.lock", "base_commit": BASE["commit"], "target_commit": target["commit"],
+                 "target_version": target["version"], "before_sha256": "a" * 64, "after_sha256": "b" * 64}
+        self.assertEqual(audit.matching_review([entry], "bun.lock", BASE["commit"], target, "a" * 64, "b" * 64), entry)
+        self.assertIsNone(audit.matching_review([entry], "bun.lock", BASE["commit"], target, "a" * 64, "c" * 64))
+        self.assertIsNone(audit.matching_review([entry], "bun.lock", BASE["commit"], {**target, "commit": "f" * 40}, "a" * 64, "b" * 64))
 
     def test_unchanged_version_checks_identity_without_review_or_download(self):
         metadata = release(BASE["version"], BASE["sha256"])
@@ -294,7 +323,7 @@ class StateTests(unittest.TestCase):
              mock.patch.object(audit, "api_json", return_value=release()), \
              mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
              mock.patch.object(audit, "source_diff", return_value=(DIFF, ["example.py"])), \
-             mock.patch.object(audit, "dependency_risks", return_value=["Cargo.lock: external code missing"]), \
+             mock.patch.object(audit, "dependency_risks", return_value=(["Cargo.lock: external code missing"], [])), \
              mock.patch.object(audit, "review_chunk") as review, \
              mock.patch.object(audit, "stage_asset") as download:
             with self.assertRaises(audit.Hold):

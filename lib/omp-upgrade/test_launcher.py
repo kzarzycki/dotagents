@@ -29,8 +29,12 @@ class LauncherTests(unittest.TestCase):
         self.root.mkdir(mode=0o700)
         self.state.mkdir(mode=0o700)
         self.real = self.root / "omp-real"
-        self.old_bytes = b"\x7fELFold-accepted-binary"
-        self.new_bytes = b"\x7fELFnew-approved-binary"
+        self.header = b"\xcf\xfa\xed\xfe" + (0x0100000C).to_bytes(4, "little") + bytes(24)
+        patch = mock.patch.object(launcher, "ASSET", "omp-darwin-arm64")
+        patch.start()
+        self.addCleanup(patch.stop)
+        self.old_bytes = self.header + b"old-accepted-binary"
+        self.new_bytes = self.header + b"new-approved-binary"
         self.real.write_bytes(self.old_bytes)
         self.real.chmod(0o700)
         self.old = {"version": "18.1.13", "commit": "a" * 40, "sha256": self.sha(self.old_bytes)}
@@ -68,12 +72,21 @@ class LauncherTests(unittest.TestCase):
 
     def test_integrity_rejection_happens_before_candidate_execution(self):
         self.approve()
-        (self.state / "candidate").write_bytes(b"\x7fELF" + b"x" * (len(self.new_bytes) - 4))
+        (self.state / "candidate").write_bytes(self.header + b"x" * (len(self.new_bytes) - len(self.header)))
         with mock.patch.object(launcher, "smoke") as execute:
             self.assertEqual(launcher.activate_if_ready(), self.real)
         execute.assert_not_called()
         self.assert_old_held()
         self.assertIn("SHA256", self.get("report.json")["summary"])
+
+    def test_wrong_platform_is_rejected_before_execution(self):
+        elf = b"\x7fELF\x02\x01" + bytes(12) + (183).to_bytes(2, "little") + bytes(44)
+        self.new_bytes = elf
+        self.approve(size=len(elf), sha256=self.sha(elf))
+        with mock.patch.object(launcher, "smoke") as execute:
+            launcher.activate_if_ready()
+        execute.assert_not_called()
+        self.assert_old_held()
 
     def test_metadata_trust_boundaries_are_rejected_without_execution(self):
         invalid = [
