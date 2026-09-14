@@ -95,6 +95,15 @@ changes HOLD without truncation. `audit.py check --force` bypasses only the dail
 cooldown, not security checks. Always check the report's installed version and
 timestamp before attributing an older HOLD to a fresh request.
 
+Complete chunk reviews collect concerns without deciding activation. Missing,
+malformed, truncated or explicitly incomplete reviews still HOLD immediately.
+The final coherence review receives the full diff, all prior reviews and each
+identified concern. Approval requires a SAFE final verdict and an explicit,
+evidence-grounded resolution for every concern. `chunk_findings` retains the
+original findings and resolutions; `risks` contains unresolved final findings.
+The composed final input retains its existing 1 MiB limit; overflow HOLDs without
+truncating the diff or discarding concerns.
+
 The audit used to be triggered through a systemd user unit; it is now a detached
 child process (`request_audit` in `launcher.py`) — the audit serializes itself
 with its own lock and daily interval, so the unit bought nothing.

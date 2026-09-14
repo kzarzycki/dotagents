@@ -263,17 +263,19 @@ class StateTests(unittest.TestCase):
         self.assertFalse((self.state / "approved.json").exists())
         self.assertFalse((self.state / "candidate").exists())
 
-    def test_whole_release_hold_overrides_individually_safe_chunks(self):
+    def test_complete_chunk_questions_reach_final_review_but_final_hold_blocks(self):
         complete = DIFF + DIFF.replace("example.py", "second.py")
         report = audit.now_report()
         def review(source, chunk_id, inventory, notes, identities, evidence, **kwargs):
             if kwargs.get("coherence"):
                 self.assertEqual(source, complete)
                 self.assertEqual(len(kwargs["prior_reviews"]), 2)
-                self.assertTrue(all(audit.verdict_safe(item) for item in kwargs["prior_reviews"]))
+                self.assertEqual(len(kwargs["concerns"]), 2)
+                self.assertTrue(all(item["verdict"] == "HOLD" for item in kwargs["prior_reviews"]))
                 return verdict(chunk_id=chunk_id, verdict="HOLD", risks=["Cross-file credential flow reaches a new endpoint"],
                                source_sha256=hashlib.sha256(source.encode()).hexdigest(), features=["Cross-file feature identified"])
-            return verdict(chunk_id=chunk_id, source_sha256=hashlib.sha256(source.encode()).hexdigest())
+            return verdict(chunk_id=chunk_id, verdict="HOLD", uncertainties=["Caller in another chunk"],
+                           source_sha256=hashlib.sha256(source.encode()).hexdigest())
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
              mock.patch.object(audit, "api_json", return_value=release()), \
              mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
@@ -287,6 +289,19 @@ class StateTests(unittest.TestCase):
         self.assertIn("Cross-file credential flow reaches a new endpoint", report["risks"])
         self.assertIn("Cross-file feature identified", report["features"])
         self.assertFalse((self.state / "approved.json").exists())
+
+    def test_incomplete_chunk_never_reaches_final_review(self):
+        report = audit.now_report()
+        with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
+             mock.patch.object(audit, "source_diff", return_value=(DIFF, ["example.py"])), \
+             mock.patch.object(audit, "review_chunk", return_value=verdict(reviewed=False)) as review, \
+             mock.patch.object(audit, "stage_asset") as download:
+            with self.assertRaises(audit.Hold):
+                audit.audit_release(report)
+        self.assertEqual(review.call_count, 1)
+        download.assert_not_called()
 
     def test_whole_review_input_bound_holds_instead_of_truncating_source(self):
         with mock.patch.object(audit, "MAX_WHOLE_INPUT", 128), \
