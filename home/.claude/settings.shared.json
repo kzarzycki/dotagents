@@ -143,7 +143,6 @@
     "memsearch@memsearch-plugins": true,
     "drawio@365-skills": false,
     "pixelbrowse@pixelrag-plugins": false,
-    "ponytail@ponytail": true,
     "goal-creator@kzarzycki-agent-skills": false
   },
   "extraKnownMarketplaces": {
@@ -211,12 +210,6 @@
       "source": {
         "source": "github",
         "repo": "StarTrail-org/PixelRAG"
-      }
-    },
-    "ponytail": {
-      "source": {
-        "source": "github",
-        "repo": "DietrichGebert/ponytail"
       }
     }
   },

@@ -177,14 +177,11 @@ def test_home_configuration_does_not_enable_direct_matt_plugin():
         assert "mattpocock-skills" not in path.read_text(), path
 
 
-# A plugin may be enabled for every machine only when its scope is the user, not
-# a project: memory that follows you across repos, or a behavioral disposition
-# about how you want code written. Capability -- tools, MCP servers, domain
-# knowledge -- stays with the project that needs it, via that project's APM
-# manifest. Adding to this set means arguing the plugin carries no capability.
+# Plugins enabled for every machine must be user-scoped, not project
+# capabilities: memory that follows you across repos. Ponytail is delivered
+# by the shared behavioral spec instead of a plugin.
 USER_SCOPED_PLUGINS = {
     "memsearch@memsearch-plugins",  # memory: your history, every repo
-    "ponytail@ponytail",  # disposition: prefer the simplest thing that works
 }
 
 
@@ -203,6 +200,7 @@ def test_home_claude_global_plugins_are_user_scoped_only():
     assert {
         name for name, value in shared["enabledPlugins"].items() if value
     } == USER_SCOPED_PLUGINS
+    assert "## Ponytail" in (ROOT / "home/.agents/AGENTS.md").read_text()
 
 
 def test_install_removes_retired_toolkit_symlinks(tmp_path):

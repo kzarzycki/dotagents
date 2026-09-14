@@ -18,7 +18,7 @@ dotagents/
 │   └── remote/         ← Claude Code on the web per-session dotagents pull
 └── home/               ← install payload; 1:1 mirror of ~/
     ├── .agents/
-    │   ├── AGENTS.md   ← canonical user behavioral spec
+    │   ├── AGENTS.md   ← canonical user behavioral spec, including Ponytail
     │   └── env.sh      ← shell extensions for managed tools (PATH, MEMSEARCH_DIR)
     ├── .claude/
     │   ├── CLAUDE.md            ← in-repo symlink → ../.agents/AGENTS.md
@@ -30,13 +30,11 @@ dotagents/
     │   └── AGENTS.md             ← in-repo symlink → ../.agents/AGENTS.md
     ├── .gemini/
     │   └── GEMINI.md             ← in-repo symlink → ../.agents/AGENTS.md
-    └── .config/
-        └── ponytail/            ← machine-wide default intensity (full)
 ```
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
 
-The installed user baseline enables only user-scoped plugins: `memsearch` (memory that follows you across repos) and `ponytail` (a disposition about how code gets written). Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
+The installed user baseline enables only the `memsearch` plugin (memory that follows you across repos). Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
 
 ## Repository development agent layer
 
