@@ -582,7 +582,7 @@ def main(argv=None):
             print("Release not activated: " + safe_text(str(error)), file=sys.stderr)
         return 1
     if routed and routed[0] == "update":
-        print("Direct omp update is disabled: it bypasses the managed source audit. Use omp --upgrade-check, then omp --upgrade-status; approved releases activate on an interactive launch.", file=sys.stderr)
+        print("Direct omp update is disabled: it bypasses the managed source audit. Use omp --upgrade-check, then omp --upgrade-status and omp --upgrade-apply.", file=sys.stderr)
         return 2
     target = REAL
     interactive = interactive_launch(argv)
