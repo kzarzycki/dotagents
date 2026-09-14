@@ -325,6 +325,7 @@ remove_retired_payload_link() {
 remove_retired_payload_link "$HOME/.agents/mcp-registry.json" ".agents/mcp-registry.json"
 remove_retired_payload_link "$HOME/.claude/hooks" ".claude/hooks"
 remove_retired_payload_link "$HOME/.agents/rules" ".agents/rules"
+remove_retired_payload_link "$HOME/.config/ponytail/config.json" ".config/ponytail/config.json"
 
 # Remove symlinks created by older dotagents versions that vendored Claude
 # skills. Skills now come from plugins/marketplaces, not this repo.
