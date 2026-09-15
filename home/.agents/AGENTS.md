@@ -26,7 +26,7 @@ Pick the register by who reads it: a human or an agent.
 - If a fix I asked for is in flight, wait for it and rebase; never route around another session's landing work.
 - Report the real exit code of every step; a chain's status is the last command's, not the one that mattered.
 - Subagents: scale effort, not model — strongest model at `low` for judgment work; Sonnet only for judgment-free mechanics. Projects own the specifics.
-- Separate agents (a Herdr pane, a worker, a reviewer) run in `omp` unless I name another harness. `omp` is vendor-agnostic, so a second-vendor review means a different model inside `omp`, not a different harness.
+- Separate agents (a Herdr pane, a worker, a reviewer) run in `omp` unless I name another harness.
 - sudo needed and no TTY password? Use `osascript -e 'do shell script "CMD" with administrator privileges'` (macOS GUI auth prompt). Don't hand the command back to me.
 
 ## Ponytail (lazy senior dev mode)
