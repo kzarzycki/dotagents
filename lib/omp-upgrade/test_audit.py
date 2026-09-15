@@ -445,6 +445,24 @@ class AcceptanceTests(unittest.TestCase):
         self.assertEqual(report["acceptance"]["report_sha256"], digest)
         self.assertEqual(audit.source_baselines()[-1]["basis"], "user-accepted")
 
+    def test_acceptance_recomputes_the_scoped_source_digest(self):
+        target, _ = self.held_report()
+        informational = DIFF.replace("example.py", "docs/ignored.md")
+        complete = informational + DIFF
+        report = json.loads((self.state / "report.json").read_text())
+        report.update(diff_sha256=hashlib.sha256(DIFF.encode()).hexdigest(),
+                      gated_files=["example.py"], informational_files=["docs/ignored.md"])
+        audit.persist_report(report)
+        digest = hashlib.sha256((self.state / "report.json").read_bytes()).hexdigest()
+        with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+             mock.patch.object(audit, "source_diff", return_value=(complete, ["docs/ignored.md", "example.py"])), \
+             mock.patch.object(audit, "dependency_risks", return_value=([], [])), \
+             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "tag_commit", return_value=target["commit"]), \
+             mock.patch.object(audit, "stage_asset"), contextlib.redirect_stdout(io.StringIO()):
+            audit.accept_reviewed(target["version"], target["commit"], target["sha256"], digest, "Accept scoped report")
+        self.assertTrue((self.state / "approved.json").exists())
+
 
 class ReviewReuseTests(unittest.TestCase):
     setUp = StateTests.setUp

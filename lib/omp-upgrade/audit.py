@@ -534,6 +534,18 @@ def split_diff(text):
         chunks.append(current)
     require(chunks and len(chunks) <= MAX_CHUNKS and "".join(chunks) == text, "Incomplete or oversized chunk coverage")
     return chunks
+def scope_diff(complete, paths):
+    """Partition by each patch's own header; dependency checks still use all paths."""
+    patches = re.split(r"(?=^diff --git )", complete, flags=re.MULTILINE)[1:]
+    gated, informational = [], []
+    for patch in patches:
+        header = re.match(r"diff --git a/(\S+) b/(\S+)\n", patch)
+        require(header and header.group(1) == header.group(2), "Unparseable or renamed diff header")
+        path = header.group(1)
+        (informational if INFORMATIONAL.match(path) else gated).append((path, patch))
+    require(sorted(path for path, _ in gated + informational) == sorted(paths),
+            "Diff and changed-file inventory disagree")
+    return "".join(patch for _, patch in gated), gated, informational
 
 
 def json_with_trailing_commas(text):
@@ -960,18 +972,11 @@ def audit_release(report):
     baseline = accepted_source(base, target)
     report["accepted_source"] = baseline
     complete, paths = source_diff(baseline, target)
-    patches = re.split(r"(?=^diff --git )", complete, flags=re.MULTILINE)[1:]
-    gated, informational = [], []
-    for patch in patches:
-        header = re.match(r"diff --git a/(\S+) b/(\S+)\n", patch)
-        require(header and header.group(1) == header.group(2), "Unparseable or renamed diff header")
-        path = header.group(1)
+    diff, gated, informational = scope_diff(complete, paths)
+    for path, patch in gated + informational:
         if "changelog" in path.lower():
             report["features"].extend("Changelog claim (unverified): " + line[1:].strip()[:1024]
                                       for line in patch.splitlines() if line.startswith(("+- ", "+* ")))
-        (informational if INFORMATIONAL.match(path) else gated).append((path, patch))
-    require(sorted(path for path, _ in gated + informational) == sorted(paths), "Diff and changed-file inventory disagree")
-    diff = "".join(patch for _, patch in gated)
     inventory = {"gated_files": [path for path, _ in gated], "informational_files": [path for path, _ in informational]}
     require(diff, "No shipped-runtime source changed; nothing the gate can review")
     chunks = split_diff(diff)
@@ -1166,7 +1171,8 @@ def accept_reviewed(version, commit, sha256, report_sha256, detail):
                 "Acceptance target must be newer than installed")
         baseline = report.get("accepted_source")
         require(isinstance(baseline, dict), "Missing reviewed source baseline")
-        diff, paths = source_diff(baseline, target)
+        complete, paths = source_diff(baseline, target)
+        diff, _, _ = scope_diff(complete, paths)
         require(hashlib.sha256(diff.encode()).hexdigest() == report.get("diff_sha256"), "Reviewed source changed")
         chunks = split_diff(diff)
         reviews = report.get("reviews")
