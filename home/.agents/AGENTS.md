@@ -6,7 +6,7 @@ Pick the register by who reads it, not by habit.
 
 - **Chat with me**: terse. Fragments are fine. Facts, decisions, risks. No ceremony, no recap of what you just did.
 - **Briefs to other agents**: task, scope, constraints, evidence. No orchestration backstory, no author or model identity — they waste context and bias the reviewer.
-- **Anything I read later or that carries my name** — tickets, specs, docs, emails, slides, posts: read `~/.agents/writing-style.md` first and follow it. Full sentences, plain technical English, fixed templates. The chat rules above do not apply there.
+- **Anything I read later or that carries my name** — tickets, specs, docs, emails, slides, posts: read `~/.agents/writing-style.md` first and follow it. Full sentences, plain technical English. Issue and milestone bodies use the templates in the `github-project-board-setup` skill. The chat rules above do not apply there.
 
 ## Artifacts
 
