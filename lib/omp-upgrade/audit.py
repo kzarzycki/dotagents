@@ -961,13 +961,16 @@ def audit_release(report):
     report["accepted_source"] = baseline
     complete, paths = source_diff(baseline, target)
     patches = re.split(r"(?=^diff --git )", complete, flags=re.MULTILINE)[1:]
-    require(len(patches) == len(paths), "Diff and changed-file inventory disagree")
     gated, informational = [], []
-    for path, patch in zip(paths, patches):
+    for patch in patches:
+        header = re.match(r"diff --git a/(\S+) b/(\S+)\n", patch)
+        require(header and header.group(1) == header.group(2), "Unparseable or renamed diff header")
+        path = header.group(1)
         if "changelog" in path.lower():
             report["features"].extend("Changelog claim (unverified): " + line[1:].strip()[:1024]
                                       for line in patch.splitlines() if line.startswith(("+- ", "+* ")))
         (informational if INFORMATIONAL.match(path) else gated).append((path, patch))
+    require(sorted(path for path, _ in gated + informational) == sorted(paths), "Diff and changed-file inventory disagree")
     diff = "".join(patch for _, patch in gated)
     inventory = {"gated_files": [path for path, _ in gated], "informational_files": [path for path, _ in informational]}
     require(diff, "No shipped-runtime source changed; nothing the gate can review")
@@ -976,11 +979,13 @@ def audit_release(report):
     private_dir(evidence)
     atomic_bytes(evidence / "complete.diff", complete.encode())
     atomic_bytes(evidence / "gated.diff", diff.encode())
-    atomic_bytes(evidence / "informational.diff", "".join(patch for _, patch in informational).encode())
+    excluded = "".join(patch for _, patch in informational).encode()
+    atomic_bytes(evidence / "informational.diff", excluded)
     atomic_bytes(evidence / "system-prompt.txt", SYSTEM.encode())
     atomic_bytes(evidence / "release-notes.txt", notes.encode())
     report.update(evidence_path=str(evidence), diff_sha256=hashlib.sha256(diff.encode()).hexdigest(),
                   complete_diff_sha256=hashlib.sha256(complete.encode()).hexdigest(),
+                  informational_diff_sha256=hashlib.sha256(excluded).hexdigest(),
                   changed_files=paths, chunk_count=len(chunks), **inventory)
     risks, cleared = dependency_risks(baseline, target, paths)
     report["risks"].extend(risks)

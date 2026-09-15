@@ -101,13 +101,18 @@ Only source that ships in the binary is gated. `INFORMATIONAL` in `audit.py`
 routes `.github/`, `infra/`, `nix/`, `docs/`, Dockerfiles, changelogs/readmes,
 test/bench directories and `*.test`/`*.spec` files to `informational.diff` and
 `informational_files`; the model never sees them and cannot HOLD on them.
-Dependency manifests (`package.json`, lockfiles, `Cargo.toml`) stay gated whatever
-their path. A pipeline-only compromise is therefore report-only; the compensating
-control is the binary itself — Developer ID signature (team `VTLHGQC72S`) and the
-embedded Bun runtime matching the official release byte-for-byte outside the
-`__BUN` segment and load commands. `gated.diff` is what was reviewed;
-`complete.diff` is the full delta. A release with no gated changes HOLDs rather
-than approving unreviewed.
+Package-local build code (`packages/*/scripts/`, `build.ts`) and dependency
+manifests stay gated: they shape the bytes in `__BUN`. A pipeline-only compromise
+is therefore report-only. The gate does not compensate for that; the manual
+per-release check does, and the audit skill must repeat it on the downloaded
+asset: `codesign --verify --strict` and team `VTLHGQC72S` continuity with the
+installed binaries, then compare Mach-O segments against the official
+`bun-darwin-aarch64.zip` for the embedded Bun version (`strings | grep Bun/`) —
+`__TEXT`, `__DATA`, `__DATA_CONST` match except the load-command bytes; only
+`__BUN` and `__LINKEDIT` differ. Evidence goes under
+`evidence/VERSION/focused-binary-review/`. `gated.diff` is what was reviewed;
+`complete.diff` is the full delta; both and `informational.diff` are digested in
+the report. A release with no gated changes HOLDs rather than approving unreviewed.
 
 Complete chunk reviews collect concerns without deciding activation. Missing,
 malformed, truncated or explicitly incomplete reviews still HOLD immediately.

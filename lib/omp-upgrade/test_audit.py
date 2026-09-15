@@ -384,6 +384,18 @@ class StateTests(unittest.TestCase):
         review.assert_not_called()
         download.assert_not_called()
 
+    def test_diff_headers_that_disagree_with_inventory_hold(self):
+        for complete, paths in ((DIFF, ["other.py"]),
+                                ("diff --git a/example.py b/renamed.py\n" + DIFF.split("\n", 1)[1], ["example.py"])):
+            with self.subTest(paths=paths), \
+                 mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+                 mock.patch.object(audit, "api_json", return_value=release()), \
+                 mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
+                 mock.patch.object(audit, "source_diff", return_value=(complete, paths)), \
+                 mock.patch.object(audit, "review_chunk") as review, self.assertRaises(audit.Hold):
+                audit.audit_release(audit.now_report())
+            review.assert_not_called()
+
 
 class AcceptanceTests(unittest.TestCase):
     setUp = StateTests.setUp
