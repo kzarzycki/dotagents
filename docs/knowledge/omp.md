@@ -92,7 +92,7 @@ digests are recorded with `audit.py record-evidence` (see `--help`). Records in
 They do not skip model review or attest the release binary. Ledger capacity
 errors preserve previous readable records.
 
-Review retains the 512 KiB source, 64 KiB chunk, and 12-chunk limits; oversized
+Review retains the 1 MiB source, 64 KiB chunk, and 16-chunk limits; oversized
 changes HOLD without truncation. `audit.py check --force` bypasses only the daily
 cooldown, not security checks. Always check the report's installed version and
 timestamp before attributing an older HOLD to a fresh request.
