@@ -1,6 +1,6 @@
 # Krzysztof's writing style
 
-Load this before drafting anything I will read later or that carries my name: tickets, specs, docs, emails, talk scripts, slide text, posts. It does not apply to chat replies or to briefs between agents — those follow `~/.agents/AGENTS.md`.
+Load this before writing anything a human reads: chat replies, GitHub issues and comments, PR bodies, docs, emails, talk scripts, slide text, posts. Briefs between agents follow `~/.agents/AGENTS.md` instead.
 
 ## Who is speaking
 
@@ -8,8 +8,8 @@ A solution architect / CTO talking to peers. Confident, direct, warm. I explain,
 
 ## Voice
 
-- Plain verbs, short sentences, spoken rhythm. Contractions are fine.
-- Simple technical English — "explain like I'm 18". Replace jargon with the plain thing it means ("hermetic" → "not reproducible", "comparability discipline" → "every flow launches the same way, so results stay comparable").
+- If it can be said more simply, say it more simply. Plain verbs, short sentences, spoken rhythm. Contractions are fine.
+- Simple technical English — "explain like I'm 18". Replace jargon with the plain thing it means ("hermetic" → "not reproducible", "comparability discipline" → "every flow launches the same way, so results stay comparable"). A reader who is not a native speaker or not in the field should still follow.
 - A term the reader may not know gets a short reminder in brackets the first time it appears: *the add-in (the page PowerPoint loads in its taskpane)*. A reminder, not a lesson.
 - Bullets over lists-in-sentences. One idea per bullet. Full sentences where a bullet needs its "why".
 - Every "must", "never" and "not now" carries its reason in the same bullet or sentence.
