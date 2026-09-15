@@ -97,6 +97,18 @@ changes HOLD without truncation. `audit.py check --force` bypasses only the dail
 cooldown, not security checks. Always check the report's installed version and
 timestamp before attributing an older HOLD to a fresh request.
 
+Only source that ships in the binary is gated. `INFORMATIONAL` in `audit.py`
+routes `.github/`, `infra/`, `nix/`, `docs/`, Dockerfiles, changelogs/readmes,
+test/bench directories and `*.test`/`*.spec` files to `informational.diff` and
+`informational_files`; the model never sees them and cannot HOLD on them.
+Dependency manifests (`package.json`, lockfiles, `Cargo.toml`) stay gated whatever
+their path. A pipeline-only compromise is therefore report-only; the compensating
+control is the binary itself — Developer ID signature (team `VTLHGQC72S`) and the
+embedded Bun runtime matching the official release byte-for-byte outside the
+`__BUN` segment and load commands. `gated.diff` is what was reviewed;
+`complete.diff` is the full delta. A release with no gated changes HOLDs rather
+than approving unreviewed.
+
 Complete chunk reviews collect concerns without deciding activation. Missing,
 malformed, truncated or explicitly incomplete reviews still HOLD immediately.
 The final coherence review receives the full diff, all prior reviews and each

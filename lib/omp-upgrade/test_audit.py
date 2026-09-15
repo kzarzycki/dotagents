@@ -349,6 +349,41 @@ class StateTests(unittest.TestCase):
         self.assertTrue(any("Public feature claim" in item for item in report["features"]))
         self.assertFalse((self.state / "approved.json").exists())
 
+    def test_infra_ci_docs_and_tests_are_informational_but_manifests_stay_gated(self):
+        informational = ["infra/reload-runner.sh", ".github/workflows/ci.yml", "Dockerfile", "docs/tools/x.md",
+                         "packages/cli/test/x.test.ts", "packages/cli/src/y.spec.ts", "packages/cli/CHANGELOG.md"]
+        gated = ["example.py", "bun.lock", "packages/cli/src/prompts/system.md", "packages/cli/scripts/build.ts"]
+        paths = sorted(informational + gated)
+        complete = "".join(DIFF.replace("example.py", path) for path in paths)
+        report = audit.now_report()
+        with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
+             mock.patch.object(audit, "source_diff", return_value=(complete, paths)), \
+             mock.patch.object(audit, "dependency_risks", return_value=([], [])) as manifests, \
+             mock.patch.object(audit, "review_chunk", return_value=verdict(reviewed=False)) as review, \
+             mock.patch.object(audit, "stage_asset"):
+            with self.assertRaises(audit.Hold):
+                audit.audit_release(report)
+        reviewed = review.call_args.args[0]
+        self.assertEqual(report["gated_files"], sorted(gated))
+        self.assertEqual(report["informational_files"], sorted(informational))
+        self.assertEqual(reviewed, "".join(DIFF.replace("example.py", path) for path in sorted(gated)))
+        self.assertEqual(review.call_args.args[2], {"gated_files": sorted(gated), "informational_files": sorted(informational)})
+        self.assertEqual(manifests.call_args.args[2], paths)
+        self.assertEqual(report["changed_files"], paths)
+
+    def test_release_without_shipped_source_changes_holds_instead_of_approving(self):
+        with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
+             mock.patch.object(audit, "source_diff", return_value=(DIFF.replace("example.py", "docs/a.md"), ["docs/a.md"])), \
+             mock.patch.object(audit, "review_chunk") as review, \
+             mock.patch.object(audit, "stage_asset") as download, self.assertRaises(audit.Hold):
+            audit.audit_release(audit.now_report())
+        review.assert_not_called()
+        download.assert_not_called()
+
 
 class AcceptanceTests(unittest.TestCase):
     setUp = StateTests.setUp
