@@ -178,7 +178,7 @@ class StateTests(unittest.TestCase):
             audit.lightweight_release(report)
         self.assertEqual(report["status"], "APPROVED")
         stage.assert_called_once()
-        signature.assert_has_calls([mock.call(self.real), mock.call(self.state / "candidate")])
+        signature.assert_called_once_with(self.real)
         source.assert_not_called()
         self.assertTrue((self.state / "approved.json").exists())
 

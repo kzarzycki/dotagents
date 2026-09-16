@@ -67,16 +67,18 @@ omp update             # blocked: bypasses the gate
 An interactive `omp` launch does three things: activates an already-approved
 release (verifying size and sha256 against the approval, with a rollback
 journal), prints the audit notice once per verdict, and kicks off the next
-background check. Other non-interactive invocations never upgrade; `--upgrade-apply`
-is the explicit exception and does not start an agent session.
+background artifact check. A successful lightweight check writes `approved.json`;
+the next interactive launch automatically activates that candidate. Other
+non-interactive invocations never upgrade; `--upgrade-apply` is the explicit
+exception and does not start an agent session.
 
 The default audit (`audit.py check`) is deliberately lightweight: it fetches stable
 release metadata from the GitHub API, resolves the tag commit, downloads the exact
 asset, and verifies its size and SHA256 before staging it. On macOS it also requires
 `codesign --verify --strict` and the candidate's TeamIdentifier to match the
 installed binary. It does not claim the source or embedded runtime is safe. Use
-`check --strict` for the opt-in source diff, dependency evidence and model review;
-that path may HOLD on behavioral findings. Review is not binary attestation.
+`deep-check` for the opt-in source diff, dependency evidence and model review; that
+path may HOLD on behavioral findings. Review is not binary attestation.
 
 The asset is picked per platform (`omp-linux-x64`, `omp-darwin-arm64`, …); an
 unrecognised platform gets no asset name and the gate refuses rather than
@@ -131,11 +133,11 @@ truncating the diff or discarding concerns.
 # Default: lightweight artifact identity check; no source/model review.
 python3 -I ~/.local/lib/omp-upgrade/audit.py check --version VERSION
 # Optional: full source/dependency/model review.
-python3 -I ~/.local/lib/omp-upgrade/audit.py check --strict --version VERSION
+python3 -I ~/.local/lib/omp-upgrade/audit.py deep-check --version VERSION
 # Optional helper context for strict mode.
-python3 -I ~/.local/lib/omp-upgrade/audit.py check --strict --version VERSION --context packages/utils/src/file-lock.ts
+python3 -I ~/.local/lib/omp-upgrade/audit.py deep-check --version VERSION --context packages/utils/src/file-lock.ts
 # Optional: rerun strict reviews without cache reuse.
-python3 -I ~/.local/lib/omp-upgrade/audit.py check --strict --version VERSION --fresh-reviews
+python3 -I ~/.local/lib/omp-upgrade/audit.py deep-check --version VERSION --fresh-reviews
 omp --upgrade-apply
 omp --version
 ```

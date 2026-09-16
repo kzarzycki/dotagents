@@ -896,7 +896,9 @@ def stage_asset(target):
             os.fchmod(stream.fileno(), 0o644)
             stream.flush()
             os.fsync(stream.fileno())
+            signature = verify_binary_signature(Path(name))
         os.replace(name, STATE / "candidate")
+        return signature
     finally:
         with contextlib.suppress(FileNotFoundError):
             os.unlink(name)
@@ -976,13 +978,12 @@ def lightweight_release(report):
         require(target["commit"] == base["commit"] and target["sha256"] == base["sha256"],
                 "Unchanged release version has changed source or binary identity")
         require(REAL.stat().st_size == target["size"], "Unchanged release asset size mismatch")
-        verify_binary_signature(REAL)
         report.update(status="CURRENT", summary="Installed release matches the stable GitHub asset identity and signer; no source review performed.")
         return
     require(target["commit"] != base["commit"] and target["sha256"] != base["sha256"],
             "New version reuses installed source or binary identity")
-    stage_asset(target)
-    verify_binary_signature(STATE / "candidate")
+    signature = stage_asset(target)
+    report["lightweight_checks"].append(f"candidate codesign TeamIdentifier: {signature}")
     atomic_json(STATE / "approved.json", {**target, "base_sha256": base["sha256"]})
     report.update(status="APPROVED", approval_basis="lightweight-artifact",
                   summary="Stable release identity, tag commit, asset size and SHA256 passed; candidate staged. No source review performed.")
@@ -1280,6 +1281,12 @@ def main():
     check_parser.add_argument("--context", action="append", default=[], metavar="REPO_PATH",
                               help="Include this full file from the pinned target commit in final review; implies --strict")
     check_parser.add_argument("--fresh-reviews", action="store_true", help="Rerun strict model reviews instead of reusing exact-input evidence")
+    deep = commands.add_parser("deep-check", help="Run the full source/dependency/model review")
+    deep.add_argument("--force", action="store_true", help="Bypass daily interval; exact-input reviews may still be reused")
+    deep.add_argument("--version", help="Pin a stable target instead of latest; bypass daily interval")
+    deep.add_argument("--context", action="append", default=[], metavar="REPO_PATH",
+                      help="Include this full file from the pinned target commit in final review; repeatable")
+    deep.add_argument("--fresh-reviews", action="store_true", help="Rerun model reviews instead of reusing exact-input evidence")
     commands.add_parser("model-smoke", help="Exercise real isolated model invocation without writing an approval")
     accept = commands.add_parser("accept-source", help="Record public source you reviewed as the diff baseline; not an approval")
     accept.add_argument("--version", required=True, help="Released version whose exact source you reviewed")
@@ -1303,9 +1310,9 @@ def main():
                           help="External artifact the review actually covered; repeatable")
     args = parser.parse_args()
     try:
-        if args.command == "check":
+        if args.command in ("check", "deep-check"):
             global REUSE_REVIEWS
-            strict = args.strict or bool(args.context) or args.fresh_reviews
+            strict = args.command == "deep-check" or getattr(args, "strict", False) or bool(args.context) or args.fresh_reviews
             REUSE_REVIEWS = not args.fresh_reviews
             return check(args.force or args.fresh_reviews, args.version, args.context, strict=strict)
         if args.command == "model-smoke":
