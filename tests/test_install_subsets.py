@@ -1,0 +1,60 @@
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def make_checkout(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "bin").mkdir(parents=True)
+    shutil.copy2(ROOT / "bin/dotagents", repo / "bin/dotagents")
+    shutil.copytree(ROOT / "home", repo / "home", symlinks=True)
+    (repo / "home/.omp/agent/config.yml.lock").touch()
+    home = tmp_path / "home"
+    home.mkdir()
+    return repo, home
+
+
+def run_install(repo, home, *args):
+    return subprocess.run(
+        ["/bin/bash", str(repo / "bin/dotagents"), "install", "--no-pull", *args],
+        env={**os.environ, "HOME": str(home)},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def test_subset_install_selects_payload_and_skips_runtime_effects(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    result = run_install(repo, home, "--only", "omp")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (home / ".omp/agent/config.yml").is_symlink()
+    assert (home / ".omp/agent/extensions/herdr-omp-agent-state.ts").is_symlink()
+    assert not (home / ".omp/agent/config.yml.lock").exists()
+    assert not (home / ".claude").exists()
+    assert not (home / ".agents").exists()
+    assert not (home / ".dotagents").exists()
+    assert not (home / ".dotagents-profile").exists()
+
+
+def test_subset_install_accepts_dot_name_and_repeats_idempotently(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    for _ in range(2):
+        result = run_install(repo, home, "--only=.omp", "--only", "omp")
+        assert result.returncode == 0, result.stdout + result.stderr
+    assert (home / ".omp/agent/config.yml").is_symlink()
+    assert len(list((home / ".omp/agent").glob("config.yml*"))) == 1
+
+
+def test_unknown_subset_fails_before_mutating_home(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    result = run_install(repo, home, "--only", "missing")
+
+    assert result.returncode == 2
+    assert "unsupported --only value" in result.stderr
+    assert list(home.iterdir()) == []

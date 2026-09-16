@@ -47,6 +47,7 @@ apm_modules/
 
 # omp (oh-my-pi) runtime state — only config is tracked under home/.omp/
 home/.omp/agent/*.db*
+home/.omp/agent/*.lock
 home/.omp/agent/auth.json
 home/.omp/agent/sessions/
 home/.omp/agent/terminal-sessions/

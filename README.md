@@ -15,7 +15,8 @@ dotagents/
 │   ├── memsearch/      ← memsearch plugin patches + per-machine bootstrap
 │   ├── dev-marketplace/← live-dev plugin linker + tracked marketplace.json
 │   ├── pixelrag/       ← per-machine pixelshot binary bootstrap
-│   └── remote/         ← Claude Code on the web per-session dotagents pull
+│   ├── omp/             ← per-machine OMP plugin bootstrap
+│   └── remote/          ← Claude Code on the web per-session dotagents pull
 └── home/               ← install payload; 1:1 mirror of ~/
     ├── .agents/
     │   ├── AGENTS.md   ← canonical user behavioral spec, including Ponytail
@@ -35,6 +36,12 @@ dotagents/
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
 
 The installed user baseline enables only the `memsearch` plugin (memory that follows you across repos). Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
+
+OMP (oh-my-pi) is a first-class payload under `home/.omp/`: its config, rules,
+and extensions install with the normal command just like Claude and Codex
+payloads. OMP's databases, credentials, caches, plugin registries, and binaries
+remain machine-local. Run `patches/omp/bootstrap.sh` after installing OMP to
+install the pinned `@czottmann/pi-automode@1.15.0` plugin.
 
 ## Repository development agent layer
 
@@ -65,6 +72,31 @@ dotagents install
 ```
 
 The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) appends a one-time source line for `~/.agents/env.sh` to existing `~/.bashrc`/`~/.zshrc` — the rc files stay machine-owned, only the snippet is managed; `env.sh` carries shell extensions the managed tools need (PATH, `MEMSEARCH_DIR`), not general shell config, (6) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, (7) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
+
+To install only selected top-level payloads, pass `--only` once per entry:
+
+```sh
+dotagents install --only omp --no-pull
+dotagents install --only claude --only codex --no-pull
+```
+
+The value names a directory under `home/`, with or without its leading dot.
+Subset installs mirror only the selected payload directories. They skip git
+pull, repository hooks, and pre-commit setup. Profile/settings generation runs
+when `.claude` is selected; shell startup setup runs when `.agents` is selected.
+The `~/.dotagents` link is created when `.claude` is selected because Claude
+hooks reference it. The default install with no `--only` remains the complete
+machine setup.
+
+### OMP plugin bootstrap
+
+```sh
+patches/omp/bootstrap.sh
+```
+
+This checks for the pinned public `@czottmann/pi-automode@1.15.0` package and
+installs it with `omp plugin install` when absent. OMP owns the generated
+package and lock files; they are not symlinked into dotagents.
 
 ### `~/.dotagents` symlink
 
