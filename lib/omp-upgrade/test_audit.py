@@ -167,6 +167,31 @@ class StateTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         audit.save_source_baseline(BASE["version"], BASE["commit"], "user-accepted", "test", "Explicit fixture trust")
 
+    def test_lightweight_release_stages_exact_asset_without_source_review(self):
+        report = audit.now_report()
+        with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
+             mock.patch.object(audit, "stage_asset") as stage, \
+             mock.patch.object(audit, "source_diff") as source:
+            audit.lightweight_release(report)
+        self.assertEqual(report["status"], "APPROVED")
+        stage.assert_called_once()
+        source.assert_not_called()
+        self.assertTrue((self.state / "approved.json").exists())
+
+    def test_check_defaults_lightweight_and_strict_is_opt_in(self):
+        def pass_light(report):
+            report.update(status="CURRENT", version=BASE["version"], summary="light")
+        def pass_strict(report):
+            report.update(status="CURRENT", version=BASE["version"], summary="strict")
+        with mock.patch.object(audit, "lightweight_release", side_effect=pass_light) as light, \
+             mock.patch.object(audit, "audit_release", side_effect=pass_strict) as strict:
+            self.assertEqual(audit.check(force=True), 0)
+            self.assertEqual(audit.check(force=True, strict=True), 0)
+        light.assert_called_once()
+        strict.assert_called_once()
+
     def test_source_trust_can_advance_without_installing_binary(self):
         target = {"version": "18.1.21", "commit": "e" * 40}
         accepted = audit.save_source_baseline("18.1.20", "d" * 40, "user-accepted", "test", "Community trust")
@@ -252,10 +277,10 @@ class StateTests(unittest.TestCase):
         (self.state / "candidate").write_bytes(b"stale candidate")
         with mock.patch.object(audit, "audit_release", side_effect=audit.Hold("Missing public source evidence")) as run, \
              contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(audit.check(), 1)
-            self.assertEqual(audit.check(), 0)
+            self.assertEqual(audit.check(strict=True), 1)
+            self.assertEqual(audit.check(strict=True), 0)
             self.assertEqual(run.call_count, 1)
-            self.assertEqual(audit.check(force=True), 1)
+            self.assertEqual(audit.check(force=True, strict=True), 1)
             self.assertEqual(run.call_count, 2)
         report = json.loads((self.state / "report.json").read_text())
         self.assertEqual(report["status"], "HOLD")

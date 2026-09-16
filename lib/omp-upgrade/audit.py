@@ -938,6 +938,34 @@ def now_report():
             "dependency_evidence": [], "reviews": [], "chunk_findings": []}
 
 
+def lightweight_release(report):
+    """Verify the pinned public release and stage its exact asset; no source/model review."""
+    base = installed_manifest()
+    report["installed_version"] = base["version"]
+    requested = report.get("requested_version")
+    require(requested is None or isinstance(requested, str) and VERSION.fullmatch(requested),
+            "Invalid requested release version")
+    metadata = api_json(f"/releases/tags/v{requested}" if requested else "/releases/latest")
+    target = release_identity(metadata)
+    target["commit"] = tag_commit(target["version"])
+    report.update(version=target["version"], target=target,
+                  lightweight_checks=["stable public GitHub release", "tag commit resolved", "asset size and SHA256 verified"])
+    current, latest = tuple(map(int, base["version"].split("."))), tuple(map(int, target["version"].split(".")))
+    require(latest >= current, "Latest stable release is older than installed version")
+    if latest == current:
+        require(target["commit"] == base["commit"] and target["sha256"] == base["sha256"],
+                "Unchanged release version has changed source or binary identity")
+        require(REAL.stat().st_size == target["size"], "Unchanged release asset size mismatch")
+        report.update(status="CURRENT", summary="Installed release matches the stable GitHub asset identity; no source review performed.")
+        return
+    require(target["commit"] != base["commit"] and target["sha256"] != base["sha256"],
+            "New version reuses installed source or binary identity")
+    stage_asset(target)
+    atomic_json(STATE / "approved.json", {**target, "base_sha256": base["sha256"]})
+    report.update(status="APPROVED", approval_basis="lightweight-artifact",
+                  summary="Stable release identity, tag commit, asset size and SHA256 passed; candidate staged. No source review performed.")
+
+
 def audit_release(report):
     base = installed_manifest()
     report["installed_version"] = base["version"]
@@ -1058,7 +1086,7 @@ def audit_release(report):
     report.update(status="APPROVED", summary="Complete source chunks and whole-release coherence passed both dependency and model gates; verified candidate staged. This is not binary attestation.")
 
 
-def check(force=False, version=None, context_paths=()):
+def check(force=False, version=None, context_paths=(), strict=False):
     private_dir(STATE)
     descriptor = os.open(STATE / "update.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor, "a") as lock:
@@ -1066,20 +1094,22 @@ def check(force=False, version=None, context_paths=()):
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return 0
+        mode = "strict" if strict else "lightweight"
         if not force:
             try:
                 previous = strict_json(read_bytes(STATE / "report.json", MAX_JSON))
                 stamp = previous.get("checked_at_epoch")
-                if not version and not context_paths and type(stamp) in (int, float) and 0 <= time.time() - stamp < 86400:
+                if (not version and not context_paths and previous.get("review_mode") == mode
+                        and type(stamp) in (int, float) and 0 <= time.time() - stamp < 86400):
                     return 0
             except (OSError, Hold, AttributeError):
                 pass
         clear_approval()
         report = now_report()
-        report.update(requested_version=version, context_paths=list(context_paths))
+        report.update(requested_version=version, context_paths=list(context_paths), review_mode=mode)
         persist_report(report)
         try:
-            audit_release(report)
+            (audit_release if strict else lightweight_release)(report)
         except Exception as exc:
             clear_approval()
             # Exception messages from providers/HTTP can contain credentials or user data.
@@ -1221,12 +1251,13 @@ def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    check_parser = commands.add_parser("check")
+    check_parser = commands.add_parser("check", help="Verify the exact release artifact; use --strict for source/model review")
+    check_parser.add_argument("--strict", action="store_true", help="Run the full source-diff and model review instead of artifact checks")
     check_parser.add_argument("--force", action="store_true", help="Bypass daily interval; exact-input reviews may still be reused")
     check_parser.add_argument("--version", help="Pin a stable target instead of latest; bypass daily interval")
     check_parser.add_argument("--context", action="append", default=[], metavar="REPO_PATH",
-                              help="Include this full file from the pinned target commit in final review; repeatable")
-    check_parser.add_argument("--fresh-reviews", action="store_true", help="Rerun model reviews instead of reusing exact-input evidence")
+                              help="Include this full file from the pinned target commit in final review; implies --strict")
+    check_parser.add_argument("--fresh-reviews", action="store_true", help="Rerun strict model reviews instead of reusing exact-input evidence")
     commands.add_parser("model-smoke", help="Exercise real isolated model invocation without writing an approval")
     accept = commands.add_parser("accept-source", help="Record public source you reviewed as the diff baseline; not an approval")
     accept.add_argument("--version", required=True, help="Released version whose exact source you reviewed")
@@ -1251,9 +1282,9 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "check":
-            global REUSE_REVIEWS
+            strict = args.strict or bool(args.context) or args.fresh_reviews
             REUSE_REVIEWS = not args.fresh_reviews
-            return check(args.force or args.fresh_reviews, args.version, args.context)
+            return check(args.force or args.fresh_reviews, args.version, args.context, strict=strict)
         if args.command == "model-smoke":
             return model_smoke()
         if args.command == "accept-source":

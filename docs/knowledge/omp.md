@@ -70,11 +70,13 @@ journal), prints the audit notice once per verdict, and kicks off the next
 background check. Other non-interactive invocations never upgrade; `--upgrade-apply`
 is the explicit exception and does not start an agent session.
 
-The audit itself (`audit.py check`) fetches release metadata from the GitHub API,
-shallow-fetches the upstream tag, diffs explicitly accepted source → target commit,
-reviews the chunks with a model, and writes `approved.json` only after a complete,
-SAFE final review or explicit target-specific user acceptance. Review is not attestation:
-the binary digest and asset URL are pinned independently.
+The default audit (`audit.py check`) is deliberately lightweight: it fetches stable
+release metadata from the GitHub API, resolves the tag commit, downloads the exact
+asset, and verifies its size and SHA256 before staging it. It does not claim the
+source is safe. Use `check --strict` for the opt-in source diff, dependency
+evidence and model review; that path may HOLD on behavioral findings. Review is not
+binary attestation: the default check pins the public asset identity, while the
+manual per-release binary procedure covers code signing and embedded runtime checks.
 
 The asset is picked per platform (`omp-linux-x64`, `omp-darwin-arm64`, …); an
 unrecognised platform gets no asset name and the gate refuses rather than
@@ -126,12 +128,14 @@ truncating the diff or discarding concerns.
 ### Repeatable per-release audit
 
 ```sh
-# Check now. Pin a version to avoid reviewing a moving "latest".
+# Default: lightweight artifact identity check; no source/model review.
 python3 -I ~/.local/lib/omp-upgrade/audit.py check --version VERSION
-# Supply missing public helper code from that exact commit, not a working tree.
-python3 -I ~/.local/lib/omp-upgrade/audit.py check --version VERSION --context packages/utils/src/file-lock.ts
-# Deliberately discard model-review reuse, without weakening checks.
-python3 -I ~/.local/lib/omp-upgrade/audit.py check --version VERSION --fresh-reviews
+# Optional: full source/dependency/model review.
+python3 -I ~/.local/lib/omp-upgrade/audit.py check --strict --version VERSION
+# Optional helper context for strict mode.
+python3 -I ~/.local/lib/omp-upgrade/audit.py check --strict --version VERSION --context packages/utils/src/file-lock.ts
+# Optional: rerun strict reviews without cache reuse.
+python3 -I ~/.local/lib/omp-upgrade/audit.py check --strict --version VERSION --fresh-reviews
 omp --upgrade-apply
 omp --version
 ```
