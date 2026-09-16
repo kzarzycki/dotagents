@@ -72,11 +72,11 @@ is the explicit exception and does not start an agent session.
 
 The default audit (`audit.py check`) is deliberately lightweight: it fetches stable
 release metadata from the GitHub API, resolves the tag commit, downloads the exact
-asset, and verifies its size and SHA256 before staging it. It does not claim the
-source is safe. Use `check --strict` for the opt-in source diff, dependency
-evidence and model review; that path may HOLD on behavioral findings. Review is not
-binary attestation: the default check pins the public asset identity, while the
-manual per-release binary procedure covers code signing and embedded runtime checks.
+asset, and verifies its size and SHA256 before staging it. On macOS it also requires
+`codesign --verify --strict` and the candidate's TeamIdentifier to match the
+installed binary. It does not claim the source or embedded runtime is safe. Use
+`check --strict` for the opt-in source diff, dependency evidence and model review;
+that path may HOLD on behavioral findings. Review is not binary attestation.
 
 The asset is picked per platform (`omp-linux-x64`, `omp-darwin-arm64`, …); an
 unrecognised platform gets no asset name and the gate refuses rather than

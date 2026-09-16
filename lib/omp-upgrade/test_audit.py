@@ -172,11 +172,13 @@ class StateTests(unittest.TestCase):
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
              mock.patch.object(audit, "api_json", return_value=release()), \
              mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
+             mock.patch.object(audit, "verify_binary_signature", return_value="test-team") as signature, \
              mock.patch.object(audit, "stage_asset") as stage, \
              mock.patch.object(audit, "source_diff") as source:
             audit.lightweight_release(report)
         self.assertEqual(report["status"], "APPROVED")
         stage.assert_called_once()
+        signature.assert_has_calls([mock.call(self.real), mock.call(self.state / "candidate")])
         source.assert_not_called()
         self.assertTrue((self.state / "approved.json").exists())
 
@@ -191,6 +193,15 @@ class StateTests(unittest.TestCase):
             self.assertEqual(audit.check(force=True, strict=True), 0)
         light.assert_called_once()
         strict.assert_called_once()
+
+    def test_lightweight_signature_check_rejects_signer_change(self):
+        ok = mock.Mock(returncode=0, stderr="", stdout="")
+        trusted = mock.Mock(returncode=0, stderr="TeamIdentifier=trusted\n", stdout="")
+        other = mock.Mock(returncode=0, stderr="TeamIdentifier=other\n", stdout="")
+        with mock.patch.object(audit.platform, "system", return_value="Darwin"), \
+             mock.patch.object(audit.subprocess, "run", side_effect=[ok, trusted, ok, other]):
+            with self.assertRaises(audit.Hold):
+                audit.verify_binary_signature(self.real)
 
     def test_source_trust_can_advance_without_installing_binary(self):
         target = {"version": "18.1.21", "commit": "e" * 40}

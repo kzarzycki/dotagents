@@ -901,6 +901,24 @@ def stage_asset(target):
         with contextlib.suppress(FileNotFoundError):
             os.unlink(name)
 
+def verify_binary_signature(candidate):
+    """On macOS, require a valid candidate signature with the installed signer."""
+    if platform.system() != "Darwin":
+        return "not-applicable"
+    def team(path):
+        verified = subprocess.run(["/usr/bin/codesign", "--verify", "--strict", str(path)],
+                                  capture_output=True, text=True, timeout=30)
+        require(verified.returncode == 0, f"codesign verification failed for {path}")
+        details = subprocess.run(["/usr/bin/codesign", "-dv", "--verbose=2", str(path)],
+                                 capture_output=True, text=True, timeout=30)
+        match = re.search(r"(?m)^TeamIdentifier=(\S+)$", details.stderr)
+        require(details.returncode == 0 and match, f"codesign TeamIdentifier missing for {path}")
+        return match.group(1)
+    expected, actual = team(REAL), team(candidate)
+    require(actual == expected, "Candidate codesign TeamIdentifier differs from installed OMP")
+    return actual
+
+
 
 def clear_approval():
     for name in ("approved.json", "candidate"):
@@ -948,19 +966,23 @@ def lightweight_release(report):
     metadata = api_json(f"/releases/tags/v{requested}" if requested else "/releases/latest")
     target = release_identity(metadata)
     target["commit"] = tag_commit(target["version"])
+    signature = verify_binary_signature(REAL)
     report.update(version=target["version"], target=target,
-                  lightweight_checks=["stable public GitHub release", "tag commit resolved", "asset size and SHA256 verified"])
+                  lightweight_checks=["stable public GitHub release", "tag commit resolved", "asset size and SHA256 verified",
+                                      f"codesign TeamIdentifier: {signature}"])
     current, latest = tuple(map(int, base["version"].split("."))), tuple(map(int, target["version"].split(".")))
     require(latest >= current, "Latest stable release is older than installed version")
     if latest == current:
         require(target["commit"] == base["commit"] and target["sha256"] == base["sha256"],
                 "Unchanged release version has changed source or binary identity")
         require(REAL.stat().st_size == target["size"], "Unchanged release asset size mismatch")
-        report.update(status="CURRENT", summary="Installed release matches the stable GitHub asset identity; no source review performed.")
+        verify_binary_signature(REAL)
+        report.update(status="CURRENT", summary="Installed release matches the stable GitHub asset identity and signer; no source review performed.")
         return
     require(target["commit"] != base["commit"] and target["sha256"] != base["sha256"],
             "New version reuses installed source or binary identity")
     stage_asset(target)
+    verify_binary_signature(STATE / "candidate")
     atomic_json(STATE / "approved.json", {**target, "base_sha256": base["sha256"]})
     report.update(status="APPROVED", approval_basis="lightweight-artifact",
                   summary="Stable release identity, tag commit, asset size and SHA256 passed; candidate staged. No source review performed.")
@@ -1282,6 +1304,7 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "check":
+            global REUSE_REVIEWS
             strict = args.strict or bool(args.context) or args.fresh_reviews
             REUSE_REVIEWS = not args.fresh_reviews
             return check(args.force or args.fresh_reviews, args.version, args.context, strict=strict)
