@@ -308,6 +308,15 @@ class LauncherTests(unittest.TestCase):
         activate_mock.assert_called_once_with(allow_install=True)
         self.assertIn("installed", output.getvalue())
 
+
+    def test_safe_update_reports_lock_busy_without_reading_stale_report(self):
+        result = subprocess.CompletedProcess(["audit.py", "check", "--force"], 3, "", "")
+        with mock.patch.object(launcher.subprocess, "run", return_value=result), \
+             mock.patch.object(launcher, "activate_if_ready") as activate, \
+             contextlib.redirect_stderr(io.StringIO()) as output:
+            self.assertEqual(launcher.main(["safe-update"]), 1)
+        activate.assert_not_called()
+        self.assertIn("busy", output.getvalue())
     def test_safe_update_stops_on_failed_artifact_check(self):
         self.put("report.json", {"status": "HOLD", "summary": "signature mismatch"})
         result = subprocess.CompletedProcess(["audit.py", "check"], 1, "", "")

@@ -1116,7 +1116,7 @@ def check(force=False, version=None, context_paths=(), strict=False):
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            return 0
+            return 3
         mode = "strict" if strict else "lightweight"
         if not force:
             try:

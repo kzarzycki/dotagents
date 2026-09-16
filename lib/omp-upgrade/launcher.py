@@ -458,7 +458,7 @@ def safe_update():
         print(f"Safe update unavailable: {safe_text(str(error))}", file=sys.stderr)
         return 1
     try:
-        if result.returncode == 0 and not result.stdout.strip():
+        if result.returncode == 3:
             print("Safe update is busy: the background artifact check holds the lock; retry.", file=sys.stderr)
             return 1
         value = read_json(STATE / "report.json")
