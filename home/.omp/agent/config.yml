@@ -2,13 +2,11 @@ setupVersion: 2
 enabledProviders:
   - claude
 modelRoles:
-  smol: google-antigravity/gemini-3.8-flash:auto
-  commit: anthropic/claude-opus-5
-  plan: anthropic/claude-fable-5-1:auto
-  task: anthropic/claude-opus-5:auto
+  task: openai-codex/gpt-5.6-luna:xhigh
   advisor: anthropic/claude-fable-5-1:auto
   slow: anthropic/claude-fable-5-1:auto
-  default: anthropic/claude-fable-5-1
+  default: openai-codex/gpt-6-astra
+  smol: openai-codex/gpt-5.6-luna:high
 defaultThinkingLevel: auto
 contextPromotion:
   enabled: false
@@ -29,6 +27,11 @@ composer:
 retry:
   waitForUsageReset: true
   usageAwareFallback: true
+  fallbackChains:
+    default:
+      - anthropic/claude-fable-5-1
+    slow:
+      - openai-codex/gpt-6-astra
 advisor:
   enabled: true
   syncBacklog: "1"
@@ -96,3 +99,8 @@ ttsr:
 autolearn:
   enabled: true
   autoContinue: true
+cycleOrder:
+  - smol
+  - default
+  - slow
+  - tiny
