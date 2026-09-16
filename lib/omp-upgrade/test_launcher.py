@@ -296,12 +296,43 @@ class LauncherTests(unittest.TestCase):
         execute.assert_called_once_with(str(self.real), [str(self.real)])
         self.assertIn("service unavailable", self.get("report.json")["service_error"])
 
+    def test_safe_update_checks_then_activates_approved_candidate(self):
+        self.put("report.json", {"status": "APPROVED", "version": self.new["version"], "summary": "artifact passed"})
+        result = subprocess.CompletedProcess(["audit.py", "check"], 0, "", "")
+        def activate(**_):
+            self.put("report.json", {"status": "INSTALLED", "version": self.new["version"], "summary": "installed"})
+        with mock.patch.object(launcher.subprocess, "run", return_value=result), \
+             mock.patch.object(launcher, "activate_if_ready", side_effect=activate) as activate_mock, \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(launcher.main(["safe-update"]), 0)
+        activate_mock.assert_called_once_with(allow_install=True)
+        self.assertIn("installed", output.getvalue())
+
+    def test_safe_update_stops_on_failed_artifact_check(self):
+        self.put("report.json", {"status": "HOLD", "summary": "signature mismatch"})
+        result = subprocess.CompletedProcess(["audit.py", "check"], 1, "", "")
+        with mock.patch.object(launcher.subprocess, "run", return_value=result), \
+             mock.patch.object(launcher, "activate_if_ready") as activate, \
+             contextlib.redirect_stderr(io.StringIO()) as output:
+            self.assertEqual(launcher.main(["safe-update"]), 1)
+        activate.assert_not_called()
+        self.assertIn("signature mismatch", output.getvalue())
+
+    def test_interactive_launch_does_not_auto_activate_approved_candidate(self):
+        self.approve()
+        with mock.patch.object(launcher, "interactive_launch", return_value=True), \
+             mock.patch.object(launcher, "activate_if_ready", return_value=self.real) as activate, \
+             mock.patch.object(launcher, "request_audit"), \
+             mock.patch.object(launcher.os, "execv"):
+            launcher.main([])
+        activate.assert_called_once_with(allow_install=False)
+
     def test_direct_update_and_profile_alias_update_are_blocked(self):
         for argv in (["update"], ["--profile", "work", "update"], ["--profile=work", "update", "--check"]):
             with self.subTest(argv=argv), mock.patch.object(launcher.os, "execv") as execute, contextlib.redirect_stderr(io.StringIO()) as output:
                 self.assertEqual(launcher.main(argv), 2)
             execute.assert_not_called()
-            self.assertIn("--upgrade-check", output.getvalue())
+            self.assertIn("safe-update", output.getvalue())
 
     def test_actual_exec_preserves_arguments_cwd_stdio_environment_and_exit(self):
         self.real.write_text(

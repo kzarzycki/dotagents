@@ -446,6 +446,38 @@ def request_audit():
     except (OSError, Hold):
         pass
     return error
+def safe_update():
+    """Run the lightweight audit synchronously, then activate only its approved candidate."""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-I", str(AUDIT), "check"],
+            cwd=str(STATE), capture_output=True, text=True, timeout=300,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        print(f"Safe update unavailable: {safe_text(str(error))}", file=sys.stderr)
+        return 1
+    try:
+        value = read_json(STATE / "report.json")
+        status = value.get("status")
+        if status == "CURRENT":
+            print(f"OMP {safe_text(value.get('version', 'current'), 40)} is already current.")
+            return 0
+        if result.returncode != 0 or status != "APPROVED":
+            print(f"Safe update stopped: {safe_text(value.get('summary', 'artifact check failed'), 240)}",
+                  file=sys.stderr)
+            return 1
+        activate_if_ready(allow_install=True)
+        value = read_json(STATE / "report.json")
+        if value.get("status") == "INSTALLED":
+            print(safe_text(value.get("summary", "OMP update installed")))
+            return 0
+        print(f"Safe update stopped: {safe_text(value.get('summary', 'activation failed'), 240)}",
+              file=sys.stderr)
+    except (OSError, ValueError, Hold) as error:
+        print(f"Safe update stopped: {safe_text(str(error))}", file=sys.stderr)
+    return 1
+
+
 
 
 def without_profile(argv):
@@ -518,12 +550,14 @@ def show_startup_notice():
                 previous = None
             if previous == {"identity": identity}:
                 return
-            print(
-                f"OMP upgrade {safe_text(value['status'])} {safe_text(value.get('version', 'unknown'), 40)}: "
-                f"{safe_text(value.get('summary', 'Audit report available'), 240)} "
-                "(omp --upgrade-status)",
-                file=sys.stderr, flush=True,
-            )
+            if value["status"] == "APPROVED":
+                message = f"OMP update available: {safe_text(value.get('version', 'unknown'), 40)}. Run `omp safe-update`."
+            else:
+                message = (
+                    f"OMP upgrade {safe_text(value['status'])} {safe_text(value.get('version', 'unknown'), 40)}: "
+                    f"{safe_text(value.get('summary', 'Audit report available'), 240)}"
+                )
+            print(message + " (omp --upgrade-status)", file=sys.stderr, flush=True)
             write_json(STATE / "notice.json", {"identity": identity})
     except (OSError, ValueError, Hold):
         pass
@@ -553,7 +587,7 @@ def show_status():
                 print(f"  - {safe_text(item)}")
     if value.get("service_error"):
         print(f"Scheduling: {safe_text(value['service_error'])}")
-    print("Checks run in the background, at most daily. Use omp --upgrade-apply to activate a staged release, or launch interactively.")
+    print("Checks run in the background, at most daily. Use omp safe-update to activate a staged release, or omp --upgrade-status.", file=sys.stderr)
     return 0
 
 
@@ -562,35 +596,35 @@ def main(argv=None):
     routed = without_profile(argv)
     if routed == ["--upgrade-status"]:
         return show_status()
+    if routed == ["safe-update"]:
+        return safe_update()
     if routed == ["--upgrade-check"]:
         error = request_audit()
-        print(error or "Background audit requested (daily interval applies); inspect omp --upgrade-status.")
+        print(error or "Background artifact check requested (daily interval applies); inspect omp --upgrade-status.")
         return 1 if error else 0
     if routed == ["--upgrade-apply"]:
         if not (STATE / "approved.json").exists() and not (STATE / "transaction.json").exists():
-            print("No reviewed release staged; inspect omp --upgrade-status.", file=sys.stderr)
+            print("No safe release staged; inspect omp --upgrade-status.", file=sys.stderr)
             return 1
         try:
-            activate_if_ready()
+            activate_if_ready(allow_install=True)
             value = read_json(STATE / "report.json")
             if value.get("status") == "INSTALLED" and not (STATE / "approved.json").exists():
                 print(safe_text(value.get("summary", "Release installed")))
                 return 0
-            print("Release not activated (audit/activation may be busy): "
-                  + safe_text(value.get("summary", "Inspect omp --upgrade-status")), file=sys.stderr)
+            print("Release not activated: " + safe_text(value.get("summary", "Inspect omp --upgrade-status")), file=sys.stderr)
         except (OSError, ValueError, Hold) as error:
             print("Release not activated: " + safe_text(str(error)), file=sys.stderr)
         return 1
     if routed and routed[0] == "update":
-        print("Direct omp update is disabled: it bypasses the managed artifact check. Use omp --upgrade-check, then omp --upgrade-status and omp --upgrade-apply.", file=sys.stderr)
+        print("Direct omp update is disabled: it bypasses the managed artifact check. Use omp safe-update.", file=sys.stderr)
         return 2
     target = REAL
     interactive = interactive_launch(argv)
-    # Recovery is exceptional; ordinary protocol/help/version calls do no hashing
-    # and never schedule a service. An interrupted transaction must still be safe.
+    # Recovery is exceptional; ordinary launches never auto-install an approved candidate.
     if interactive or (STATE / "transaction.json").exists():
         try:
-            target = activate_if_ready(allow_install=interactive)
+            target = activate_if_ready(allow_install=False)
         except (OSError, ValueError, Hold) as error:
             if (STATE / "transaction.json").exists():
                 try:
