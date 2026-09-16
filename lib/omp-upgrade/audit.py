@@ -1274,13 +1274,9 @@ def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    check_parser = commands.add_parser("check", help="Verify the exact release artifact; use --strict for source/model review")
-    check_parser.add_argument("--strict", action="store_true", help="Run the full source-diff and model review instead of artifact checks")
-    check_parser.add_argument("--force", action="store_true", help="Bypass daily interval; exact-input reviews may still be reused")
-    check_parser.add_argument("--version", help="Pin a stable target instead of latest; bypass daily interval")
-    check_parser.add_argument("--context", action="append", default=[], metavar="REPO_PATH",
-                              help="Include this full file from the pinned target commit in final review; implies --strict")
-    check_parser.add_argument("--fresh-reviews", action="store_true", help="Rerun strict model reviews instead of reusing exact-input evidence")
+    check_parser = commands.add_parser("check", help="Verify the exact release artifact")
+    check_parser.add_argument("--force", action="store_true", help="Bypass the daily interval")
+    check_parser.add_argument("--version", help="Pin a stable target instead of latest; bypass the daily interval")
     deep = commands.add_parser("deep-check", help="Run the full source/dependency/model review")
     deep.add_argument("--force", action="store_true", help="Bypass daily interval; exact-input reviews may still be reused")
     deep.add_argument("--version", help="Pin a stable target instead of latest; bypass daily interval")
@@ -1312,9 +1308,11 @@ def main():
     try:
         if args.command in ("check", "deep-check"):
             global REUSE_REVIEWS
-            strict = args.command == "deep-check" or getattr(args, "strict", False) or bool(args.context) or args.fresh_reviews
-            REUSE_REVIEWS = not args.fresh_reviews
-            return check(args.force or args.fresh_reviews, args.version, args.context, strict=strict)
+            context = getattr(args, "context", [])
+            fresh = getattr(args, "fresh_reviews", False)
+            strict = args.command == "deep-check"
+            REUSE_REVIEWS = not fresh
+            return check(args.force or fresh, args.version, context, strict=strict)
         if args.command == "model-smoke":
             return model_smoke()
         if args.command == "accept-source":

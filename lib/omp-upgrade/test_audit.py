@@ -283,6 +283,19 @@ class StateTests(unittest.TestCase):
         self.assertFalse((self.state / "candidate").exists())
         self.assertFalse((self.state / "approved.json").exists())
 
+    def test_signature_mismatch_never_publishes_candidate(self):
+        content = b"candidate bytes"
+        response = io.BytesIO(content)
+        response.headers = {"Content-Length": str(len(content))}
+        target = {"asset_url": f"https://github.com/can1357/oh-my-pi/releases/download/v18.1.14/{audit.ASSET}",
+                  "size": len(content), "sha256": hashlib.sha256(content).hexdigest()}
+        with mock.patch.object(audit, "open_public", return_value=response), \
+             mock.patch.object(audit, "verify_binary_signature", side_effect=audit.Hold("bad signer")):
+            with self.assertRaises(audit.Hold):
+                audit.stage_asset(target)
+        self.assertFalse((self.state / "candidate").exists())
+        self.assertFalse((self.state / "approved.json").exists())
+
     def test_error_report_is_daily_and_force_does_not_weaken_gate(self):
         (self.state / "approved.json").write_text("stale approval")
         (self.state / "candidate").write_bytes(b"stale candidate")
