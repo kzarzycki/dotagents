@@ -446,20 +446,24 @@ def request_audit():
     except (OSError, Hold):
         pass
     return error
+
 def safe_update():
     """Run the lightweight audit synchronously, then activate only its approved candidate."""
     try:
         result = subprocess.run(
-            [sys.executable, "-I", str(AUDIT), "check"],
+            [sys.executable, "-I", str(AUDIT), "check", "--force"],
             cwd=str(STATE), capture_output=True, text=True, timeout=300,
         )
     except (OSError, subprocess.SubprocessError) as error:
         print(f"Safe update unavailable: {safe_text(str(error))}", file=sys.stderr)
         return 1
     try:
+        if result.returncode == 0 and not result.stdout.strip():
+            print("Safe update is busy: the background artifact check holds the lock; retry.", file=sys.stderr)
+            return 1
         value = read_json(STATE / "report.json")
         status = value.get("status")
-        if status == "CURRENT":
+        if status in ("CURRENT", "INSTALLED") and result.returncode == 0:
             print(f"OMP {safe_text(value.get('version', 'current'), 40)} is already current.")
             return 0
         if result.returncode != 0 or status != "APPROVED":
@@ -587,7 +591,7 @@ def show_status():
                 print(f"  - {safe_text(item)}")
     if value.get("service_error"):
         print(f"Scheduling: {safe_text(value['service_error'])}")
-    print("Checks run in the background, at most daily. Use omp safe-update to activate a staged release, or omp --upgrade-status.", file=sys.stderr)
+    print("Checks run in the background, at most daily. Use omp safe-update to activate a staged release, or omp --upgrade-status.")
     return 0
 
 

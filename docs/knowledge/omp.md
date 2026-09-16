@@ -64,12 +64,11 @@ omp --upgrade-apply    # activate a staged release; checksum, smoke and rollback
 omp update             # blocked: bypasses the gate
 ```
 
-An interactive `omp` launch activates only an explicitly requested upgrade,
-prints the audit notice once per verdict, and kicks off the next background
-artifact check. A successful lightweight check writes `approved.json`; it does
-not install automatically. Run `omp safe-update` to synchronously recheck the
-artifact and activate the staged candidate. Other non-interactive invocations
-never upgrade; `omp --upgrade-apply` remains an explicit equivalent.
+Interactive launches never install; they print the notice and schedule the
+background check. A successful lightweight check writes `approved.json`; run
+`omp safe-update` to synchronously recheck the artifact and activate the staged
+candidate. `omp --upgrade-apply` activates an already-staged candidate without
+rechecking. Other non-interactive invocations never upgrade.
 
 The default audit (`audit.py check`) is deliberately lightweight: it fetches stable
 release metadata from the GitHub API, resolves the tag commit, downloads the exact

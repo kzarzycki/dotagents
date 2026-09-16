@@ -298,7 +298,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_safe_update_checks_then_activates_approved_candidate(self):
         self.put("report.json", {"status": "APPROVED", "version": self.new["version"], "summary": "artifact passed"})
-        result = subprocess.CompletedProcess(["audit.py", "check"], 0, "", "")
+        result = subprocess.CompletedProcess(["audit.py", "check", "--force"], 0, "{}\n", "")
         def activate(**_):
             self.put("report.json", {"status": "INSTALLED", "version": self.new["version"], "summary": "installed"})
         with mock.patch.object(launcher.subprocess, "run", return_value=result), \
