@@ -447,12 +447,26 @@ def request_audit():
         pass
     return error
 
+def print_report_body(value):
+    print(f"Audit: {safe_text(value.get('status', 'UNKNOWN'))} (release {safe_text(value.get('version', 'unknown'))})")
+    print(safe_text(value.get("summary", "No summary recorded")))
+    for key, label in (("features", "Features"), ("risks", "Risks"), ("baseline_risks", "Accepted baseline risks"), ("limitations", "Audit limitations")):
+        items = value.get(key)
+        if items:
+            print(f"{label}:")
+            for item in items if isinstance(items, list) else [items]:
+                print(f"  - {safe_text(item)}")
+    for key, label in (("chunk_count", "Chunks reviewed"), ("diff_sha256", "Reviewed diff SHA256"), ("evidence_path", "Evidence path")):
+        if value.get(key) is not None:
+            print(f"{label}: {safe_text(value[key])}")
+
+
 def safe_update():
-    """Run the lightweight audit synchronously, then activate only its approved candidate."""
+    """Run the full deep review synchronously, then activate only a fully reviewed candidate."""
     try:
         result = subprocess.run(
-            [sys.executable, "-I", str(AUDIT), "check", "--force"],
-            cwd=str(STATE), capture_output=True, text=True, timeout=300,
+            [sys.executable, "-I", str(AUDIT), "deep-check", "--force"],
+            cwd=str(STATE), capture_output=True, text=True, timeout=5400,
         )
     except (OSError, subprocess.SubprocessError) as error:
         print(f"Safe update unavailable: {safe_text(str(error))}", file=sys.stderr)
@@ -466,8 +480,9 @@ def safe_update():
         if status in ("CURRENT", "INSTALLED") and result.returncode == 0:
             print(f"OMP {safe_text(value.get('version', 'current'), 40)} is already current.")
             return 0
+        print_report_body(value)
         if result.returncode != 0 or status != "APPROVED":
-            print(f"Safe update stopped: {safe_text(value.get('summary', 'artifact check failed'), 240)}",
+            print(f"Safe update stopped: {safe_text(value.get('summary', 'full review failed'), 240)}",
                   file=sys.stderr)
             return 1
         activate_if_ready(allow_install=True)
@@ -555,7 +570,7 @@ def show_startup_notice():
             if previous == {"identity": identity}:
                 return
             if value["status"] == "APPROVED":
-                message = f"OMP update available: {safe_text(value.get('version', 'unknown'), 40)}. Run `omp safe-update`."
+                message = f"OMP update available: {safe_text(value.get('version', 'unknown'), 40)}. Run `omp safe-update` for a full source/dependency/model review before installing."
             else:
                 message = (
                     f"OMP upgrade {safe_text(value['status'])} {safe_text(value.get('version', 'unknown'), 40)}: "
@@ -581,14 +596,7 @@ def show_status():
     except (OSError, ValueError, Hold) as error:
         print(f"Audit status unavailable: {safe_text(str(error))}")
         return 0
-    print(f"Audit: {safe_text(value.get('status', 'UNKNOWN'))} (release {safe_text(value.get('version', 'unknown'))})")
-    print(safe_text(value.get("summary", "No summary recorded")))
-    for key, label in (("features", "Features"), ("risks", "Risks"), ("baseline_risks", "Accepted baseline risks"), ("limitations", "Audit limitations")):
-        items = value.get(key)
-        if items:
-            print(f"{label}:")
-            for item in items if isinstance(items, list) else [items]:
-                print(f"  - {safe_text(item)}")
+    print_report_body(value)
     if value.get("service_error"):
         print(f"Scheduling: {safe_text(value['service_error'])}")
     print("Checks run in the background, at most daily. Use omp safe-update to activate a staged release, or omp --upgrade-status.")

@@ -85,10 +85,13 @@ omp update             # blocked: bypasses the gate
 ```
 
 Interactive launches never install; they print the notice and schedule the
-background check. A successful lightweight check writes `approved.json`; run
-`omp safe-update` to synchronously recheck the artifact and activate the staged
-candidate. `omp --upgrade-apply` activates an already-staged candidate without
-rechecking. Other non-interactive invocations never upgrade.
+background lightweight check, which only signals that an update exists.
+`omp safe-update` synchronously runs the full deep review — source diff,
+dependency evidence, chunked and whole-release model review — and activates
+only a candidate that review approves, printing the complete evidence rather
+than a one-line summary. `omp --upgrade-apply` activates an already
+fully-reviewed staged candidate without rechecking. Other non-interactive
+invocations never upgrade.
 
 The default audit (`audit.py check`) is deliberately lightweight: it fetches stable
 release metadata from the GitHub API, resolves the tag commit, downloads the exact

@@ -298,7 +298,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_safe_update_checks_then_activates_approved_candidate(self):
         self.put("report.json", {"status": "APPROVED", "version": self.new["version"], "summary": "artifact passed"})
-        result = subprocess.CompletedProcess(["audit.py", "check", "--force"], 0, "{}\n", "")
+        result = subprocess.CompletedProcess(["audit.py", "deep-check", "--force"], 0, "{}\n", "")
         def activate(**_):
             self.put("report.json", {"status": "INSTALLED", "version": self.new["version"], "summary": "installed"})
         with mock.patch.object(launcher.subprocess, "run", return_value=result), \
@@ -308,18 +308,46 @@ class LauncherTests(unittest.TestCase):
         activate_mock.assert_called_once_with(allow_install=True)
         self.assertIn("installed", output.getvalue())
 
+    def test_safe_update_invokes_full_deep_review_not_lightweight_check(self):
+        result = subprocess.CompletedProcess(["audit.py", "deep-check", "--force"], 0, "{}\n", "")
+        self.put("report.json", {"status": "CURRENT", "version": self.new["version"], "summary": "current"})
+        with mock.patch.object(launcher.subprocess, "run", return_value=result) as run, \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(launcher.main(["safe-update"]), 0)
+        argv = run.call_args.args[0]
+        self.assertIn("deep-check", argv)
+        self.assertNotIn("check", argv)
+
+    def test_safe_update_prints_full_verification_evidence_before_activating(self):
+        self.put("report.json", {
+            "status": "APPROVED", "version": self.new["version"], "summary": "full review passed",
+            "features": ["Adds a new flag"], "chunk_count": 3,
+            "diff_sha256": "e" * 64, "evidence_path": "/state/evidence/" + self.new["version"],
+        })
+        result = subprocess.CompletedProcess(["audit.py", "deep-check", "--force"], 0, "{}\n", "")
+        def activate(**_):
+            self.put("report.json", {"status": "INSTALLED", "version": self.new["version"], "summary": "installed"})
+        with mock.patch.object(launcher.subprocess, "run", return_value=result), \
+             mock.patch.object(launcher, "activate_if_ready", side_effect=activate), \
+             contextlib.redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(launcher.main(["safe-update"]), 0)
+        text = output.getvalue()
+        self.assertIn("Adds a new flag", text)
+        self.assertIn("Chunks reviewed: 3", text)
+        self.assertIn("e" * 64, text)
 
     def test_safe_update_reports_lock_busy_without_reading_stale_report(self):
-        result = subprocess.CompletedProcess(["audit.py", "check", "--force"], 3, "", "")
+        result = subprocess.CompletedProcess(["audit.py", "deep-check", "--force"], 3, "", "")
         with mock.patch.object(launcher.subprocess, "run", return_value=result), \
              mock.patch.object(launcher, "activate_if_ready") as activate, \
              contextlib.redirect_stderr(io.StringIO()) as output:
             self.assertEqual(launcher.main(["safe-update"]), 1)
         activate.assert_not_called()
         self.assertIn("busy", output.getvalue())
+
     def test_safe_update_stops_on_failed_artifact_check(self):
         self.put("report.json", {"status": "HOLD", "summary": "signature mismatch"})
-        result = subprocess.CompletedProcess(["audit.py", "check"], 1, "", "")
+        result = subprocess.CompletedProcess(["audit.py", "deep-check"], 1, "", "")
         with mock.patch.object(launcher.subprocess, "run", return_value=result), \
              mock.patch.object(launcher, "activate_if_ready") as activate, \
              contextlib.redirect_stderr(io.StringIO()) as output:
