@@ -108,6 +108,16 @@ class VerdictTests(unittest.TestCase):
         with mock.patch.object(audit, "api_json", side_effect=replies), self.assertRaises(audit.Hold):
             audit.tag_commit("18.1.14")
 
+    def test_resolve_review_model_prefers_smol_role_then_falls_back_to_default(self):
+        self.assertEqual(
+            audit.resolve_review_model("modelRoles:\n  smol: openai-codex/gpt-5.6-luna:high\n  default: openai-codex/gpt-6-astra\n"),
+            "openai-codex/gpt-5.6-luna:high")
+        self.assertEqual(
+            audit.resolve_review_model("modelRoles:\n  default: openai-codex/gpt-6-astra\n"),
+            "openai-codex/gpt-6-astra")
+        with self.assertRaises(audit.Hold):
+            audit.resolve_review_model("modelRoles:\n  task: openai-codex/gpt-5.6-luna:xhigh\n")
+
 
 class DependencyGateTests(unittest.TestCase):
     def test_package_own_version_is_not_external_dependency_evidence(self):

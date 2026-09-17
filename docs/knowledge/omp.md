@@ -96,7 +96,9 @@ asset, and verifies its size and SHA256 before staging it. On macOS it also requ
 `codesign --verify --strict` and the candidate's TeamIdentifier to match the
 installed binary. It does not claim the source or embedded runtime is safe. Use
 `deep-check` for the opt-in source diff, dependency evidence and model review; that
-path may HOLD on behavioral findings. Review is not binary attestation.
+path may HOLD on behavioral findings. Review is not binary attestation. The reviewer
+model is `modelRoles.smol` from `~/.omp/agent/config.yml`, falling back to
+`modelRoles.default` if `smol` is not configured.
 
 The asset is picked per platform (`omp-linux-x64`, `omp-darwin-arm64`, …); an
 unrecognised platform gets no asset name and the gate refuses rather than

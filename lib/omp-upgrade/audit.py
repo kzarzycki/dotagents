@@ -707,12 +707,17 @@ def config_scalar(text, wanted):
     return found[0] if found else None
 
 
+def resolve_review_model(config):
+    model = config_scalar(config, "modelRoles.smol") or config_scalar(config, "modelRoles.default")
+    require(model is not None and re.fullmatch(r"[a-z0-9-]+/[A-Za-z0-9_.-]+(?::(?:off|minimal|low|medium|high|xhigh))?", model),
+            "Configured smol/default model missing or unsupported; no fallback allowed")
+    return model
+
+
 @contextlib.contextmanager
 def model_environment():
     config = read_bytes(HOME / ".omp/agent/config.yml", 128 * 1024).decode()
-    model = config_scalar(config, "modelRoles.default")
-    require(model is not None and re.fullmatch(r"[a-z0-9-]+/[A-Za-z0-9_.-]+(?::(?:off|minimal|low|medium|high|xhigh))?", model),
-            "Configured default model missing or unsupported; no fallback allowed")
+    model = resolve_review_model(config)
     # Source-inspected at a1b2540: main.ts:1451 preloads plugins even with no-extensions;
     # sdk.ts:2106 loads custom-tool factories even with no-tools. A fresh HOME and
     # cwd plus disabled discovery are essential, not just command-line flags.
