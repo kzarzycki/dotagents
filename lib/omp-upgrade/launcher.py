@@ -649,7 +649,9 @@ def main(argv=None):
             show_startup_notice()
             request_audit()
     try:
-        os.execv(str(target), [str(target), *argv])
+        # argv[0] is the agent's public identity: terminal multiplexers (herdr)
+        # match it against known agent names, and the real file is omp-real.
+        os.execv(str(target), ["omp", *argv])
     except OSError as error:
         print(f"Cannot launch managed OMP: {error}", file=sys.stderr)
         return 127

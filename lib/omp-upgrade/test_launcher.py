@@ -285,7 +285,7 @@ class LauncherTests(unittest.TestCase):
             for argv in calls:
                 with self.subTest(argv=argv):
                     launcher.main(argv)
-                    execute.assert_called_with(str(self.real), [str(self.real), *argv])
+                    execute.assert_called_with(str(self.real), ["omp", *argv])
         schedule.assert_not_called()
         hashing.assert_not_called()
         self.assertTrue((self.state / "approved.json").exists())
@@ -293,7 +293,7 @@ class LauncherTests(unittest.TestCase):
     def test_audit_spawn_failure_does_not_break_interactive_launch(self):
         with mock.patch.object(launcher, "interactive_launch", return_value=True), mock.patch.object(launcher.subprocess, "Popen", side_effect=OSError("no python")), mock.patch.object(launcher.os, "execv") as execute:
             launcher.main([])
-        execute.assert_called_once_with(str(self.real), [str(self.real)])
+        execute.assert_called_once_with(str(self.real), ["omp"])
         self.assertIn("service unavailable", self.get("report.json")["service_error"])
 
     def test_safe_update_checks_then_activates_approved_candidate(self):
