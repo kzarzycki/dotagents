@@ -2,10 +2,10 @@ setupVersion: 2
 enabledProviders:
   - claude
 modelRoles:
-  task: openai-codex/gpt-5.6-luna:xhigh
-  advisor: anthropic/claude-fable-5-1:auto
-  slow: anthropic/claude-fable-5-1:auto
-  default: openai-codex/gpt-6-astra
+  task: anthropic/claude-opus-5-5:medium
+  advisor: anthropic/claude-opus-5-5:auto
+  slow: anthropic/claude-opus-5-5:auto
+  default: anthropic/claude-opus-5-5
   smol: openai-codex/gpt-5.6-luna:high
 defaultThinkingLevel: auto
 contextPromotion:
@@ -29,7 +29,7 @@ retry:
   usageAwareFallback: true
   fallbackChains:
     default:
-      - anthropic/claude-fable-5-1
+      - openai-codex/gpt-5.6-sol
     slow:
       - openai-codex/gpt-6-astra
 advisor:
@@ -93,6 +93,7 @@ display:
   cacheMissMarker: true
   showTokenUsage: true
   showTurnTime: true
+  hideToolActivity: false
 ttsr:
   enabled: true
   builtinRules: true
@@ -104,3 +105,5 @@ cycleOrder:
   - default
   - slow
   - tiny
+codexResets:
+  autoRedeem: "yes"
