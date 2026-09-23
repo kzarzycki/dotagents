@@ -96,32 +96,34 @@ class VerdictTests(unittest.TestCase):
     def test_keyed_object_lists_do_not_emit_shift_cascade(self):
         before = [{"id": "a", "url": "one"}, {"id": "b", "url": "two"}, {"id": "c", "url": "three"}]
         after = [{"id": "b", "url": "changed"}, {"id": "c", "url": "three"}]
-        records = audit.json_diff_records(before, after, ("providers",))
+        records = list(audit.json_diff_records(before, after, ("providers",)))
         self.assertEqual(records, [
             {"op": "order", "path": ["providers"], "side": "old", "offset": 0, "items": ["a"]},
             {"op": "remove", "path": ["providers", {"id": "a"}, "url"], "old": "one"},
             {"op": "change", "path": ["providers", {"id": "b"}, "url"], "old": "two", "value": "changed"},
         ])
-        reordered = audit.json_diff_records(before, [before[1], before[0], before[2]])
+        reordered = list(audit.json_diff_records(before, [before[1], before[0], before[2]]))
         expected_move = [
             {"op": "order", "path": [], "side": "value", "offset": 0, "items": ["b"]},
             {"op": "order", "path": [], "side": "old", "offset": 1, "items": ["b"]},
         ]
         self.assertEqual(reordered[:2], expected_move)
-        self.assertEqual(audit.json_diff_records({"a": 1, "b": 2}, {"b": 2, "a": 1}), expected_move)
-        self.assertEqual(audit.json_added_records({"b": 2, "a": 1}, ("entry",))[:1], [
+        self.assertEqual(list(audit.json_diff_records({"a": 1, "b": 2}, {"b": 2, "a": 1})), expected_move)
+        self.assertEqual(list(audit.json_added_records({"b": 2, "a": 1}, ("entry",)))[:1], [
             {"op": "order", "path": ["entry"], "side": "value", "offset": 0, "items": ["b", "a"]}
         ])
-        self.assertEqual(audit.json_removed_records({"b": 2, "a": 1}, ("entry",)), [
-            {"op": "remove", "path": ["entry", "a"], "old": 1},
+        self.assertEqual(list(audit.json_removed_records({"b": 2, "a": 1}, ("entry",))), [
             {"op": "remove", "path": ["entry", "b"], "old": 2},
+            {"op": "remove", "path": ["entry", "a"], "old": 1},
         ])
         self.assertEqual(audit.compact_json_path(("a/b", 0, {"id": "x/y~z"})), '/k:a~1b/i:0/@["id","x~1y~0z"]')
 
     def test_oversized_json_blob_is_compacted_with_separate_bound(self):
         before = b'{"padding":"' + b'a' * (1024 * 1024 + 1) + b'","route":"old"}'
         after = before.replace(b'"route":"old"', b'"route":"new"')
-        patch = "diff --git a/catalog.json b/catalog.json\n" + "+" + "x" * (audit.MAX_CHUNK + 1) + "\n"
+        patch = ("diff --git a/catalog.json b/catalog.json\nold mode 100644\nnew mode 100755\n"
+                 "index " + "0" * 40 + ".." + "1" * 40 + "\n--- a/catalog.json\n+++ b/catalog.json\n"
+                 "@@ -1 +1 @@\n+" + "x" * (audit.MAX_CHUNK + 1) + "\n")
 
         def blob(commit, path, limit):
             self.assertEqual(limit, audit.MAX_STRUCTURED_JSON)
@@ -131,6 +133,8 @@ class VerdictTests(unittest.TestCase):
             compacted = audit.compact_large_json_patches(patch, {"commit": "base"}, {"commit": "target"})
         self.assertLess(len(compacted.encode()), audit.MAX_CHUNK)
         self.assertIn('["change","/k:route","old","new"]', compacted)
+        self.assertIn("old mode 100644", compacted)
+        self.assertIn("new mode 100755", compacted)
         with mock.patch.object(audit, "MAX_STRUCTURED_JSON", 10), \
              mock.patch.object(audit, "manifest_blob", return_value=b"x" * 11), self.assertRaises(audit.Hold):
             audit.structured_json_blob("commit", "large.json")
@@ -148,6 +152,33 @@ class VerdictTests(unittest.TestCase):
         self.assertTrue(chunks[1].startswith("continued-diff a/catalog.json b/catalog.json\n"))
         with self.assertRaises(audit.Hold):
             audit.semantic_json_diff("catalog.json", b'{"a":1,"a":2}', b'{}')
+
+    def test_semantic_expansion_is_incrementally_bounded(self):
+        after = json.dumps({"items": [0] * 10000}).encode()
+        with self.assertRaises(audit.Hold):
+            audit.semantic_json_diff("large.json", None, after, max_bytes=4096)
+        nested, current = {}, None
+        current = nested
+        for _ in range(audit.MAX_JSON_DEPTH + 1):
+            child = {}
+            current["x"] = child
+            current = child
+        with self.assertRaises(audit.Hold):
+            audit.semantic_json_diff("deep.json", None, json.dumps(nested).encode())
+
+    def test_oversized_json_order_comparison_fails_before_matching(self):
+        before = list(range(audit.MAX_ORDER_ITEMS // 2 + 1))
+        after = before[::-1]
+        with self.assertRaises(audit.Hold):
+            list(audit.json_order_records((), before, after))
+
+    def test_informational_json_is_not_parsed_or_compacted(self):
+        path = "tests/fixtures/large.json"
+        patch = f"diff --git a/{path} b/{path}\n+" + "not-json" * audit.MAX_CHUNK + "\n"
+        with mock.patch.object(audit, "manifest_blob") as manifest:
+            self.assertEqual(audit.compact_large_json_patches(
+                patch, {"commit": BASE["commit"]}, {"commit": "e" * 40}), patch)
+        manifest.assert_not_called()
 
     def test_oversized_text_file_splits_at_hunks(self):
         patch = (
@@ -194,6 +225,12 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(
             audit.resolve_review_model("modelRoles:\n  smol: openai-codex/gpt-6-luna:auto\n"),
             "openai-codex/gpt-6-luna:auto")
+        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna:auto"),
+                         "openai-codex/gpt-6-luna:high")
+        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna"),
+                         "openai-codex/gpt-6-luna:high")
+        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna:low"),
+                         "openai-codex/gpt-6-luna:low")
         with self.assertRaises(audit.Hold):
             audit.resolve_review_model("modelRoles:\n  task: openai-codex/gpt-5.6-luna:xhigh\n")
 

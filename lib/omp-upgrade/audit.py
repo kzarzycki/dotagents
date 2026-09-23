@@ -44,11 +44,11 @@ COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 MIN_ASSET, MAX_ASSET = 1024 * 1024, 1024 * 1024 * 1024
 MAX_SOURCE, MAX_CHUNK, MAX_CHUNKS = 1024 * 1024, 64 * 1024, 16
 # Raw Git and structured JSON have independent memory bounds; reviewed text does not.
-MAX_RAW_DIFF, MAX_STRUCTURED_JSON = 64 * 1024 * 1024, 64 * 1024 * 1024
+MAX_RAW_DIFF, MAX_STRUCTURED_JSON = 64 * 1024 * 1024, 12 * 1024 * 1024
 # Keep surrounding code while leaving room for semantic records in the review budget.
 DIFF_CONTEXT = 10
-# Containers are represented by per-member records; an oversized scalar holds.
-MAX_JSON_RECORD = 8 * 1024
+# Bound individual records, nesting and quadratic order matching.
+MAX_JSON_RECORD, MAX_JSON_DEPTH, MAX_ORDER_ITEMS = 8 * 1024, 128, 4096
 MAX_NOTES, MAX_JSON, MAX_OUTPUT = 64 * 1024, 2 * 1024 * 1024, 4 * 1024 * 1024
 MAX_WHOLE_INPUT, MAX_DEPENDENCY_INPUT = 1024 * 1024, 4 * 1024 * 1024
 MODEL_SECONDS = 240
@@ -516,59 +516,58 @@ def structured_json_blob(commit, path):
 
 
 def json_diff_records(before, after, path=()):
-    """Return deterministic, exhaustive semantic changes for JSON values."""
+    """Yield deterministic, exhaustive semantic changes for JSON values."""
+    require(len(path) <= MAX_JSON_DEPTH, "JSON semantic path exceeds depth bound")
     if isinstance(before, dict) and isinstance(after, dict):
-        before_keys, after_keys = list(before), list(after)
-        records = []
-        if before_keys != after_keys:
-            records.extend(json_order_records(path, before_keys, after_keys))
-        for key in sorted(set(before) | set(after)):
+        same_order = len(before) == len(after) and all(left == right for left, right in zip(before, after))
+        if not same_order:
+            yield from json_order_records(path, before.keys(), after.keys())
+        for key in before:
             child = path + (key,)
-            if key not in before:
-                records.extend(json_added_records(after[key], child))
-            elif key not in after:
-                records.extend(json_removed_records(before[key], child))
+            if key not in after:
+                yield from json_removed_records(before[key], child)
             else:
-                records.extend(json_diff_records(before[key], after[key], child))
-        return records
+                yield from json_diff_records(before[key], after[key], child)
+        for key in after:
+            if key not in before:
+                yield from json_added_records(after[key], path + (key,))
+        return
     if isinstance(before, list) and isinstance(after, list):
         old, new = keyed_json_list(before), keyed_json_list(after)
         if old and new and old[0] == new[0]:
             field, left, left_values = old
             _, right, right_values = new
-            old_order = list(left_values.values())
-            new_order = list(right_values.values())
-            records = []
+            old_order, new_order = list(left_values.values()), list(right_values.values())
             if old_order != new_order:
-                records.extend(json_order_records(path, old_order, new_order))
+                yield from json_order_records(path, old_order, new_order)
             for identity in sorted(set(left) | set(right)):
                 child = path + ({field: left_values.get(identity, right_values.get(identity))},)
                 if identity not in left:
-                    records.extend(json_keyed_records(right[identity], child, field, "add"))
+                    yield from json_keyed_records(right[identity], child, field, "add")
                 elif identity not in right:
-                    records.extend(json_keyed_records(left[identity], child, field, "remove"))
+                    yield from json_keyed_records(left[identity], child, field, "remove")
                 else:
-                    records.extend(json_diff_records(left[identity], right[identity], child))
-            return records
-        records = []
+                    yield from json_diff_records(left[identity], right[identity], child)
+            return
         for index in range(max(len(before), len(after))):
             child = path + (index,)
             if index >= len(before):
-                records.extend(json_added_records(after[index], child))
+                yield from json_added_records(after[index], child)
             elif index >= len(after):
-                records.extend(json_removed_records(before[index], child))
+                yield from json_removed_records(before[index], child)
             else:
-                records.extend(json_diff_records(before[index], after[index], child))
-        return records
+                yield from json_diff_records(before[index], after[index], child)
+        return
     if before != after or type(before) is not type(after):
         if isinstance(before, (dict, list)) or isinstance(after, (dict, list)):
-            return json_removed_records(before, path) + json_added_records(after, path)
-        return [{"op": "change", "path": list(path), "old": before, "value": after}]
-    return []
+            yield from json_removed_records(before, path)
+            yield from json_added_records(after, path)
+        else:
+            yield {"op": "change", "path": list(path), "old": before, "value": after}
 
 
 def keyed_json_list(items):
-    if not items or any(not isinstance(item, dict) for item in items):
+    if not items or len(items) > MAX_ORDER_ITEMS or any(not isinstance(item, dict) for item in items):
         return None
     for field in ("id", "name"):
         values = [item.get(field) for item in items]
@@ -576,90 +575,93 @@ def keyed_json_list(items):
             identities = [(type(value).__name__, value) for value in values]
             if len(set(identities)) == len(identities):
                 return field, dict(zip(identities, items)), dict(zip(identities, values))
-
     return None
 
+
+def json_order_side(path, side, offset, values):
+    group = []
+    for value in values:
+        candidate = {"op": "order", "path": list(path), "side": side,
+                     "offset": offset + len(group), "items": group + [value]}
+        if len((json.dumps(candidate, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode()) > MAX_JSON_RECORD:
+            require(group, "JSON order entry exceeds semantic record bound")
+            yield {"op": "order", "path": list(path), "side": side, "offset": offset, "items": group}
+            offset += len(group)
+            group = [value]
+            candidate = {"op": "order", "path": list(path), "side": side, "offset": offset, "items": group}
+            require(len((json.dumps(candidate, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode()) <= MAX_JSON_RECORD,
+                    "JSON order entry exceeds semantic record bound")
+        else:
+            group.append(value)
+    if group:
+        yield {"op": "order", "path": list(path), "side": side, "offset": offset, "items": group}
+
+
 def json_order_records(path, before, after):
-    records = []
-    matcher = difflib.SequenceMatcher(a=before, b=after)
+    if not before:
+        yield from json_order_side(path, "value", 0, after)
+        return
+    if not after:
+        yield from json_order_side(path, "old", 0, before)
+        return
+    require(len(before) + len(after) <= MAX_ORDER_ITEMS, "JSON order comparison exceeds item bound")
+    before_items, after_items = list(before), list(after)
+    matcher = difflib.SequenceMatcher(a=before_items, b=after_items)
     for operation, i1, i2, j1, j2 in matcher.get_opcodes():
-        if operation == "equal":
-            continue
-        old, new = before[i1:i2], after[j1:j2]
-        old_position = new_position = 0
-        while old_position < len(old) or new_position < len(new):
-            old_chunk, new_chunk = [], []
-            old_start, new_start = old_position, new_position
-            while True:
-                advanced = False
-                for side, values, position, chunk in (
-                    ("old", old, old_position, old_chunk),
-                    ("value", new, new_position, new_chunk),
-                ):
-                    if position >= len(values):
-                        continue
-                    candidate = {"op": "order", "path": list(path), "side": side,
-                                 "offset": (i1 + old_start if side == "old" else j1 + new_start),
-                                 "items": chunk + [values[position]]}
-                    if len((json.dumps(candidate, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode()) <= MAX_JSON_RECORD:
-                        chunk.append(values[position])
-                        if side == "old":
-                            old_position += 1
-                        else:
-                            new_position += 1
-                        advanced = True
-                if not advanced:
-                    break
-            require(old_chunk or new_chunk, "JSON order entry exceeds semantic record bound")
-            if old_chunk:
-                records.append({"op": "order", "path": list(path), "side": "old", "offset": i1 + old_start,
-                                "items": old_chunk})
-            if new_chunk:
-                records.append({"op": "order", "path": list(path), "side": "value", "offset": j1 + new_start,
-                                "items": new_chunk})
-    return records
+        if operation != "equal":
+            yield from json_order_side(path, "old", i1, before_items[i1:i2])
+            yield from json_order_side(path, "value", j1, after_items[j1:j2])
+
 
 def json_keyed_records(value, path, field, op):
     remainder = {key: item for key, item in value.items() if key != field}
     records = json_added_records(remainder, path) if op == "add" else json_removed_records(remainder, path)
-    return records or [{"op": op, "path": list(path), "value" if op == "add" else "old": {field: value[field]}}]
-
+    emitted = False
+    for record in records:
+        emitted = True
+        yield record
+    if not emitted:
+        yield {"op": op, "path": list(path), "value" if op == "add" else "old": {field: value[field]}}
 
 
 def json_added_records(value, path):
+    require(len(path) <= MAX_JSON_DEPTH, "JSON semantic path exceeds depth bound")
     if isinstance(value, dict):
         if not value:
-            return [{"op": "add", "path": list(path), "value": value}]
-        records = json_order_records(path, [], list(value))
-        for key in sorted(value):
-            records.extend(json_added_records(value[key], path + (key,)))
-        return records
+            yield {"op": "add", "path": list(path), "value": value}
+            return
+        yield from json_order_records(path, (), value.keys())
+        for key in value:
+            yield from json_added_records(value[key], path + (key,))
+        return
     if isinstance(value, list):
         if not value:
-            return [{"op": "add", "path": list(path), "value": value}]
-        records = []
+            yield {"op": "add", "path": list(path), "value": value}
+            return
         for index, item in enumerate(value):
-            records.extend(json_added_records(item, path + (index,)))
-        return records
-    return [{"op": "add", "path": list(path), "value": value}]
+            yield from json_added_records(item, path + (index,))
+        return
+    yield {"op": "add", "path": list(path), "value": value}
 
 
 def json_removed_records(value, path):
+    require(len(path) <= MAX_JSON_DEPTH, "JSON semantic path exceeds depth bound")
     if isinstance(value, dict):
         if not value:
-            return [{"op": "remove", "path": list(path), "old": value}]
-        records = []
-        for key in sorted(value):
-            records.extend(json_removed_records(value[key], path + (key,)))
-        return records
+            yield {"op": "remove", "path": list(path), "old": value}
+            return
+        for key in value:
+            yield from json_removed_records(value[key], path + (key,))
+        return
     if isinstance(value, list):
         if not value:
-            return [{"op": "remove", "path": list(path), "old": value}]
-        records = []
+            yield {"op": "remove", "path": list(path), "old": value}
+            return
         for index in range(len(value) - 1, -1, -1):
-            records.extend(json_removed_records(value[index], path + (index,)))
-        return records
-    return [{"op": "remove", "path": list(path), "old": value}]
+            yield from json_removed_records(value[index], path + (index,))
+        return
+    yield {"op": "remove", "path": list(path), "old": value}
+
 
 def compact_json_path(path):
     parts = []
@@ -675,8 +677,8 @@ def compact_json_path(path):
     return "/" + "/".join(parts) if parts else ""
 
 
-def semantic_json_diff(path, before, after):
-    """Replace a huge JSON text patch with a bounded, reviewable semantic patch."""
+def semantic_json_diff(path, before, after, *, max_bytes=MAX_SOURCE, extended_header=()):
+    """Serialize semantic JSON changes incrementally within the remaining review budget."""
     old = JSON_ABSENT if before is None else strict_json(before)
     new = JSON_ABSENT if after is None else strict_json(after)
     if old is JSON_ABSENT:
@@ -687,10 +689,10 @@ def semantic_json_diff(path, before, after):
         records = json_diff_records(old, new)
     before_sha = hashlib.sha256(before or b"").hexdigest()
     after_sha = hashlib.sha256(after or b"").hexdigest()
-    lines = [
-        f"diff --git a/{path} b/{path}\n",
-        f"semantic-json-diff {before_sha} {after_sha}\n",
-    ]
+    lines = [f"diff --git a/{path} b/{path}\n", *extended_header,
+             f"semantic-json-diff {before_sha} {after_sha}\n"]
+    size = sum(len(line.encode()) for line in lines)
+    require(size <= max_bytes, f"Semantic JSON header exceeds remaining review bound: {path}")
     for record in records:
         record_path = compact_json_path(record["path"])
         if record["op"] == "order":
@@ -702,7 +704,10 @@ def semantic_json_diff(path, before, after):
         else:
             compact = [record["op"], record_path, record["old"], record["value"]]
         line = json.dumps(compact, ensure_ascii=True, separators=(",", ":")) + "\n"
-        require(len(line.encode()) <= MAX_JSON_RECORD, f"Semantic JSON record too large: {path}")
+        encoded_size = len(line.encode())
+        require(encoded_size <= MAX_JSON_RECORD, f"Semantic JSON record too large: {path}")
+        size += encoded_size
+        require(size <= max_bytes, f"Semantic JSON review exceeds remaining budget: {path}")
         lines.append(line)
     return "".join(lines)
 
@@ -710,19 +715,30 @@ def semantic_json_diff(path, before, after):
 def compact_large_json_patches(text, base, target):
     patches = re.split(r"(?=^diff --git )", text, flags=re.MULTILINE)
     require(patches[0] == "", "Missing complete diff header")
-    compacted = []
+    compacted, raw_size, gated_size = [], 0, 0
     for patch in patches[1:]:
         match = re.match(r"diff --git a/(\S+) b/(\S+)\n", patch)
         require(match and match.group(1) == match.group(2), "Unparseable or renamed diff header")
         path = match.group(1)
-        if path.endswith(".json") and len(patch.encode()) > MAX_CHUNK:
-            compacted.append(semantic_json_diff(path, structured_json_blob(base["commit"], path),
-                                                structured_json_blob(target["commit"], path)))
-        else:
-            compacted.append(patch)
-    result = "".join(compacted)
-    require(result and len(result.encode()) <= MAX_RAW_DIFF, "Complete source diff exceeds raw memory bound")
-    return result
+        informational = bool(INFORMATIONAL.match(path))
+        if path.endswith(".json") and not informational and len(patch.encode()) > MAX_CHUNK:
+            extended_header = []
+            for line in patch.splitlines(keepends=True)[1:]:
+                if line.startswith(("--- ", "+++ ", "@@ ")):
+                    break
+                if line.startswith(("old mode ", "new mode ", "new file mode ", "deleted file mode ", "index ")):
+                    extended_header.append(line)
+            patch = semantic_json_diff(
+                path, structured_json_blob(base["commit"], path), structured_json_blob(target["commit"], path),
+                max_bytes=MAX_SOURCE - gated_size, extended_header=extended_header)
+        patch_size = len(patch.encode())
+        raw_size += patch_size
+        require(raw_size <= MAX_RAW_DIFF, "Complete source diff exceeds raw memory bound")
+        if not informational:
+            gated_size += patch_size
+            require(gated_size <= MAX_SOURCE, "Gated source diff exceeds review bound")
+        compacted.append(patch)
+    return "".join(compacted)
 
 
 def source_diff(base, target):
@@ -759,9 +775,11 @@ def source_diff(base, target):
 
 def split_semantic_json_patch(path, patch):
     lines = patch.splitlines(keepends=True)
-    require(len(lines) >= 2 and lines[1].startswith("semantic-json-diff "), f"Malformed semantic JSON diff: {path}")
-    records = lines[2:]
-    prefix = "".join(lines[:2])
+    markers = [index for index, line in enumerate(lines) if line.startswith("semantic-json-diff ")]
+    require(len(markers) == 1, f"Malformed semantic JSON diff: {path}")
+    marker = markers[0]
+    records = lines[marker + 1:]
+    prefix = "".join(lines[:marker + 1])
     require(len(prefix.encode()) <= MAX_CHUNK, f"Semantic JSON header too large: {path}")
     pieces, current = [], prefix
     for record in records:
@@ -999,11 +1017,18 @@ def resolve_review_model(config):
             "Configured smol/default model missing or unsupported; no fallback allowed")
     return model
 
+def pin_review_effort(model):
+    if model.endswith(":auto"):
+        return model[:-5] + ":high"
+    if ":" not in model:
+        return model + ":high"
+    return model
+
 
 @contextlib.contextmanager
 def model_environment():
     config = read_bytes(HOME / ".omp/agent/config.yml", 128 * 1024).decode()
-    model = resolve_review_model(config)
+    model = pin_review_effort(resolve_review_model(config))
     # Source-inspected at a1b2540: main.ts:1451 preloads plugins even with no-extensions;
     # sdk.ts:2106 loads custom-tool factories even with no-tools. A fresh HOME and
     # cwd plus disabled discovery are essential, not just command-line flags.
