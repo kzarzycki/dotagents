@@ -96,7 +96,9 @@ path plus JSON path for semantic JSON records.
 A large JSON data file may arrive as a semantic JSON diff instead of text: its
 "diff --git" header, a "semantic-json-diff BEFORE_SHA256 AFTER_SHA256" line, then
 one compact JSON array per line: `["add",path,value]`, `["remove",path,old]`,
-`["change",path,old,value]`, or `["order",path,side,offset,items]`. Paths are
+`["remove-container",path,"object" or "array",length]`,
+`["change",path,old,value]`, or `["order",path,side,offset,items]`. Numeric JSON
+lexemes use `{"$number":"..."}` so signed zero and precision remain distinct. Paths are
 tagged segments: `k:<escaped-key>`, `i:<array-index>`, or `@["key",value]` keyed
 selectors; `~0` and `~1` escape `~` and `/`. Order records carry changed slices
 with offsets; unchanged sequence ranges stay implicit. Each record is complete,
@@ -153,7 +155,11 @@ def require(condition, message):
         raise Hold(message)
 
 
-def strict_json(text):
+class JSONNumber(str):
+    pass
+
+
+def strict_json(text, preserve_numbers=False):
     def pairs(items):
         result = {}
         for key, value in items:
@@ -163,7 +169,10 @@ def strict_json(text):
     def constant(_):
         raise Hold("Non-finite JSON number")
     try:
-        return json.loads(text, object_pairs_hook=pairs, parse_constant=constant)
+        options = {"object_pairs_hook": pairs, "parse_constant": constant}
+        if preserve_numbers:
+            options.update(parse_int=JSONNumber, parse_float=JSONNumber)
+        return json.loads(text, **options)
     except (ValueError, UnicodeError) as exc:
         raise Hold("Malformed or incomplete JSON") from exc
 
@@ -538,7 +547,7 @@ def json_diff_records(before, after, path=()):
             field, left, left_values = old
             _, right, right_values = new
             old_order, new_order = list(left_values.values()), list(right_values.values())
-            if old_order != new_order:
+            if [json_order_token(value) for value in old_order] != [json_order_token(value) for value in new_order]:
                 yield from json_order_records(path, old_order, new_order)
             for identity in sorted(set(left) | set(right)):
                 child = path + ({field: left_values.get(identity, right_values.get(identity))},)
@@ -571,7 +580,7 @@ def keyed_json_list(items):
         return None
     for field in ("id", "name"):
         values = [item.get(field) for item in items]
-        if all(type(value) in (str, int) for value in values):
+        if all(type(value) in (str, int, JSONNumber) for value in values):
             identities = [(type(value).__name__, value) for value in values]
             if len(set(identities)) == len(identities):
                 return field, dict(zip(identities, items)), dict(zip(identities, values))
@@ -581,20 +590,24 @@ def keyed_json_list(items):
 def json_order_side(path, side, offset, values):
     group = []
     for value in values:
+        items = group + [value]
         candidate = {"op": "order", "path": list(path), "side": side,
-                     "offset": offset + len(group), "items": group + [value]}
+                     "offset": offset + len(group), "items": json_semantic_value(items)}
         if len((json.dumps(candidate, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode()) > MAX_JSON_RECORD:
             require(group, "JSON order entry exceeds semantic record bound")
-            yield {"op": "order", "path": list(path), "side": side, "offset": offset, "items": group}
+            yield {"op": "order", "path": list(path), "side": side, "offset": offset,
+                   "items": json_semantic_value(group)}
             offset += len(group)
             group = [value]
-            candidate = {"op": "order", "path": list(path), "side": side, "offset": offset, "items": group}
+            candidate = {"op": "order", "path": list(path), "side": side, "offset": offset,
+                         "items": json_semantic_value(group)}
             require(len((json.dumps(candidate, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode()) <= MAX_JSON_RECORD,
                     "JSON order entry exceeds semantic record bound")
         else:
             group.append(value)
     if group:
-        yield {"op": "order", "path": list(path), "side": side, "offset": offset, "items": group}
+        yield {"op": "order", "path": list(path), "side": side, "offset": offset,
+               "items": json_semantic_value(group)}
 
 
 def json_order_records(path, before, after):
@@ -606,7 +619,8 @@ def json_order_records(path, before, after):
         return
     require(len(before) + len(after) <= MAX_ORDER_ITEMS, "JSON order comparison exceeds item bound")
     before_items, after_items = list(before), list(after)
-    matcher = difflib.SequenceMatcher(a=before_items, b=after_items)
+    matcher = difflib.SequenceMatcher(a=[json_order_token(value) for value in before_items],
+                                      b=[json_order_token(value) for value in after_items])
     for operation, i1, i2, j1, j2 in matcher.get_opcodes():
         if operation != "equal":
             yield from json_order_side(path, "old", i1, before_items[i1:i2])
@@ -650,6 +664,7 @@ def json_removed_records(value, path):
         if not value:
             yield {"op": "remove", "path": list(path), "old": value}
             return
+        yield {"op": "remove-container", "path": list(path), "kind": "object", "length": len(value)}
         for key in value:
             yield from json_removed_records(value[key], path + (key,))
         return
@@ -657,10 +672,25 @@ def json_removed_records(value, path):
         if not value:
             yield {"op": "remove", "path": list(path), "old": value}
             return
+        yield {"op": "remove-container", "path": list(path), "kind": "array", "length": len(value)}
         for index in range(len(value) - 1, -1, -1):
             yield from json_removed_records(value[index], path + (index,))
         return
     yield {"op": "remove", "path": list(path), "old": value}
+
+
+def json_semantic_value(value):
+    if isinstance(value, JSONNumber):
+        return {"$number": str(value)}
+    if isinstance(value, dict):
+        return {key: json_semantic_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [json_semantic_value(item) for item in value]
+    return value
+
+
+def json_order_token(value):
+    return json.dumps(json_semantic_value(value), ensure_ascii=True, sort_keys=True, separators=(",", ":"))
 
 
 def compact_json_path(path):
@@ -668,7 +698,7 @@ def compact_json_path(path):
     for item in path:
         if isinstance(item, dict) and len(item) == 1:
             key, value = next(iter(item.items()))
-            segment = "@" + json.dumps([key, value], ensure_ascii=True, separators=(",", ":"))
+            segment = "@" + json.dumps([key, json_semantic_value(value)], ensure_ascii=True, separators=(",", ":"))
         elif type(item) is int:
             segment = f"i:{item}"
         else:
@@ -679,8 +709,8 @@ def compact_json_path(path):
 
 def semantic_json_diff(path, before, after, *, max_bytes=MAX_SOURCE, extended_header=()):
     """Serialize semantic JSON changes incrementally within the remaining review budget."""
-    old = JSON_ABSENT if before is None else strict_json(before)
-    new = JSON_ABSENT if after is None else strict_json(after)
+    old = JSON_ABSENT if before is None else strict_json(before, preserve_numbers=True)
+    new = JSON_ABSENT if after is None else strict_json(after, preserve_numbers=True)
     if old is JSON_ABSENT:
         records = json_added_records(new, ())
     elif new is JSON_ABSENT:
@@ -696,13 +726,17 @@ def semantic_json_diff(path, before, after, *, max_bytes=MAX_SOURCE, extended_he
     for record in records:
         record_path = compact_json_path(record["path"])
         if record["op"] == "order":
-            compact = [record["op"], record_path, record["side"], record["offset"], record["items"]]
+            compact = [record["op"], record_path, record["side"], record["offset"],
+                       json_semantic_value(record["items"])]
+        elif record["op"] == "remove-container":
+            compact = [record["op"], record_path, record["kind"], record["length"]]
         elif record["op"] == "add":
-            compact = [record["op"], record_path, record["value"]]
+            compact = [record["op"], record_path, json_semantic_value(record["value"])]
         elif record["op"] == "remove":
-            compact = [record["op"], record_path, record["old"]]
+            compact = [record["op"], record_path, json_semantic_value(record["old"])]
         else:
-            compact = [record["op"], record_path, record["old"], record["value"]]
+            compact = [record["op"], record_path, json_semantic_value(record["old"]),
+                       json_semantic_value(record["value"])]
         line = json.dumps(compact, ensure_ascii=True, separators=(",", ":")) + "\n"
         encoded_size = len(line.encode())
         require(encoded_size <= MAX_JSON_RECORD, f"Semantic JSON record too large: {path}")

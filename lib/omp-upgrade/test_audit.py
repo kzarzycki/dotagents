@@ -99,6 +99,7 @@ class VerdictTests(unittest.TestCase):
         records = list(audit.json_diff_records(before, after, ("providers",)))
         self.assertEqual(records, [
             {"op": "order", "path": ["providers"], "side": "old", "offset": 0, "items": ["a"]},
+            {"op": "remove-container", "path": ["providers", {"id": "a"}], "kind": "object", "length": 1},
             {"op": "remove", "path": ["providers", {"id": "a"}, "url"], "old": "one"},
             {"op": "change", "path": ["providers", {"id": "b"}, "url"], "old": "two", "value": "changed"},
         ])
@@ -113,10 +114,35 @@ class VerdictTests(unittest.TestCase):
             {"op": "order", "path": ["entry"], "side": "value", "offset": 0, "items": ["b", "a"]}
         ])
         self.assertEqual(list(audit.json_removed_records({"b": 2, "a": 1}, ("entry",))), [
+            {"op": "remove-container", "path": ["entry"], "kind": "object", "length": 2},
             {"op": "remove", "path": ["entry", "b"], "old": 2},
             {"op": "remove", "path": ["entry", "a"], "old": 1},
         ])
         self.assertEqual(audit.compact_json_path(("a/b", 0, {"id": "x/y~z"})), '/k:a~1b/i:0/@["id","x~1y~0z"]')
+
+    def test_semantic_diff_preserves_container_removal_and_number_lexemes(self):
+        removed = audit.semantic_json_diff("catalog.json", b'{"rows":[[1]]}', b'{"rows":[]}')
+        retained = audit.semantic_json_diff("catalog.json", b'{"rows":[[1]]}', b'{"rows":[[]]}')
+        self.assertIn('["remove-container","/k:rows/i:0","array",1]', removed)
+        self.assertNotIn('["remove-container","/k:rows/i:0","array",1]', retained)
+        self.assertNotEqual(removed, retained)
+        self.assertIn('["change","/k:value",{"$number":"0"},{"$number":"-0"}]', audit.semantic_json_diff(
+            "catalog.json", b'{"value":0}', b'{"value":-0}'))
+        self.assertIn('["change","/k:value",{"$number":"0.0"},{"$number":"-0.0"}]', audit.semantic_json_diff(
+            "catalog.json", b'{"value":0.0}', b'{"value":-0.0}'))
+
+    def test_numeric_and_string_keyed_order_remains_type_sensitive(self):
+        before = b'[{"id":1},{"id":"1"}]'
+        after = b'[{"id":"1"},{"id":1}]'
+        patch = audit.semantic_json_diff("catalog.json", before, after)
+        self.assertEqual([record["op"] for record in audit.json_diff_records(
+            audit.strict_json(before, preserve_numbers=True),
+            audit.strict_json(after, preserve_numbers=True))], ["order", "order"])
+        records = list(audit.json_order_side((), "value", 0, [audit.JSONNumber("1")] * 2000))
+        self.assertTrue(records)
+        self.assertTrue(all(len(json.dumps(["order", "", "value", 0, record["items"]],
+                                           ensure_ascii=True, separators=(",", ":")).encode()) <= audit.MAX_JSON_RECORD
+                            for record in records))
 
     def test_oversized_json_blob_is_compacted_with_separate_bound(self):
         before = b'{"padding":"' + b'a' * (1024 * 1024 + 1) + b'","route":"old"}'
