@@ -46,7 +46,7 @@ MAX_SOURCE, MAX_CHUNK, MAX_CHUNKS = 1024 * 1024, 64 * 1024, 16
 # Raw Git and structured JSON have independent memory bounds; reviewed text does not.
 MAX_RAW_DIFF, MAX_STRUCTURED_JSON = 64 * 1024 * 1024, 12 * 1024 * 1024
 # Keep surrounding code while leaving room for semantic records in the review budget.
-DIFF_CONTEXT = 10
+DIFF_CONTEXT = 3
 # Bound individual records, nesting and quadratic order matching.
 MAX_JSON_RECORD, MAX_JSON_DEPTH, MAX_ORDER_ITEMS = 8 * 1024, 128, 4096
 MAX_NOTES, MAX_JSON, MAX_OUTPUT = 64 * 1024, 2 * 1024 * 1024, 4 * 1024 * 1024
