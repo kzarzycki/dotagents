@@ -130,8 +130,8 @@ allowlist is applied. Oversized text patches split at hunk boundaries. No conten
 truncated; exact chunk reconstruction is checked. A single semantic record or text
 hunk that cannot fit still HOLDs. Semantic expansion is incremental: record,
 path-depth and order-matching caps fail closed before unbounded record growth;
-reviewer `:auto` is pinned to `:high`. The source diff uses 10 lines of context to
-review input within bounds without discarding changed lines. `audit.py check --force` bypasses only the daily cooldown, not security checks.
+reviewer `:auto` is pinned to `:high`. The source diff uses three lines of context to
+preserve nearby code while leaving room for whole-release review input. `audit.py check --force` bypasses only the daily cooldown, not security checks.
 Always check the report's installed version and timestamp before attributing an older HOLD to a fresh request.
 
 Only source that ships in the binary is gated. `INFORMATIONAL` in `audit.py`
