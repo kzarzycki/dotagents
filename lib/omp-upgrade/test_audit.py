@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -87,13 +88,60 @@ class VerdictTests(unittest.TestCase):
         with mock.patch.object(audit, "MAX_SOURCE", 10), self.assertRaises(audit.Hold):
             audit.split_diff(DIFF)
 
+    def test_chunk_coverage_rejects_missing_content(self):
+        with mock.patch.object(audit, "split_file_patch", return_value=[DIFF[:-1]]):
+            with self.assertRaises(audit.Hold):
+                audit.split_diff(DIFF)
+
+    def test_keyed_object_lists_do_not_emit_shift_cascade(self):
+        before = [{"id": "a", "url": "one"}, {"id": "b", "url": "two"}, {"id": "c", "url": "three"}]
+        after = [{"id": "b", "url": "changed"}, {"id": "c", "url": "three"}]
+        records = audit.json_diff_records(before, after, ("providers",))
+        self.assertEqual(records, [
+            {"op": "order", "path": ["providers"], "side": "old", "offset": 0, "items": ["a"]},
+            {"op": "remove", "path": ["providers", {"id": "a"}, "url"], "old": "one"},
+            {"op": "change", "path": ["providers", {"id": "b"}, "url"], "old": "two", "value": "changed"},
+        ])
+        reordered = audit.json_diff_records(before, [before[1], before[0], before[2]])
+        expected_move = [
+            {"op": "order", "path": [], "side": "value", "offset": 0, "items": ["b"]},
+            {"op": "order", "path": [], "side": "old", "offset": 1, "items": ["b"]},
+        ]
+        self.assertEqual(reordered[:2], expected_move)
+        self.assertEqual(audit.json_diff_records({"a": 1, "b": 2}, {"b": 2, "a": 1}), expected_move)
+        self.assertEqual(audit.json_added_records({"b": 2, "a": 1}, ("entry",))[:1], [
+            {"op": "order", "path": ["entry"], "side": "value", "offset": 0, "items": ["b", "a"]}
+        ])
+        self.assertEqual(audit.json_removed_records({"b": 2, "a": 1}, ("entry",)), [
+            {"op": "remove", "path": ["entry", "a"], "old": 1},
+            {"op": "remove", "path": ["entry", "b"], "old": 2},
+        ])
+        self.assertEqual(audit.compact_json_path(("a/b", 0, {"id": "x/y~z"})), '/k:a~1b/i:0/@["id","x~1y~0z"]')
+
+    def test_oversized_json_blob_is_compacted_with_separate_bound(self):
+        before = b'{"padding":"' + b'a' * (1024 * 1024 + 1) + b'","route":"old"}'
+        after = before.replace(b'"route":"old"', b'"route":"new"')
+        patch = "diff --git a/catalog.json b/catalog.json\n" + "+" + "x" * (audit.MAX_CHUNK + 1) + "\n"
+
+        def blob(commit, path, limit):
+            self.assertEqual(limit, audit.MAX_STRUCTURED_JSON)
+            return before if commit == "base" else after
+
+        with mock.patch.object(audit, "manifest_blob", side_effect=blob):
+            compacted = audit.compact_large_json_patches(patch, {"commit": "base"}, {"commit": "target"})
+        self.assertLess(len(compacted.encode()), audit.MAX_CHUNK)
+        self.assertIn('["change","/k:route","old","new"]', compacted)
+        with mock.patch.object(audit, "MAX_STRUCTURED_JSON", 10), \
+             mock.patch.object(audit, "manifest_blob", return_value=b"x" * 11), self.assertRaises(audit.Hold):
+            audit.structured_json_blob("commit", "large.json")
+
     def test_large_json_uses_exhaustive_semantic_records_and_splits(self):
         before = b'{"providers":{"old":{"url":"https://old.example"}},"stable":1}'
         after = b'{"providers":{"new":{"url":"https://new.example"}},"stable":2}'
         patch = audit.semantic_json_diff("catalog.json", before, after)
         self.assertIn("semantic-json-diff ", patch)
-        self.assertIn('"path":["providers","new","url"]', patch)
-        self.assertIn('"path":["providers","old","url"]', patch)
+        self.assertIn('["add","/k:providers/k:new/k:url","https://new.example"]', patch)
+        self.assertIn('["remove","/k:providers/k:old/k:url","https://old.example"]', patch)
         with mock.patch.object(audit, "MAX_CHUNK", 360):
             chunks = audit.split_diff(patch)
         self.assertTrue(all(len(chunk.encode()) <= 360 for chunk in chunks))
@@ -113,6 +161,7 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(len(chunks), 2)
         self.assertTrue(chunks[1].startswith("continued-diff a/example.py b/example.py\n"))
         self.assertTrue(all(len(chunk.encode()) <= 100 for chunk in chunks))
+        self.assertEqual(re.sub(r"(?m)^continued-diff [^\n]*\n", "", "".join(chunks)), patch)
 
     def test_wrong_asset_url_or_digest_cannot_become_target(self):
         for changed in ({"browser_download_url": f"https://example.com/{audit.ASSET}"},
@@ -207,6 +256,36 @@ class StateTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         audit.save_source_baseline(BASE["version"], BASE["commit"], "user-accepted", "test", "Explicit fixture trust")
 
+
+    def test_large_json_and_small_code_change_reach_model_review(self):
+        before = b'{"padding":"' + b'a' * (1024 * 1024 + 1) + b'","route":"old"}'
+        after = before.replace(b'"route":"old"', b'"route":"new"')
+        raw_json_patch = "diff --git a/catalog.json b/catalog.json\n+" + "x" * (audit.MAX_SOURCE + 1) + "\n"
+        code_patch = DIFF
+        with mock.patch.object(audit, "manifest_blob", side_effect=lambda commit, path, limit:
+                               before if commit == BASE["commit"] else after):
+            compacted_json = audit.compact_large_json_patches(
+                raw_json_patch, {"commit": BASE["commit"]}, {"commit": "e" * 40})
+        complete = compacted_json + code_patch
+
+        def review(source, chunk_id, *args, **kwargs):
+            value = verdict(chunk_id=chunk_id, source_sha256=hashlib.sha256(source.encode()).hexdigest())
+            if kwargs.get("coherence"):
+                value["resolved_concerns"] = []
+            return value
+
+        with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
+             mock.patch.object(audit, "source_diff", return_value=(complete, ["catalog.json", "example.py"])), \
+             mock.patch.object(audit, "dependency_risks", return_value=([], [])), \
+             mock.patch.object(audit, "review_chunk", side_effect=review) as model, \
+             mock.patch.object(audit, "stage_asset"):
+            report = audit.now_report()
+            audit.audit_release(report)
+        self.assertEqual(report["status"], "APPROVED")
+        self.assertEqual(model.call_count, 2)
+        self.assertIn("semantic-json-diff", model.call_args_list[0].args[0])
     def test_lightweight_release_stages_exact_asset_without_source_review(self):
         report = audit.now_report()
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \

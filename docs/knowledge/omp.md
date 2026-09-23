@@ -121,14 +121,16 @@ errors preserve previous readable records.
 
 The model-review budget remains 1 MiB of shipped-runtime source, in at most
 16 chunks of 64 KiB. Raw Git output has a separate 64 MiB memory bound so large
-informational files cannot prevent scoping. Oversized JSON patches are replaced
-by deterministic, exhaustive JSON-path records with before/after blob digests;
-oversized text patches split at hunk boundaries. No content is truncated. A
-single semantic record or text hunk that cannot fit still HOLDs. The source
-diff uses 10 lines of context to preserve review budget without discarding
-changed lines. `audit.py check --force` bypasses only the daily cooldown, not
-security checks. Always check the report's installed version and timestamp before
-attributing an older HOLD to a fresh request.
+informational files cannot prevent scoping. Oversized JSON patches (up to a separate
+64 MiB blob bound) are replaced by deterministic, exhaustive JSON-path records with
+before/after blob digests; keyed object arrays match unique `id`/`name` values to
+avoid index-shift noise while preserving actual additions, removals, value changes,
+and list order. Every field remains visible to the reviewer; no benign-field
+allowlist is applied. Oversized text patches split at hunk boundaries. No content is
+truncated; exact chunk reconstruction is checked. A single semantic record or text
+hunk that cannot fit still HOLDs. The source diff uses 10 lines of context to keep
+review input within bounds without discarding changed lines. `audit.py check --force` bypasses only the daily cooldown, not security checks.
+Always check the report's installed version and timestamp before attributing an older HOLD to a fresh request.
 
 Only source that ships in the binary is gated. `INFORMATIONAL` in `audit.py`
 routes `.github/`, `infra/`, `nix/`, `docs/`, Dockerfiles, changelogs/readmes,

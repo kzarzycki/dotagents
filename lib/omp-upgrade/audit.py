@@ -1,9 +1,9 @@
 #!/usr/bin/python3
 """Static public-source review gate. A model verdict is not binary attestation."""
 import argparse
-import concurrent.futures
 import contextlib
 import datetime
+import difflib
 import fcntl
 import hashlib
 import json
@@ -43,18 +43,15 @@ SHA = re.compile(r"[0-9a-f]{64}\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 MIN_ASSET, MAX_ASSET = 1024 * 1024, 1024 * 1024 * 1024
 MAX_SOURCE, MAX_CHUNK, MAX_CHUNKS = 1024 * 1024, 64 * 1024, 16
-# Memory bound for raw git output and data blobs only. What the model reviews stays
-# bounded by MAX_SOURCE, MAX_CHUNK, MAX_CHUNKS and MAX_WHOLE_INPUT.
-MAX_RAW_DIFF = 64 * 1024 * 1024
-# Keep enough surrounding code to resolve local control flow without letting
-# generated catalog files consume the source-review budget.
+# Raw Git and structured JSON have independent memory bounds; reviewed text does not.
+MAX_RAW_DIFF, MAX_STRUCTURED_JSON = 64 * 1024 * 1024, 64 * 1024 * 1024
+# Keep surrounding code while leaving room for semantic records in the review budget.
 DIFF_CONTEXT = 10
 # Containers are represented by per-member records; an oversized scalar holds.
 MAX_JSON_RECORD = 8 * 1024
 MAX_NOTES, MAX_JSON, MAX_OUTPUT = 64 * 1024, 2 * 1024 * 1024, 4 * 1024 * 1024
 MAX_WHOLE_INPUT, MAX_DEPENDENCY_INPUT = 1024 * 1024, 4 * 1024 * 1024
 MODEL_SECONDS = 240
-REVIEW_WORKERS = 4
 MAX_LEDGER, MAX_LEDGER_ENTRIES = 256 * 1024, 256
 REUSE_REVIEWS = True
 HINT = "python3 -I ~/.local/lib/omp-upgrade/audit.py"
@@ -98,9 +95,12 @@ dependency/lockfile changes and breaking behavior. Cite path:line for findings, 
 path plus JSON path for semantic JSON records.
 A large JSON data file may arrive as a semantic JSON diff instead of text: its
 "diff --git" header, a "semantic-json-diff BEFORE_SHA256 AFTER_SHA256" line, then
-one JSON record per line, {"op":"add"|"remove"|"change"|"order","path":[keys and
-indices],...}; together the records list every changed value and key order. Review every
-record as a changed line.
+one compact JSON array per line: `["add",path,value]`, `["remove",path,old]`,
+`["change",path,old,value]`, or `["order",path,side,offset,items]`. Paths are
+tagged segments: `k:<escaped-key>`, `i:<array-index>`, or `@["key",value]` keyed
+selectors; `~0` and `~1` escape `~` and `/`. Order records carry changed slices
+with offsets; unchanged sequence ranges stay implicit. Each record is complete,
+reviewable data, not opaque generated payload; review every record as a changed line.
 A "continued-diff a/PATH b/PATH" marker identifies a file slice that continues
 the preceding slice; it may occur between other packed file slices in one chunk.
 Policy excludes CI/infra/docs/test paths from the supplied diff; informational_files
@@ -509,17 +509,19 @@ def manifest_blob(commit, path, limit=MAX_JSON):
 JSON_ABSENT = object()
 
 
+def structured_json_blob(commit, path):
+    data = manifest_blob(commit, path, MAX_STRUCTURED_JSON)
+    require(data is None or len(data) <= MAX_STRUCTURED_JSON, f"Structured JSON exceeds data bound: {path}")
+    return data
+
+
 def json_diff_records(before, after, path=()):
-    """Return deterministic, exhaustive leaf changes for a JSON value pair."""
-    records = []
-    if type(before) is not type(after):
-        return [{"op": "change", "path": list(path), "old": before, "value": after}]
-    if isinstance(before, dict):
+    """Return deterministic, exhaustive semantic changes for JSON values."""
+    if isinstance(before, dict) and isinstance(after, dict):
         before_keys, after_keys = list(before), list(after)
-        common_before = [key for key in before_keys if key in after]
-        common_after = [key for key in after_keys if key in before]
-        if common_before != common_after:
-            records.append({"op": "order", "path": list(path), "old": common_before, "value": common_after})
+        records = []
+        if before_keys != after_keys:
+            records.extend(json_order_records(path, before_keys, after_keys))
         for key in sorted(set(before) | set(after)):
             child = path + (key,)
             if key not in before:
@@ -529,7 +531,26 @@ def json_diff_records(before, after, path=()):
             else:
                 records.extend(json_diff_records(before[key], after[key], child))
         return records
-    if isinstance(before, list):
+    if isinstance(before, list) and isinstance(after, list):
+        old, new = keyed_json_list(before), keyed_json_list(after)
+        if old and new and old[0] == new[0]:
+            field, left, left_values = old
+            _, right, right_values = new
+            old_order = list(left_values.values())
+            new_order = list(right_values.values())
+            records = []
+            if old_order != new_order:
+                records.extend(json_order_records(path, old_order, new_order))
+            for identity in sorted(set(left) | set(right)):
+                child = path + ({field: left_values.get(identity, right_values.get(identity))},)
+                if identity not in left:
+                    records.extend(json_keyed_records(right[identity], child, field, "add"))
+                elif identity not in right:
+                    records.extend(json_keyed_records(left[identity], child, field, "remove"))
+                else:
+                    records.extend(json_diff_records(left[identity], right[identity], child))
+            return records
+        records = []
         for index in range(max(len(before), len(after))):
             child = path + (index,)
             if index >= len(before):
@@ -539,16 +560,77 @@ def json_diff_records(before, after, path=()):
             else:
                 records.extend(json_diff_records(before[index], after[index], child))
         return records
-    if before != after:
-        records.append({"op": "change", "path": list(path), "old": before, "value": after})
+    if before != after or type(before) is not type(after):
+        if isinstance(before, (dict, list)) or isinstance(after, (dict, list)):
+            return json_removed_records(before, path) + json_added_records(after, path)
+        return [{"op": "change", "path": list(path), "old": before, "value": after}]
+    return []
+
+
+def keyed_json_list(items):
+    if not items or any(not isinstance(item, dict) for item in items):
+        return None
+    for field in ("id", "name"):
+        values = [item.get(field) for item in items]
+        if all(type(value) in (str, int) for value in values):
+            identities = [(type(value).__name__, value) for value in values]
+            if len(set(identities)) == len(identities):
+                return field, dict(zip(identities, items)), dict(zip(identities, values))
+
+    return None
+
+def json_order_records(path, before, after):
+    records = []
+    matcher = difflib.SequenceMatcher(a=before, b=after)
+    for operation, i1, i2, j1, j2 in matcher.get_opcodes():
+        if operation == "equal":
+            continue
+        old, new = before[i1:i2], after[j1:j2]
+        old_position = new_position = 0
+        while old_position < len(old) or new_position < len(new):
+            old_chunk, new_chunk = [], []
+            old_start, new_start = old_position, new_position
+            while True:
+                advanced = False
+                for side, values, position, chunk in (
+                    ("old", old, old_position, old_chunk),
+                    ("value", new, new_position, new_chunk),
+                ):
+                    if position >= len(values):
+                        continue
+                    candidate = {"op": "order", "path": list(path), "side": side,
+                                 "offset": (i1 + old_start if side == "old" else j1 + new_start),
+                                 "items": chunk + [values[position]]}
+                    if len((json.dumps(candidate, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode()) <= MAX_JSON_RECORD:
+                        chunk.append(values[position])
+                        if side == "old":
+                            old_position += 1
+                        else:
+                            new_position += 1
+                        advanced = True
+                if not advanced:
+                    break
+            require(old_chunk or new_chunk, "JSON order entry exceeds semantic record bound")
+            if old_chunk:
+                records.append({"op": "order", "path": list(path), "side": "old", "offset": i1 + old_start,
+                                "items": old_chunk})
+            if new_chunk:
+                records.append({"op": "order", "path": list(path), "side": "value", "offset": j1 + new_start,
+                                "items": new_chunk})
     return records
+
+def json_keyed_records(value, path, field, op):
+    remainder = {key: item for key, item in value.items() if key != field}
+    records = json_added_records(remainder, path) if op == "add" else json_removed_records(remainder, path)
+    return records or [{"op": op, "path": list(path), "value" if op == "add" else "old": {field: value[field]}}]
+
 
 
 def json_added_records(value, path):
     if isinstance(value, dict):
         if not value:
             return [{"op": "add", "path": list(path), "value": value}]
-        records = []
+        records = json_order_records(path, [], list(value))
         for key in sorted(value):
             records.extend(json_added_records(value[key], path + (key,)))
         return records
@@ -579,6 +661,19 @@ def json_removed_records(value, path):
         return records
     return [{"op": "remove", "path": list(path), "old": value}]
 
+def compact_json_path(path):
+    parts = []
+    for item in path:
+        if isinstance(item, dict) and len(item) == 1:
+            key, value = next(iter(item.items()))
+            segment = "@" + json.dumps([key, value], ensure_ascii=True, separators=(",", ":"))
+        elif type(item) is int:
+            segment = f"i:{item}"
+        else:
+            segment = "k:" + str(item)
+        parts.append(segment.replace("~", "~0").replace("/", "~1"))
+    return "/" + "/".join(parts) if parts else ""
+
 
 def semantic_json_diff(path, before, after):
     """Replace a huge JSON text patch with a bounded, reviewable semantic patch."""
@@ -597,7 +692,16 @@ def semantic_json_diff(path, before, after):
         f"semantic-json-diff {before_sha} {after_sha}\n",
     ]
     for record in records:
-        line = json.dumps(record, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n"
+        record_path = compact_json_path(record["path"])
+        if record["op"] == "order":
+            compact = [record["op"], record_path, record["side"], record["offset"], record["items"]]
+        elif record["op"] == "add":
+            compact = [record["op"], record_path, record["value"]]
+        elif record["op"] == "remove":
+            compact = [record["op"], record_path, record["old"]]
+        else:
+            compact = [record["op"], record_path, record["old"], record["value"]]
+        line = json.dumps(compact, ensure_ascii=True, separators=(",", ":")) + "\n"
         require(len(line.encode()) <= MAX_JSON_RECORD, f"Semantic JSON record too large: {path}")
         lines.append(line)
     return "".join(lines)
@@ -612,8 +716,8 @@ def compact_large_json_patches(text, base, target):
         require(match and match.group(1) == match.group(2), "Unparseable or renamed diff header")
         path = match.group(1)
         if path.endswith(".json") and len(patch.encode()) > MAX_CHUNK:
-            compacted.append(semantic_json_diff(path, manifest_blob(base["commit"], path, MAX_RAW_DIFF),
-                                                manifest_blob(target["commit"], path, MAX_RAW_DIFF)))
+            compacted.append(semantic_json_diff(path, structured_json_blob(base["commit"], path),
+                                                structured_json_blob(target["commit"], path)))
         else:
             compacted.append(patch)
     result = "".join(compacted)
@@ -710,7 +814,9 @@ def split_diff(text):
         current += unit
     if current:
         chunks.append(current)
-    require(chunks and len(chunks) <= MAX_CHUNKS, "Incomplete or oversized chunk coverage")
+    covered = re.sub(r"(?m)^continued-diff [^\n]*\n", "", "".join(chunks))
+    require(chunks and len(chunks) <= MAX_CHUNKS and covered == text,
+            "Incomplete or oversized chunk coverage")
     return chunks
 
 
