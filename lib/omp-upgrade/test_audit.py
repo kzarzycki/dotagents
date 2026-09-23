@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -87,6 +88,142 @@ class VerdictTests(unittest.TestCase):
         with mock.patch.object(audit, "MAX_SOURCE", 10), self.assertRaises(audit.Hold):
             audit.split_diff(DIFF)
 
+    def test_chunk_coverage_rejects_missing_content(self):
+        with mock.patch.object(audit, "split_file_patch", return_value=[DIFF[:-1]]):
+            with self.assertRaises(audit.Hold):
+                audit.split_diff(DIFF)
+
+    def test_keyed_object_lists_do_not_emit_shift_cascade(self):
+        before = [{"id": "a", "url": "one"}, {"id": "b", "url": "two"}, {"id": "c", "url": "three"}]
+        after = [{"id": "b", "url": "changed"}, {"id": "c", "url": "three"}]
+        records = list(audit.json_diff_records(before, after, ("providers",)))
+        self.assertEqual(records, [
+            {"op": "order", "path": ["providers"], "side": "old", "offset": 0, "items": ["a"]},
+            {"op": "remove-container", "path": ["providers", {"id": "a"}], "kind": "object", "length": 1},
+            {"op": "remove", "path": ["providers", {"id": "a"}, "url"], "old": "one"},
+            {"op": "change", "path": ["providers", {"id": "b"}, "url"], "old": "two", "value": "changed"},
+        ])
+        reordered = list(audit.json_diff_records(before, [before[1], before[0], before[2]]))
+        expected_move = [
+            {"op": "order", "path": [], "side": "value", "offset": 0, "items": ["b"]},
+            {"op": "order", "path": [], "side": "old", "offset": 1, "items": ["b"]},
+        ]
+        self.assertEqual(reordered[:2], expected_move)
+        self.assertEqual(list(audit.json_diff_records({"a": 1, "b": 2}, {"b": 2, "a": 1})), expected_move)
+        self.assertEqual(list(audit.json_added_records({"b": 2, "a": 1}, ("entry",)))[:1], [
+            {"op": "order", "path": ["entry"], "side": "value", "offset": 0, "items": ["b", "a"]}
+        ])
+        self.assertEqual(list(audit.json_removed_records({"b": 2, "a": 1}, ("entry",))), [
+            {"op": "remove-container", "path": ["entry"], "kind": "object", "length": 2},
+            {"op": "remove", "path": ["entry", "b"], "old": 2},
+            {"op": "remove", "path": ["entry", "a"], "old": 1},
+        ])
+        self.assertEqual(audit.compact_json_path(("a/b", 0, {"id": "x/y~z"})), '/k:a~1b/i:0/@["id","x~1y~0z"]')
+
+    def test_semantic_diff_preserves_container_removal_and_number_lexemes(self):
+        removed = audit.semantic_json_diff("catalog.json", b'{"rows":[[1]]}', b'{"rows":[]}')
+        retained = audit.semantic_json_diff("catalog.json", b'{"rows":[[1]]}', b'{"rows":[[]]}')
+        self.assertIn('["remove-container","/k:rows/i:0","array",1]', removed)
+        self.assertNotIn('["remove-container","/k:rows/i:0","array",1]', retained)
+        self.assertNotEqual(removed, retained)
+        self.assertIn('["change","/k:value","#0","#-0"]', audit.semantic_json_diff(
+            "catalog.json", b'{"value":0}', b'{"value":-0}'))
+        self.assertIn('["change","/k:value","#0.0","#-0.0"]', audit.semantic_json_diff(
+            "catalog.json", b'{"value":0.0}', b'{"value":-0.0}'))
+
+    def test_numeric_and_string_keyed_order_remains_type_sensitive(self):
+        before = b'[{"id":1},{"id":"1"}]'
+        after = b'[{"id":"1"},{"id":1}]'
+        self.assertEqual([record["op"] for record in audit.json_diff_records(
+            audit.strict_json(before, preserve_numbers=True),
+            audit.strict_json(after, preserve_numbers=True))], ["order", "order"])
+        numeric_reorder = audit.semantic_json_diff(
+            "catalog.json", b'[{"id":1},{"id":2}]', b'[{"id":2},{"id":1}]')
+        self.assertIn('"#2"', numeric_reorder)
+        records = list(audit.json_order_side((), "value", 0, [audit.JSONNumber("1")] * 2000))
+        self.assertTrue(records)
+        self.assertTrue(all(len(json.dumps(["order", "", "value", 0, audit.json_semantic_value(record["items"])],
+                                           ensure_ascii=True, separators=(",", ":")).encode()) <= audit.MAX_JSON_RECORD
+                            for record in records))
+        self.assertIn('["change","/k:value","##literal","##next"]', audit.semantic_json_diff(
+            "catalog.json", b'{"value":"#literal"}', b'{"value":"#next"}'))
+
+    def test_oversized_json_blob_is_compacted_with_separate_bound(self):
+        before = b'{"padding":"' + b'a' * (1024 * 1024 + 1) + b'","route":"old"}'
+        after = before.replace(b'"route":"old"', b'"route":"new"')
+        patch = ("diff --git a/catalog.json b/catalog.json\nold mode 100644\nnew mode 100755\n"
+                 "index " + "0" * 40 + ".." + "1" * 40 + "\n--- a/catalog.json\n+++ b/catalog.json\n"
+                 "@@ -1 +1 @@\n+" + "x" * (audit.MAX_CHUNK + 1) + "\n")
+
+        def blob(commit, path, limit):
+            self.assertEqual(limit, audit.MAX_STRUCTURED_JSON)
+            return before if commit == "base" else after
+
+        with mock.patch.object(audit, "manifest_blob", side_effect=blob):
+            compacted = audit.compact_large_json_patches(patch, {"commit": "base"}, {"commit": "target"})
+        self.assertLess(len(compacted.encode()), audit.MAX_CHUNK)
+        self.assertIn('["change","/k:route","old","new"]', compacted)
+        self.assertIn("old mode 100644", compacted)
+        self.assertIn("new mode 100755", compacted)
+        with mock.patch.object(audit, "MAX_STRUCTURED_JSON", 10), \
+             mock.patch.object(audit, "manifest_blob", return_value=b"x" * 11), self.assertRaises(audit.Hold):
+            audit.structured_json_blob("commit", "large.json")
+
+    def test_large_json_uses_exhaustive_semantic_records_and_splits(self):
+        before = b'{"providers":{"old":{"url":"https://old.example"}},"stable":1}'
+        after = b'{"providers":{"new":{"url":"https://new.example"}},"stable":2}'
+        patch = audit.semantic_json_diff("catalog.json", before, after)
+        self.assertIn("semantic-json-diff ", patch)
+        self.assertIn('["add","/k:providers/k:new/k:url","https://new.example"]', patch)
+        self.assertIn('["remove","/k:providers/k:old/k:url","https://old.example"]', patch)
+        with mock.patch.object(audit, "MAX_CHUNK", 360):
+            chunks = audit.split_diff(patch)
+        self.assertTrue(all(len(chunk.encode()) <= 360 for chunk in chunks))
+        self.assertTrue(chunks[1].startswith("continued-diff a/catalog.json b/catalog.json\n"))
+        with self.assertRaises(audit.Hold):
+            audit.semantic_json_diff("catalog.json", b'{"a":1,"a":2}', b'{}')
+
+    def test_semantic_expansion_is_incrementally_bounded(self):
+        after = json.dumps({"items": [0] * 10000}).encode()
+        with self.assertRaises(audit.Hold):
+            audit.semantic_json_diff("large.json", None, after, max_bytes=4096)
+        nested, current = {}, None
+        current = nested
+        for _ in range(audit.MAX_JSON_DEPTH + 1):
+            child = {}
+            current["x"] = child
+            current = child
+        with self.assertRaises(audit.Hold):
+            audit.semantic_json_diff("deep.json", None, json.dumps(nested).encode())
+
+    def test_oversized_json_order_comparison_fails_before_matching(self):
+        before = list(range(audit.MAX_ORDER_ITEMS // 2 + 1))
+        after = before[::-1]
+        with self.assertRaises(audit.Hold):
+            list(audit.json_order_records((), before, after))
+
+    def test_informational_json_is_not_parsed_or_compacted(self):
+        path = "tests/fixtures/large.json"
+        patch = f"diff --git a/{path} b/{path}\n+" + "not-json" * audit.MAX_CHUNK + "\n"
+        with mock.patch.object(audit, "manifest_blob") as manifest:
+            self.assertEqual(audit.compact_large_json_patches(
+                patch, {"commit": BASE["commit"]}, {"commit": "e" * 40}), patch)
+        manifest.assert_not_called()
+
+    def test_oversized_text_file_splits_at_hunks(self):
+        patch = (
+            "diff --git a/example.py b/example.py\n"
+            "--- a/example.py\n+++ b/example.py\n"
+            "@@ -1 +1 @@\n-x = 1\n+x = 2\n"
+            "@@ -10 +10 @@\n-y = 1\n+y = 2\n"
+        )
+        with mock.patch.object(audit, "MAX_CHUNK", 100):
+            chunks = audit.split_diff(patch)
+        self.assertEqual(len(chunks), 2)
+        self.assertTrue(chunks[1].startswith("continued-diff a/example.py b/example.py\n"))
+        self.assertTrue(all(len(chunk.encode()) <= 100 for chunk in chunks))
+        self.assertEqual(re.sub(r"(?m)^continued-diff [^\n]*\n", "", "".join(chunks)), patch)
+
     def test_wrong_asset_url_or_digest_cannot_become_target(self):
         for changed in ({"browser_download_url": f"https://example.com/{audit.ASSET}"},
                         {"digest": None}, {"digest": "sha256:" + "g" * 64}, {"size": True}):
@@ -115,6 +252,15 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(
             audit.resolve_review_model("modelRoles:\n  default: openai-codex/gpt-6-astra\n"),
             "openai-codex/gpt-6-astra")
+        self.assertEqual(
+            audit.resolve_review_model("modelRoles:\n  smol: openai-codex/gpt-6-luna:auto\n"),
+            "openai-codex/gpt-6-luna:auto")
+        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna:auto"),
+                         "openai-codex/gpt-6-luna:high")
+        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna"),
+                         "openai-codex/gpt-6-luna:high")
+        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna:low"),
+                         "openai-codex/gpt-6-luna:low")
         with self.assertRaises(audit.Hold):
             audit.resolve_review_model("modelRoles:\n  task: openai-codex/gpt-5.6-luna:xhigh\n")
 
@@ -177,6 +323,36 @@ class StateTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         audit.save_source_baseline(BASE["version"], BASE["commit"], "user-accepted", "test", "Explicit fixture trust")
 
+
+    def test_large_json_and_small_code_change_reach_model_review(self):
+        before = b'{"padding":"' + b'a' * (1024 * 1024 + 1) + b'","route":"old"}'
+        after = before.replace(b'"route":"old"', b'"route":"new"')
+        raw_json_patch = "diff --git a/catalog.json b/catalog.json\n+" + "x" * (audit.MAX_SOURCE + 1) + "\n"
+        code_patch = DIFF
+        with mock.patch.object(audit, "manifest_blob", side_effect=lambda commit, path, limit:
+                               before if commit == BASE["commit"] else after):
+            compacted_json = audit.compact_large_json_patches(
+                raw_json_patch, {"commit": BASE["commit"]}, {"commit": "e" * 40})
+        complete = compacted_json + code_patch
+
+        def review(source, chunk_id, *args, **kwargs):
+            value = verdict(chunk_id=chunk_id, source_sha256=hashlib.sha256(source.encode()).hexdigest())
+            if kwargs.get("coherence"):
+                value["resolved_concerns"] = []
+            return value
+
+        with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
+             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
+             mock.patch.object(audit, "source_diff", return_value=(complete, ["catalog.json", "example.py"])), \
+             mock.patch.object(audit, "dependency_risks", return_value=([], [])), \
+             mock.patch.object(audit, "review_chunk", side_effect=review) as model, \
+             mock.patch.object(audit, "stage_asset"):
+            report = audit.now_report()
+            audit.audit_release(report)
+        self.assertEqual(report["status"], "APPROVED")
+        self.assertEqual(model.call_count, 2)
+        self.assertIn("semantic-json-diff", model.call_args_list[0].args[0])
     def test_lightweight_release_stages_exact_asset_without_source_review(self):
         report = audit.now_report()
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
