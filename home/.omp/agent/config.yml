@@ -2,11 +2,13 @@ setupVersion: 2
 enabledProviders:
   - claude
 modelRoles:
-  task: anthropic/claude-opus-5-5:medium
+  task: openai-codex/gpt-6-sol:auto
   advisor: anthropic/claude-opus-5-5:auto
   slow: anthropic/claude-opus-5-5:auto
   default: anthropic/claude-opus-5-5
-  smol: openai-codex/gpt-5.6-luna:high
+  smol: openai-codex/gpt-6-luna:auto
+  judge: openrouter/~typesafe/jev-latest
+  web: openai-codex/gpt-5.6-luna:auto
 defaultThinkingLevel: auto
 contextPromotion:
   enabled: false
@@ -28,10 +30,42 @@ retry:
   waitForUsageReset: true
   usageAwareFallback: true
   fallbackChains:
+    judge:
+      - openrouter/typesafe/jev-1.13
     default:
-      - openai-codex/gpt-5.6-sol
+      - openai-codex/gpt-6-sol
     slow:
       - openai-codex/gpt-6-astra
+    web:
+      - openai-codex/gpt-5.6-luna
+      - google/gemini-3.8-flash
+      - web/public
+      - web/exa
+      - web/parallel
+      - web/perplexity
+      - google-antigravity/gemini-3.8-flash
+      - openai-codex/gpt-5.6
+      - openai-codex/gpt-5.5
+      - xai/grok-4.5
+      - xai-oauth/grok-4.5
+      - web/zai
+      - web/tinyfish
+      - web/jina
+      - web/kagi
+      - web/tavily
+      - web/firecrawl
+      - web/brave
+      - web/kimi
+      - web/synthetic
+      - web/ollama
+      - web/searxng
+      - web/startpage
+      - web/duckduckgo
+      - web/ecosia
+      - web/google
+      - web/mojeek
+    task:
+      - anthropic/claude-opus-5-5
 advisor:
   enabled: true
   syncBacklog: "1"
@@ -55,14 +89,6 @@ error:
   notify: "on"
 branchSummary:
   enabled: true
-providers:
-  webSearchOrder:
-    - anthropic
-    - codex
-    - gemini
-    - public
-    - exa
-  webSearchGeminiModel: gemini-3.8-flash
 startup:
   checkUpdate: false
 edit:
@@ -107,3 +133,7 @@ cycleOrder:
   - tiny
 codexResets:
   autoRedeem: "yes"
+features:
+  unexpectedStopDetection: smart
+find:
+  enabled: auto
