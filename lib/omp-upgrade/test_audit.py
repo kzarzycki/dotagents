@@ -134,13 +134,15 @@ class VerdictTests(unittest.TestCase):
     def test_numeric_and_string_keyed_order_remains_type_sensitive(self):
         before = b'[{"id":1},{"id":"1"}]'
         after = b'[{"id":"1"},{"id":1}]'
-        patch = audit.semantic_json_diff("catalog.json", before, after)
         self.assertEqual([record["op"] for record in audit.json_diff_records(
             audit.strict_json(before, preserve_numbers=True),
             audit.strict_json(after, preserve_numbers=True))], ["order", "order"])
+        numeric_reorder = audit.semantic_json_diff(
+            "catalog.json", b'[{"id":1},{"id":2}]', b'[{"id":2},{"id":1}]')
+        self.assertIn('"#2"', numeric_reorder)
         records = list(audit.json_order_side((), "value", 0, [audit.JSONNumber("1")] * 2000))
         self.assertTrue(records)
-        self.assertTrue(all(len(json.dumps(["order", "", "value", 0, record["items"]],
+        self.assertTrue(all(len(json.dumps(["order", "", "value", 0, audit.json_semantic_value(record["items"])],
                                            ensure_ascii=True, separators=(",", ":")).encode()) <= audit.MAX_JSON_RECORD
                             for record in records))
         self.assertIn('["change","/k:value","##literal","##next"]', audit.semantic_json_diff(

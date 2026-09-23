@@ -597,18 +597,18 @@ def json_order_side(path, side, offset, values):
         if len((json.dumps(candidate, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode()) > MAX_JSON_RECORD:
             require(group, "JSON order entry exceeds semantic record bound")
             yield {"op": "order", "path": list(path), "side": side, "offset": offset,
-                   "items": json_semantic_value(group)}
+                   "items": group}
             offset += len(group)
             group = [value]
             candidate = {"op": "order", "path": list(path), "side": side, "offset": offset,
-                         "items": json_semantic_value(group)}
+                         "items": group}
             require(len((json.dumps(candidate, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode()) <= MAX_JSON_RECORD,
                     "JSON order entry exceeds semantic record bound")
         else:
             group.append(value)
     if group:
         yield {"op": "order", "path": list(path), "side": side, "offset": offset,
-               "items": json_semantic_value(group)}
+               "items": group}
 
 
 def json_order_records(path, before, after):
