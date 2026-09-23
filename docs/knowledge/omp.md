@@ -61,12 +61,23 @@ Selected PRs on `kz`:
 - czottmann/pi-automode#48: Jev (TypeSafe) as an opt-in classifier backend
   (`autoMode.classifierProvider`). Drop it once upstream releases it.
 
-To sync, rebuild `kz` from fresh upstream and re-merge the PRs still listed:
+Fork-only commits on `kz`, carried on top of the merges:
+
+- `46ff360` "fork: resolve Jev judge from the model registry". #48 only accepts
+  a direct `typesafe` credential. This commit resolves `jev.model` (a
+  `provider/id` selector) in OMP's model registry and builds `TypeSafeJudge`
+  from that model, as OMP's own judge does, so
+  `openrouter/typesafe/jev-1.13` works with the OpenRouter credential. Chat
+  models are refused. Offer it upstream on #48; drop it once upstream has it.
+
+To sync, rebuild `kz` from fresh upstream, re-merge the PRs still listed and
+re-apply the fork-only commits:
 
 ```sh
 git fetch upstream && git push origin upstream/main:main
 git switch -C kz upstream/main
 git fetch upstream pull/48/head:pr-48 && git merge --no-ff pr-48
+git cherry-pick 46ff360
 npm ci --ignore-scripts && npm run check && npm test
 git push --force-with-lease origin kz
 ```
@@ -78,6 +89,12 @@ the plugin replaces the guardrail itself, so run `/automode off` before
 A rebuilt `kz` drops the old commits, so a pin to an old SHA only keeps working
 while some ref still reaches it. Tag each pinned SHA (`kz-YYYYMMDD`) and push
 the tag.
+
+Jev is off until the user config opts in. In
+`~/.pi/agent/extensions/pi-automode/config.json` (the global path under OMP
+too) set `"classifierProvider": "jev-prefilter"` and
+`"jev": {"model": "openrouter/typesafe/jev-1.13"}`. Pin a version, not
+`jev-latest`: the thresholds are tuned against one version.
 
 ## Audited upgrades (`lib/omp-upgrade/`)
 

@@ -6,7 +6,7 @@ set -euo pipefail
 PLUGIN='@czottmann/pi-automode'
 # kzarzycki/pi-automode branch `kz`: upstream main + selected PRs.
 # See docs/knowledge/omp.md "pi-automode fork".
-SOURCE='github:kzarzycki/pi-automode#6c96a2199976991199bd591d9aa2c585aa1261e8'
+SOURCE='github:kzarzycki/pi-automode#46ff3605192c2f924ddc2b6625300222417ce9e0'
 MANIFEST="$HOME/.omp/plugins/package.json"
 
 if ! command -v omp >/dev/null 2>&1; then
