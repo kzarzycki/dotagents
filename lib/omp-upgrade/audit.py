@@ -98,7 +98,8 @@ A large JSON data file may arrive as a semantic JSON diff instead of text: its
 one compact JSON array per line: `["add",path,value]`, `["remove",path,old]`,
 `["remove-container",path,"object" or "array",length]`,
 `["change",path,old,value]`, or `["order",path,side,offset,items]`. Numeric JSON
-lexemes use `{"$number":"..."}` so signed zero and precision remain distinct. Paths are
+lexemes use `#<number>` strings; literal strings beginning `#` are escaped with `##`
+so signed zero and precision remain distinct. Paths are
 tagged segments: `k:<escaped-key>`, `i:<array-index>`, or `@["key",value]` keyed
 selectors; `~0` and `~1` escape `~` and `/`. Order records carry changed slices
 with offsets; unchanged sequence ranges stay implicit. Each record is complete,
@@ -681,7 +682,9 @@ def json_removed_records(value, path):
 
 def json_semantic_value(value):
     if isinstance(value, JSONNumber):
-        return {"$number": str(value)}
+        return "#" + str(value)
+    if isinstance(value, str):
+        return "#" + value if value.startswith("#") else value
     if isinstance(value, dict):
         return {key: json_semantic_value(item) for key, item in value.items()}
     if isinstance(value, list):

@@ -126,9 +126,9 @@ class VerdictTests(unittest.TestCase):
         self.assertIn('["remove-container","/k:rows/i:0","array",1]', removed)
         self.assertNotIn('["remove-container","/k:rows/i:0","array",1]', retained)
         self.assertNotEqual(removed, retained)
-        self.assertIn('["change","/k:value",{"$number":"0"},{"$number":"-0"}]', audit.semantic_json_diff(
+        self.assertIn('["change","/k:value","#0","#-0"]', audit.semantic_json_diff(
             "catalog.json", b'{"value":0}', b'{"value":-0}'))
-        self.assertIn('["change","/k:value",{"$number":"0.0"},{"$number":"-0.0"}]', audit.semantic_json_diff(
+        self.assertIn('["change","/k:value","#0.0","#-0.0"]', audit.semantic_json_diff(
             "catalog.json", b'{"value":0.0}', b'{"value":-0.0}'))
 
     def test_numeric_and_string_keyed_order_remains_type_sensitive(self):
@@ -143,6 +143,8 @@ class VerdictTests(unittest.TestCase):
         self.assertTrue(all(len(json.dumps(["order", "", "value", 0, record["items"]],
                                            ensure_ascii=True, separators=(",", ":")).encode()) <= audit.MAX_JSON_RECORD
                             for record in records))
+        self.assertIn('["change","/k:value","##literal","##next"]', audit.semantic_json_diff(
+            "catalog.json", b'{"value":"#literal"}', b'{"value":"#next"}'))
 
     def test_oversized_json_blob_is_compacted_with_separate_bound(self):
         before = b'{"padding":"' + b'a' * (1024 * 1024 + 1) + b'","route":"old"}'
