@@ -20,18 +20,18 @@ the other agent payloads, use `dotagents install --only omp --no-pull`; this
 generic subset mode skips profiles, hooks, shell startup files, and generated
 Claude settings.
 
-The VPS OMP setup enables the public npm plugin
-`@czottmann/pi-automode@1.15.0` (Claude Code-style auto-mode guardrails).
-Install that plugin on each machine with:
+The VPS OMP setup enables the pi-automode plugin (Claude Code-style auto-mode
+guardrails), installed from a fork rather than npm. Install it on each machine
+with:
 
 ```sh
 patches/omp/bootstrap.sh
 ```
 
-The bootstrap runs `omp plugin install @czottmann/pi-automode@1.15.0` only
-when that exact enabled version is absent. It does not copy OMP's package or
-lock files, because OMP owns and updates those files alongside `node_modules`.
-The plugin's source is `https://github.com/czottmann/pi-automode`.
+The bootstrap runs `omp plugin install github:kzarzycki/pi-automode#<sha>`
+only when `~/.omp/plugins/package.json` does not already point at that exact
+commit with the plugin enabled. It does not copy OMP's package or lock files,
+because OMP owns and updates those files alongside `node_modules`.
 
 For a colleague's existing OMP installation, a pre-existing real
 `~/.omp/agent/config.yml` is reported as a CONFLICT and left untouched. Preserve
@@ -43,6 +43,41 @@ changes reviewable and reproducible, but personal provider or model changes
 must not be committed to the shared clone. `omp config path` exposes one user
 config directory, and the CLI help exposes no config-overlay option; use a
 separate clone for personal variants.
+
+### pi-automode fork
+
+`https://github.com/kzarzycki/pi-automode` forks
+`https://github.com/czottmann/pi-automode` so we can run upstream PRs before
+they are released.
+
+- `main` mirrors upstream `main`.
+- `kz` is upstream `main` plus the selected PRs, each merged with `--no-ff` so
+  every PR stays one visible merge commit.
+- `bootstrap.sh` pins a full commit SHA on `kz`, never the branch, so an install
+  is reproducible and a fork push changes nothing until the pin moves.
+
+Selected PRs on `kz`:
+
+- czottmann/pi-automode#48: Jev (TypeSafe) as an opt-in classifier backend
+  (`autoMode.classifierProvider`). Drop it once upstream releases it.
+
+To sync, rebuild `kz` from fresh upstream and re-merge the PRs still listed:
+
+```sh
+git fetch upstream && git push origin upstream/main:main
+git switch -C kz upstream/main
+git fetch upstream pull/48/head:pr-48 && git merge --no-ff pr-48
+npm ci --ignore-scripts && npm run check && npm test
+git push --force-with-lease origin kz
+```
+
+Then set `SOURCE` in `patches/omp/bootstrap.sh` to the new `kz` SHA. Replacing
+the plugin replaces the guardrail itself, so run `/automode off` before
+`patches/omp/bootstrap.sh`, then `/automode reload` and `/automode on`.
+
+A rebuilt `kz` drops the old commits, so a pin to an old SHA only keeps working
+while some ref still reaches it. Tag each pinned SHA (`kz-YYYYMMDD`) and push
+the tag.
 
 ## Audited upgrades (`lib/omp-upgrade/`)
 

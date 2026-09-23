@@ -4,7 +4,10 @@
 set -euo pipefail
 
 PLUGIN='@czottmann/pi-automode'
-VERSION='1.15.0'
+# kzarzycki/pi-automode branch `kz`: upstream main + selected PRs.
+# See docs/knowledge/omp.md "pi-automode fork".
+SOURCE='github:kzarzycki/pi-automode#6c96a2199976991199bd591d9aa2c585aa1261e8'
+MANIFEST="$HOME/.omp/plugins/package.json"
 
 if ! command -v omp >/dev/null 2>&1; then
   echo "[omp-bootstrap] omp not found -- install OMP first" >&2
@@ -15,12 +18,13 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-if omp plugin list --json 2>/dev/null | jq -e --arg name "$PLUGIN" --arg version "$VERSION" \
-  '.npm[]? | select(.name == $name and .version == $version and .enabled == true)' >/dev/null; then
-  echo "[omp-bootstrap] $PLUGIN@$VERSION already installed and enabled"
+installed_source="$(jq -r --arg name "$PLUGIN" '.dependencies[$name] // empty' "$MANIFEST" 2>/dev/null || true)"
+if [ "$installed_source" = "$SOURCE" ] && omp plugin list --json 2>/dev/null | jq -e --arg name "$PLUGIN" \
+  '.npm[]? | select(.name == $name and .enabled == true)' >/dev/null; then
+  echo "[omp-bootstrap] $PLUGIN from $SOURCE already installed and enabled"
 else
-  echo "[omp-bootstrap] installing $PLUGIN@$VERSION"
-  omp plugin install "$PLUGIN@$VERSION"
+  echo "[omp-bootstrap] installing $PLUGIN from $SOURCE"
+  omp plugin install "$SOURCE"
 fi
 
 echo "[omp-bootstrap] done"
