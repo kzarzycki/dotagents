@@ -23,6 +23,12 @@ if [ "$installed_source" = "$SOURCE" ] && omp plugin list --json 2>/dev/null | j
   '.npm[]? | select(.name == $name and .enabled == true)' >/dev/null; then
   echo "[omp-bootstrap] $PLUGIN from $SOURCE already installed and enabled"
 else
+  # Same package name from another source (npm or an older pin) makes bun
+  # report a dependency loop, so remove the old install first.
+  if [ -n "$installed_source" ]; then
+    echo "[omp-bootstrap] removing $PLUGIN from $installed_source"
+    omp plugin uninstall "$PLUGIN"
+  fi
   echo "[omp-bootstrap] installing $PLUGIN from $SOURCE"
   omp plugin install "$SOURCE"
 fi
