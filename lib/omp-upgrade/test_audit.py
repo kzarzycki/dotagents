@@ -87,6 +87,33 @@ class VerdictTests(unittest.TestCase):
         with mock.patch.object(audit, "MAX_SOURCE", 10), self.assertRaises(audit.Hold):
             audit.split_diff(DIFF)
 
+    def test_large_json_uses_exhaustive_semantic_records_and_splits(self):
+        before = b'{"providers":{"old":{"url":"https://old.example"}},"stable":1}'
+        after = b'{"providers":{"new":{"url":"https://new.example"}},"stable":2}'
+        patch = audit.semantic_json_diff("catalog.json", before, after)
+        self.assertIn("semantic-json-diff ", patch)
+        self.assertIn('"path":["providers","new","url"]', patch)
+        self.assertIn('"path":["providers","old","url"]', patch)
+        with mock.patch.object(audit, "MAX_CHUNK", 360):
+            chunks = audit.split_diff(patch)
+        self.assertTrue(all(len(chunk.encode()) <= 360 for chunk in chunks))
+        self.assertTrue(chunks[1].startswith("continued-diff a/catalog.json b/catalog.json\n"))
+        with self.assertRaises(audit.Hold):
+            audit.semantic_json_diff("catalog.json", b'{"a":1,"a":2}', b'{}')
+
+    def test_oversized_text_file_splits_at_hunks(self):
+        patch = (
+            "diff --git a/example.py b/example.py\n"
+            "--- a/example.py\n+++ b/example.py\n"
+            "@@ -1 +1 @@\n-x = 1\n+x = 2\n"
+            "@@ -10 +10 @@\n-y = 1\n+y = 2\n"
+        )
+        with mock.patch.object(audit, "MAX_CHUNK", 100):
+            chunks = audit.split_diff(patch)
+        self.assertEqual(len(chunks), 2)
+        self.assertTrue(chunks[1].startswith("continued-diff a/example.py b/example.py\n"))
+        self.assertTrue(all(len(chunk.encode()) <= 100 for chunk in chunks))
+
     def test_wrong_asset_url_or_digest_cannot_become_target(self):
         for changed in ({"browser_download_url": f"https://example.com/{audit.ASSET}"},
                         {"digest": None}, {"digest": "sha256:" + "g" * 64}, {"size": True}):
@@ -115,6 +142,9 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(
             audit.resolve_review_model("modelRoles:\n  default: openai-codex/gpt-6-astra\n"),
             "openai-codex/gpt-6-astra")
+        self.assertEqual(
+            audit.resolve_review_model("modelRoles:\n  smol: openai-codex/gpt-6-luna:auto\n"),
+            "openai-codex/gpt-6-luna:auto")
         with self.assertRaises(audit.Hold):
             audit.resolve_review_model("modelRoles:\n  task: openai-codex/gpt-5.6-luna:xhigh\n")
 

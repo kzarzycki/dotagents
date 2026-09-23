@@ -119,10 +119,16 @@ digests are recorded with `audit.py record-evidence` (see `--help`). Records in
 They do not skip model review or attest the release binary. Ledger capacity
 errors preserve previous readable records.
 
-Review retains the 1 MiB source, 64 KiB chunk, and 16-chunk limits; oversized
-changes HOLD without truncation. `audit.py check --force` bypasses only the daily
-cooldown, not security checks. Always check the report's installed version and
-timestamp before attributing an older HOLD to a fresh request.
+The model-review budget remains 1 MiB of shipped-runtime source, in at most
+16 chunks of 64 KiB. Raw Git output has a separate 64 MiB memory bound so large
+informational files cannot prevent scoping. Oversized JSON patches are replaced
+by deterministic, exhaustive JSON-path records with before/after blob digests;
+oversized text patches split at hunk boundaries. No content is truncated. A
+single semantic record or text hunk that cannot fit still HOLDs. The source
+diff uses 10 lines of context to preserve review budget without discarding
+changed lines. `audit.py check --force` bypasses only the daily cooldown, not
+security checks. Always check the report's installed version and timestamp before
+attributing an older HOLD to a fresh request.
 
 Only source that ships in the binary is gated. `INFORMATIONAL` in `audit.py`
 routes `.github/`, `infra/`, `nix/`, `docs/`, Dockerfiles, changelogs/readmes,
