@@ -1,11 +1,13 @@
 """Deterministic fail-closed boundary tests; no network or model calls."""
 import collections
 import contextlib
+import gzip
 import hashlib
 import io
 import json
 from pathlib import Path
 import re
+import tarfile
 import tempfile
 import unittest
 from unittest import mock
@@ -825,7 +827,7 @@ class EvidenceGateTests(unittest.TestCase):
     def test_module_bazel_accepts_in_repo_rules_but_not_new_modules(self):
         before = '"""oh-my-pi docs"""\nmodule(name = "oh-my-pi")\nbazel_dep(name = "platforms", version = "1.1.0")\n'
         after = ('"""omp docs"""\nmodule(name = "omp")\nbazel_dep(name = "platforms", version = "1.1.0")\n'
-                 'probe = use_repo_rule("//bazel/probe.bzl", "probe_repository")\nprobe(name = "probe")\n')
+                 'probe = use_repo_rule("//bazel:probe.bzl", "probe_repository")\nprobe(name = "probe")\n')
         self.assertTrue(audit.module_bazel_safe(before, after))
         for added in ('bazel_dep(name = "evil", version = "1.0")\n', 'x = use_repo_rule("@evil//:r.bzl", "r")\n',
                       'other(name = "x")\n'):
@@ -868,6 +870,33 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertEqual(new, set())
         with mock.patch.object(audit, "manifest_blob", side_effect=blobs(foreign)), self.assertRaises(audit.Hold):
             audit.bazel_lock_evidence("base", "target", {audit.BAZEL_LOCK})
+
+
+    def test_review_bypasses_found_in_independent_review_hold(self):
+        patch = DIFF.replace("example.py", "dependency/npm/a-1/lib/tests/x.js")
+        diff, gated, _ = audit.scope_diff(DIFF + patch, ["example.py"])
+        self.assertIn("dependency/npm/a-1/lib/tests/x.js", [path for path, _ in gated])
+        def tgz(data):
+            buffer = io.BytesIO()
+            with gzip.GzipFile(fileobj=buffer, mode="wb") as stream:
+                stream.write(data)
+            return buffer.getvalue()
+        member = io.BytesIO()
+        with tarfile.open(fileobj=member, mode="w") as archive:
+            info = tarfile.TarInfo("package/index.js")
+            info.size = 3
+            archive.addfile(info, io.BytesIO(b"ok\n"))
+        self.assertEqual(audit.package_files(tgz(member.getvalue()), "a"), {"index.js": b"ok\n"})
+        with self.assertRaises(audit.Hold):
+            audit.package_files(tgz(member.getvalue() + b"hidden payload"), "a")
+        with mock.patch.object(audit, "manifest_blob", return_value=None), self.assertRaises(audit.Hold):
+            audit.dependency_source_reviewed("package.json", b"{}", b"{}", "base", "target", {"package.json"})
+        for line in ('_V = "sha256-abc"', 'url = "https://x.example/a.tgz"', "rctx.download_and_extract(u)"):
+            with self.subTest(line=line), self.assertRaises(audit.Hold):
+                audit.dependency_source_reviewed("bazel/r.bzl", b"a = 1\n", f"a = 1\n{line}\n".encode(), "b", "t", set())
+        self.assertTrue(audit.dependency_source_reviewed("bazel/r.bzl", b"a = 1\n", b"a = 2\n", "b", "t", set()))
+        with self.assertRaises(audit.Hold):
+            audit.dependency_source_reviewed("infra/r.bzl", b"a = 1\n", b"a = 2\n", "b", "t", set())
 
 
 if __name__ == "__main__":

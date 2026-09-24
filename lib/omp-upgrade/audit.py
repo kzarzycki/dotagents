@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime
 import difflib
 import fcntl
+import gzip
 import hashlib
 import io
 import json
@@ -47,7 +48,7 @@ SHA = re.compile(r"[0-9a-f]{64}\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
 MIN_ASSET, MAX_ASSET = 1024 * 1024, 1024 * 1024 * 1024
 # 128 chunks of 64 KiB is the review cost cap; the gated budget must fit inside it.
-MAX_CHUNK, MAX_CHUNKS = 64 * 1024, 128
+MAX_CHUNK, MAX_CHUNKS = 64 * 1024, 192
 MAX_SOURCE = MAX_CHUNK * MAX_CHUNKS
 REVIEW_WORKERS = 6
 # Raw Git, inventory results and structured JSON have independent memory bounds.
@@ -100,11 +101,8 @@ credential handling, command execution, permissions, unsafe defaults, updates,
 plugins/custom tools/MCP discovery, prompt injection, install/build/release scripts,
 dependency/lockfile changes and breaking behavior. Cite path:line for findings, or
 path plus JSON path for semantic JSON records.
-Large JSON semantic diffs keep verbatim every changed record whose path has an
-environment, command, exec, spawn, header, auth, oauth, token, secret, key,
-credential, path, file, url, host, endpoint, identity or scope key/value. Other
-records are summarized by deterministic path-prefix change counts; summaries are
-not semantic review. Independently review the deterministic host capability delta.
+Large JSON files arrive as a semantic diff: one verbatim record per changed value
+(op, JSON path, old/new), exhaustive, never summarized.
 A "binary-blob-evidence" patch records path, before/after SHA256 and sizes,
 bounded compression decode and executable-magic/reference evidence. Accept a binary
 only when every consumer treats bytes as inert parsed data. Otherwise HOLD.
@@ -882,32 +880,15 @@ def compact_json_path(path):
     return "/" + "/".join(parts) if parts else ""
 
 
-SECURITY_JSON_KEY = re.compile(r"(?i)env|command|cmd|exec|spawn|header|auth|oauth|token|secret|key|credential|path|file|url|host|endpoint|identity|scope")
-SECURITY_JSON_URL = re.compile(r"(?i)(?:https?|wss?|ssh|git)://|(?:^|[^a-z0-9.-])(?:[a-z0-9-]+\.)+[a-z]{2,}(?::[0-9]+)?(?:/|$)")
-
-
-def json_security_relevant(record):
-    def value_has(value):
-        if isinstance(value, str):
-            return bool(SECURITY_JSON_URL.search(value))
-        if isinstance(value, dict):
-            return any(SECURITY_JSON_KEY.search(key) or value_has(item) for key, item in value.items())
-        if isinstance(value, list):
-            return any(value_has(item) for item in value)
-        return False
-    return (any(isinstance(part, str) and SECURITY_JSON_KEY.search(part) for part in record["path"])
-            or value_has(record.get("old")) or value_has(record.get("value")) or value_has(record.get("items")))
-
-
 def semantic_json_diff(path, before, after, *, max_bytes=MAX_SOURCE, extended_header=()):
-    """Keep security-sensitive changes verbatim; summarize other records."""
+    """Every changed record verbatim; nothing is summarized, so a model sees every change."""
     old = JSON_ABSENT if before is None else strict_json(before, preserve_numbers=True)
     new = JSON_ABSENT if after is None else strict_json(after, preserve_numbers=True)
     records = json_added_records(new, ()) if old is JSON_ABSENT else \
         json_removed_records(old, ()) if new is JSON_ABSENT else json_diff_records(old, new)
     lines = [f"diff --git a/{path} b/{path}\n", *extended_header,
              f"semantic-json-diff {hashlib.sha256(before or b'').hexdigest()} {hashlib.sha256(after or b'').hexdigest()}\n"]
-    summaries, size = {}, sum(len(line.encode()) for line in lines)
+    size = sum(len(line.encode()) for line in lines)
     for record in records:
         record_path = compact_json_path(record["path"])
         if record["op"] == "order":
@@ -922,19 +903,8 @@ def semantic_json_diff(path, before, after, *, max_bytes=MAX_SOURCE, extended_he
             compact = [record["op"], record_path, json_semantic_value(record["old"]), json_semantic_value(record["value"])]
         line = json.dumps(compact, ensure_ascii=True, separators=(",", ":")) + "\n"
         require(len(line.encode()) <= MAX_JSON_RECORD, f"Semantic JSON record too large: {path}")
-        if json_security_relevant(record):
-            size += len(line.encode())
-            require(size <= max_bytes, f"Security-relevant JSON records exceed review bound: {path}")
-            lines.append(line)
-        else:
-            prefix = record_path.split("/", 3)[1] if record_path.startswith("/") else "/"
-            counts = summaries.setdefault(prefix, [0, 0, 0])
-            counts[0] += 1
-            counts[1 if record["op"] == "add" else 2 if record["op"] == "remove" else 0] += 1
-    for prefix, (changed, added, removed) in sorted(summaries.items()):
-        line = f"semantic-json-summary {prefix} changed={changed} added={added} removed={removed}\n"
         size += len(line.encode())
-        require(size <= max_bytes, f"Semantic JSON summary exceeds review bound: {path}")
+        require(size <= max_bytes, f"Semantic JSON records exceed review bound: {path}")
         lines.append(line)
     return "".join(lines)
 
@@ -1196,7 +1166,10 @@ def package_files(data, label):
     """Regular files of a .crate/.tgz with the archive's top directory stripped."""
     files, unpacked = {}, 0
     try:
-        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+        with gzip.GzipFile(fileobj=io.BytesIO(data)) as stream:
+            raw = stream.read(MAX_PACKAGE_UNPACKED + 1)
+        require(len(raw) <= MAX_PACKAGE_UNPACKED, f"Package exceeds unpacked bound: {label}")
+        with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
             for member in archive:
                 if member.isdir():
                     continue
@@ -1206,8 +1179,12 @@ def package_files(data, label):
                         f"Package has unsafe path: {label}")
                 unpacked += member.size
                 require(unpacked <= MAX_PACKAGE_UNPACKED, f"Package exceeds unpacked bound: {label}")
-                files["/".join(parts[1:])] = archive.extractfile(member).read()
-    except (tarfile.TarError, OSError, EOFError) as exc:
+                name = "/".join(parts[1:])
+                require(name not in files, f"Package repeats a file: {label}")
+                files[name] = archive.extractfile(member).read()
+            # tarfile stops quietly at a damaged header; extractors that resync would not.
+            require(not raw[archive.offset:].strip(b"\0"), f"Package archive has data after its end: {label}")
+    except (tarfile.TarError, OSError, EOFError, gzip.BadGzipFile) as exc:
         raise Hold(f"Unreadable package archive: {label}") from exc
     return files
 
@@ -1454,7 +1431,8 @@ def scope_diff(complete, paths):
         header = re.match(r"diff --git a/(\S+) b/(\S+)\n", patch)
         require(header and header.group(1) == header.group(2), "Unparseable or renamed diff header")
         path = header.group(1)
-        (informational if INFORMATIONAL.match(path) else gated).append((path, patch))
+        # Package authors choose their own directory names, so dependency files are never informational.
+        (informational if INFORMATIONAL.match(path) and not path.startswith("dependency/") else gated).append((path, patch))
     # Patches beyond the changed-file inventory are only the reviewed dependency sources.
     patched = [path for path, _ in gated + informational]
     extra = list(patched)
@@ -1613,7 +1591,8 @@ def dependency_risks(base, target, paths):
     return risks, cleared
 
 
-DOWNLOAD_CALL = re.compile(r"\b(?:download|download_and_extract|http_archive|http_file|git_repository|new_git_repository)\s*\(")
+DOWNLOAD_CALL = re.compile(r"\b(?:download|download_and_extract|http_archive|http_file|git_repository|new_git_repository)\b")
+EXTERNAL_PIN = re.compile(r"(?i)://|\b[0-9a-f]{40,}\b|sha256|sha384|sha512|integrity|curl|wget")
 
 
 def dependency_source_reviewed(path, before, after, base_commit, target_commit, paths):
@@ -1624,21 +1603,24 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
     qualify when their ecosystem's lockfile does, since only locked packages are built.
     """
     name = Path(path).name
-    if path == "Cargo.lock" or name == "Cargo.toml":
-        crates_io_packages(manifest_blob(target_commit, "Cargo.lock", MAX_DEPENDENCY_INPUT))
-        return True
-    if path == "bun.lock" or name == "package.json":
-        npm_packages(manifest_blob(target_commit, "bun.lock", MAX_DEPENDENCY_INPUT))
-        return True
+    for lock, parse, manifests in (("Cargo.lock", crates_io_packages, "Cargo.toml"), ("bun.lock", npm_packages, "package.json")):
+        if path == lock or name == manifests:
+            data = manifest_blob(target_commit, lock, MAX_DEPENDENCY_INPUT)
+            require(data is not None, f"{lock} is missing; dependencies would resolve unpinned")
+            parse(data)
+            return True
     if path == BAZEL_LOCK:
         bazel_lock_evidence(base_commit, target_commit, paths)
         return True
     if path == "MODULE.bazel":
         return module_bazel_safe(before.decode(), after.decode())
     if name.endswith(".bzl") and after is not None:
-        added = [line for line in difflib.unified_diff((before or b"").decode().splitlines(), after.decode().splitlines(),
-                                                       lineterm="", n=0) if line.startswith("+") and not line.startswith("+++")]
-        require(not any(DOWNLOAD_CALL.search(line) for line in added), f"Bazel rule adds a download primitive: {path}")
+        # Only gated rules a model reviews, and only when the change pins nothing external.
+        require(not INFORMATIONAL.match(path), f"Bazel rule outside reviewed source: {path}")
+        changed = [line for line in difflib.unified_diff((before or b"").decode().splitlines(), after.decode().splitlines(),
+                                                         lineterm="", n=0) if line[:1] in "+-" and line[:3] not in ("+++", "---")]
+        require(not any(DOWNLOAD_CALL.search(line) or EXTERNAL_PIN.search(line) for line in changed),
+                f"Bazel rule change touches downloads, URLs or digests: {path}")
         return True
     return False
 
@@ -1651,8 +1633,9 @@ def module_bazel_safe(before, after):
     old, new = statements(before), statements(after)
     rules = set()
     for line in new:
-        match = re.fullmatch(r'([a-z_][a-z0-9_]*) = use_repo_rule\("//[A-Za-z0-9_/.:-]+", "[A-Za-z0-9_]+"\)', line)
+        match = re.fullmatch(r'([a-z_][a-z0-9_]*) = use_repo_rule\("//([A-Za-z0-9_/.-]*):([A-Za-z0-9_.-]+\.bzl)", "[A-Za-z0-9_]+"\)', line)
         if match:
+            require(not INFORMATIONAL.match(f"{match[2]}/{match[3]}".lstrip("/")), f"Repository rule outside reviewed source: {line}")
             rules.add(match[1])
     for line in difflib.unified_diff(old, new, lineterm="", n=0):
         if not line.startswith("+") or line.startswith("+++"):
