@@ -45,9 +45,10 @@ else
         '.npm[]? | select(.name == $name)' >/dev/null; then
         omp plugin uninstall "$PLUGIN"
       fi
-      if [[ "$current" =~ ^[0-9] ]]; then
-        current="$PLUGIN@$current"
-      fi
+      case "$current" in
+        github:*|git+*|https:*|http:*|file:*|link:*|/*|./*|../*) ;;
+        *) current="$PLUGIN@$current" ;;
+      esac
       if omp plugin install "$current"; then
         if [ "$enabled" = false ]; then
           omp plugin disable "$PLUGIN"
