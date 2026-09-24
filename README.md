@@ -41,7 +41,7 @@ OMP (oh-my-pi) is a first-class payload under `home/.omp/`: its config, rules,
 and extensions install with the normal command just like Claude and Codex
 payloads. OMP's databases, credentials, caches, plugin registries, and binaries
 remain machine-local. Run `patches/omp/bootstrap.sh` after installing OMP to
-install the pinned `@czottmann/pi-automode@1.15.0` plugin.
+install the pinned `kzarzycki/pi-automode` fork.
 
 ## Repository development agent layer
 
@@ -94,8 +94,8 @@ machine setup.
 patches/omp/bootstrap.sh
 ```
 
-This checks for the pinned public `@czottmann/pi-automode@1.15.0` package and
-installs it with `omp plugin install` when absent. OMP owns the generated
+This checks for the pinned `kzarzycki/pi-automode` commit and replaces a
+different installed source before installing it. OMP owns the generated
 package and lock files; they are not symlinked into dotagents.
 
 ### `~/.dotagents` symlink

@@ -4,7 +4,7 @@
 set -euo pipefail
 
 PLUGIN='@czottmann/pi-automode'
-VERSION='1.15.0'
+SOURCE='github:kzarzycki/pi-automode#5a2e5a90d95ad8a9a6f26e7f0e6fce5c042e46aa'
 
 if ! command -v omp >/dev/null 2>&1; then
   echo "[omp-bootstrap] omp not found -- install OMP first" >&2
@@ -15,12 +15,56 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-if omp plugin list --json 2>/dev/null | jq -e --arg name "$PLUGIN" --arg version "$VERSION" \
-  '.npm[]? | select(.name == $name and .version == $version and .enabled == true)' >/dev/null; then
-  echo "[omp-bootstrap] $PLUGIN@$VERSION already installed and enabled"
+plugin="$(omp plugin list --json | jq -c --arg name "$PLUGIN" '.npm[]? | select(.name == $name)')"
+installed_path="$(jq -r '.path // empty' <<<"$plugin")"
+manifest="${installed_path%%/node_modules/*}/package.json"
+current="$(jq -r --arg name "$PLUGIN" '.dependencies[$name] // empty' "$manifest" 2>/dev/null || true)"
+enabled="$(jq -r '.enabled // false' <<<"$plugin")"
+if [ -n "$installed_path" ] && [ -z "$current" ]; then
+  echo "[omp-bootstrap] cannot recover installed source; leaving plugin untouched" >&2
+  exit 1
+fi
+
+if [ "$current" = "$SOURCE" ]; then
+  if [ "$enabled" = true ]; then
+    echo "[omp-bootstrap] $SOURCE already installed and enabled"
+  else
+    omp plugin enable "$PLUGIN"
+  fi
 else
-  echo "[omp-bootstrap] installing $PLUGIN@$VERSION"
-  omp plugin install "$PLUGIN@$VERSION"
+  if [ -n "$installed_path" ]; then
+    if ! jq -e --arg name "$PLUGIN" \
+      '.settings[$name] == null or .settings[$name] == {}' \
+      "${installed_path%%/node_modules/*}/omp-plugins.lock.json" >/dev/null 2>&1; then
+      echo "[omp-bootstrap] existing plugin settings need manual migration; leaving plugin untouched" >&2
+      exit 1
+    fi
+    omp plugin uninstall "$PLUGIN"
+  fi
+  if omp plugin install "$SOURCE"; then
+    :
+  else
+    rc=$?
+    echo "[omp-bootstrap] install failed; restoring previous plugin" >&2
+    if [ -n "$current" ]; then
+      if omp plugin list --json | jq -e --arg name "$PLUGIN" \
+        '.npm[]? | select(.name == $name)' >/dev/null; then
+        omp plugin uninstall "$PLUGIN"
+      fi
+      case "$current" in
+        github:*|git@*|ssh:*|git:*|git+*|https:*|http:*|file:*|link:*|/*|./*|../*) ;;
+        *) current="$PLUGIN@$current" ;;
+      esac
+      if omp plugin install "$current"; then
+        if [ "$enabled" = false ]; then
+          omp plugin disable "$PLUGIN"
+        fi
+      else
+        echo "[omp-bootstrap] restore failed: $current" >&2
+      fi
+    fi
+    exit "$rc"
+  fi
 fi
 
 echo "[omp-bootstrap] done"
