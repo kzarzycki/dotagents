@@ -1432,7 +1432,8 @@ def release_ledger(target_commit, delta, diff):
                                   context=[site_context(target_commit, site, 8, item["item"]) for site in item["sites"][:3]])
                              for item in delta],
         "binary_evidence": re.findall(r"(?m)^binary-blob-evidence .*$", diff),
-        "bazel_lock_evidence": re.findall(r"(?m)^(?:bazel-lock-evidence|new-crate-repository|changed-crate-build-file) .*$", diff),
+        "bazel_lock_evidence": [patch for patch in re.split(r"(?=^diff --git )", diff, flags=re.MULTILINE)[1:]
+                                if patch.startswith(f"diff --git a/{BAZEL_LOCK} b/{BAZEL_LOCK}\n")],
         "reviewed_dependency_files": sorted(path for path in chunk_paths(diff) if path.startswith("dependency/")),
     }
     return json.dumps(ledger, ensure_ascii=True, sort_keys=True)
@@ -1625,12 +1626,22 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
         require(data is not None, f"{lock} is missing; dependencies would resolve unpinned")
         parse(data)
         if path == lock:
+            if lock == "bun.lock":
+                prior_lock = json_with_trailing_commas(before.decode("utf-8")) if before is not None else {}
+                current_lock = json_with_trailing_commas(data.decode("utf-8"))
+                for field in ("patchedDependencies", "overrides"):
+                    require(current_lock.get(field) == prior_lock.get(field),
+                            f"bun.lock: {field} may activate unreviewed package code")
             return True
         require(lock in paths, f"{path}: changed manifest without a changed {lock}")
         require(after is not None, f"{path}: deleted dependency manifest")
         if lock == "bun.lock":
             manifest = strict_json(after)
             locked = json_with_trailing_commas(data.decode("utf-8"))
+            prior = strict_json(before) if before is not None else {}
+            for field in ("trustedDependencies", "patchedDependencies", "overrides", "resolutions", "packageManager"):
+                require(manifest.get(field) == prior.get(field),
+                        f"{path}: {field} change can activate unreviewed installer code")
             workspace = path.removesuffix("/package.json") if path != "package.json" else ""
             require(isinstance(manifest, dict) and workspace in locked["workspaces"],
                     f"{path}: manifest is not a locked workspace")
@@ -1642,6 +1653,9 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
                     require(manifest.get(field, {}) == locked.get(field, {}), f"{path}: {field} differs from bun.lock")
                 require(manifest.get("workspaces", {}).get("catalog", {}) == locked.get("catalog", {}),
                         f"{path}: workspace catalog differs from bun.lock")
+                for field in ("packages", "catalogs"):
+                    require(manifest.get("workspaces", {}).get(field) == prior.get("workspaces", {}).get(field),
+                            f"{path}: workspace {field} change is not bound to the reviewed lock")
         else:
             manifest = tomllib.loads(after.decode("utf-8"))
             locked = tomllib.loads(data.decode("utf-8"))["package"]
@@ -1662,6 +1676,9 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
                             f"{path}: dependency outside reviewed crates.io registry")
             # Only changed dependency identities need a fresh match in the reviewed lock.
             old = tomllib.loads(before.decode("utf-8")) if before is not None else {}
+            for field in ("patch", "replace", "source", "registries"):
+                require(manifest.get(field) == old.get(field),
+                        f"{path}: {field} changes can replace locked dependency implementations")
             previous = dict(dependencies(old))
             for location, spec in dependencies(manifest):
                 if previous.get(location) == spec:

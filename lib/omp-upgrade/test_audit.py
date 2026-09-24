@@ -883,6 +883,7 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertIn('-    actual = "@crates__a-1.0.0//:a"', patch)
         self.assertIn('+    actual = "@crates__a-1.0.0//:different"', patch)
         self.assertIn('hub-generated-file removed/BUILD.bazel', patch)
+        self.assertIn('@crates__a-1.0.0//:different', audit.release_ledger("target", [], patch))
         previous_build = 'deps = ["@crates__a-0.9.0//:a"]\n'
         current_build = 'deps = ["@crates__a-1.0.0//:a"]\n'
         data[("base", audit.BAZEL_LOCK)] = json.dumps(lock(spec(build=previous_build))).encode()
@@ -891,6 +892,8 @@ class EvidenceGateTests(unittest.TestCase):
             patch, _, _ = audit.bazel_lock_evidence("base", "target", {audit.BAZEL_LOCK})
         self.assertIn('-deps = ["@crates__a-0.9.0//:a"]', patch)
         self.assertIn('+deps = ["@crates__a-1.0.0//:a"]', patch)
+        self.assertIn('-deps = ["@crates__a-0.9.0//:a"]',
+                      json.loads(audit.release_ledger("target", [], patch))["bazel_lock_evidence"][0])
 
     def test_changed_manifests_require_matching_changed_lock_entries(self):
         cargo = (b'[[package]]\nname = "local"\nversion = "1.0.0"\n'
@@ -912,6 +915,21 @@ class EvidenceGateTests(unittest.TestCase):
                 with self.subTest(path=path, changed_lock=True), self.assertRaises(audit.Hold):
                     audit.dependency_source_reviewed(path, before, after, "base", "target",
                                                      {path, "Cargo.lock" if path == "Cargo.toml" else "bun.lock"})
+            patched = (b'[dependencies]\nsafe = "1.2.3"\n'
+                       b'[patch.crates-io]\nsafe = { git = "https://evil.example/repo" }\n')
+            with self.assertRaises(audit.Hold):
+                audit.dependency_source_reviewed("Cargo.toml", b'[dependencies]\nsafe = "1.2.3"\n',
+                                                 patched, "base", "target", {"Cargo.toml", "Cargo.lock"})
+            trusted = b'{"dependencies":{"safe":"1.2.3"},"trustedDependencies":["safe"]}'
+            with self.assertRaises(audit.Hold):
+                audit.dependency_source_reviewed("package.json", b'{"dependencies":{"safe":"1.2.3"}}',
+                                                 trusted, "base", "target", {"package.json", "bun.lock"})
+        patched_bun = json.loads(bun)
+        patched_bun["patchedDependencies"] = {"safe@1.2.3": "docs/patches/safe.patch"}
+        with mock.patch.object(audit, "manifest_blob", return_value=json.dumps(patched_bun).encode()):
+            with self.assertRaises(audit.Hold):
+                audit.dependency_source_reviewed("bun.lock", bun, json.dumps(patched_bun).encode(),
+                                                 "base", "target", {"bun.lock"})
 
 
     def test_review_bypasses_found_in_independent_review_hold(self):
