@@ -4,7 +4,7 @@
 set -euo pipefail
 
 PLUGIN='@czottmann/pi-automode'
-VERSION='1.15.0'
+SOURCE='github:kzarzycki/pi-automode#5a2e5a90d95ad8a9a6f26e7f0e6fce5c042e46aa'
 
 if ! command -v omp >/dev/null 2>&1; then
   echo "[omp-bootstrap] omp not found -- install OMP first" >&2
@@ -15,12 +15,17 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-if omp plugin list --json 2>/dev/null | jq -e --arg name "$PLUGIN" --arg version "$VERSION" \
-  '.npm[]? | select(.name == $name and .version == $version and .enabled == true)' >/dev/null; then
-  echo "[omp-bootstrap] $PLUGIN@$VERSION already installed and enabled"
+if jq -e --arg name "$PLUGIN" --arg source "$SOURCE" \
+  '.dependencies[$name] == $source' "$HOME/.omp/plugins/package.json" >/dev/null 2>&1 &&
+  omp plugin list --json | jq -e --arg name "$PLUGIN" \
+    '.npm[]? | select(.name == $name and .enabled == true)' >/dev/null; then
+  echo "[omp-bootstrap] $SOURCE already installed and enabled"
 else
-  echo "[omp-bootstrap] installing $PLUGIN@$VERSION"
-  omp plugin install "$PLUGIN@$VERSION"
+  if omp plugin list --json | jq -e --arg name "$PLUGIN" \
+    '.npm[]? | select(.name == $name)' >/dev/null; then
+    omp plugin uninstall "$PLUGIN"
+  fi
+  omp plugin install "$SOURCE"
 fi
 
 echo "[omp-bootstrap] done"

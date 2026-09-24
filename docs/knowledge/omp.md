@@ -20,18 +20,18 @@ the other agent payloads, use `dotagents install --only omp --no-pull`; this
 generic subset mode skips profiles, hooks, shell startup files, and generated
 Claude settings.
 
-The VPS OMP setup enables the public npm plugin
-`@czottmann/pi-automode@1.15.0` (Claude Code-style auto-mode guardrails).
+The VPS OMP setup enables the `kzarzycki/pi-automode` fork at a pinned commit
+because its Jev escalation needs the decision tool attached to the classifier request.
 Install that plugin on each machine with:
 
 ```sh
 patches/omp/bootstrap.sh
 ```
 
-The bootstrap runs `omp plugin install @czottmann/pi-automode@1.15.0` only
-when that exact enabled version is absent. It does not copy OMP's package or
-lock files, because OMP owns and updates those files alongside `node_modules`.
-The plugin's source is `https://github.com/czottmann/pi-automode`.
+The bootstrap compares the exact GitHub commit in OMP's plugin dependency file
+and the enabled state. It uninstalls a different source before installing the
+pin, because replacing it in place can fail in Bun. OMP owns the package and
+lock files; dotagents does not copy them.
 
 For a colleague's existing OMP installation, a pre-existing real
 `~/.omp/agent/config.yml` is reported as a CONFLICT and left untouched. Preserve
