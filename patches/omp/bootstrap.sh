@@ -20,6 +20,10 @@ installed_path="$(jq -r '.path // empty' <<<"$plugin")"
 manifest="${installed_path%%/node_modules/*}/package.json"
 current="$(jq -r --arg name "$PLUGIN" '.dependencies[$name] // empty' "$manifest" 2>/dev/null || true)"
 enabled="$(jq -r '.enabled // false' <<<"$plugin")"
+if [ -n "$installed_path" ] && [ -z "$current" ]; then
+  echo "[omp-bootstrap] cannot recover installed source; leaving plugin untouched" >&2
+  exit 1
+fi
 
 if [ "$current" = "$SOURCE" ]; then
   if [ "$enabled" = true ]; then
@@ -40,6 +44,9 @@ else
       if omp plugin list --json | jq -e --arg name "$PLUGIN" \
         '.npm[]? | select(.name == $name)' >/dev/null; then
         omp plugin uninstall "$PLUGIN"
+      fi
+      if [[ "$current" =~ ^[0-9] ]]; then
+        current="$PLUGIN@$current"
       fi
       if omp plugin install "$current"; then
         if [ "$enabled" = false ]; then
