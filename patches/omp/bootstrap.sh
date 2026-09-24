@@ -15,17 +15,42 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 1
 fi
 
-if jq -e --arg name "$PLUGIN" --arg source "$SOURCE" \
-  '.dependencies[$name] == $source' "$HOME/.omp/plugins/package.json" >/dev/null 2>&1 &&
-  omp plugin list --json | jq -e --arg name "$PLUGIN" \
-    '.npm[]? | select(.name == $name and .enabled == true)' >/dev/null; then
-  echo "[omp-bootstrap] $SOURCE already installed and enabled"
+plugin="$(omp plugin list --json | jq -c --arg name "$PLUGIN" '.npm[]? | select(.name == $name)')"
+installed_path="$(jq -r '.path // empty' <<<"$plugin")"
+manifest="${installed_path%%/node_modules/*}/package.json"
+current="$(jq -r --arg name "$PLUGIN" '.dependencies[$name] // empty' "$manifest" 2>/dev/null || true)"
+enabled="$(jq -r '.enabled // false' <<<"$plugin")"
+
+if [ "$current" = "$SOURCE" ]; then
+  if [ "$enabled" = true ]; then
+    echo "[omp-bootstrap] $SOURCE already installed and enabled"
+  else
+    omp plugin enable "$PLUGIN"
+  fi
 else
-  if omp plugin list --json | jq -e --arg name "$PLUGIN" \
-    '.npm[]? | select(.name == $name)' >/dev/null; then
+  if [ -n "$installed_path" ]; then
     omp plugin uninstall "$PLUGIN"
   fi
-  omp plugin install "$SOURCE"
+  if omp plugin install "$SOURCE"; then
+    :
+  else
+    rc=$?
+    echo "[omp-bootstrap] install failed; restoring previous plugin" >&2
+    if [ -n "$current" ]; then
+      if omp plugin list --json | jq -e --arg name "$PLUGIN" \
+        '.npm[]? | select(.name == $name)' >/dev/null; then
+        omp plugin uninstall "$PLUGIN"
+      fi
+      if omp plugin install "$current"; then
+        if [ "$enabled" = false ]; then
+          omp plugin disable "$PLUGIN"
+        fi
+      else
+        echo "[omp-bootstrap] restore failed: $current" >&2
+      fi
+    fi
+    exit "$rc"
+  fi
 fi
 
 echo "[omp-bootstrap] done"
