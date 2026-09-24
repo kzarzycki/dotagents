@@ -139,31 +139,19 @@ Omit it (or point at `~/.claude-dev`) to get dev. Shell coverage is bash/zsh (en
 
 ### Shared agent memory
 
-Hindsight shares project memories across Claude Code, Codex CLI, OMP, and Omnigent's native Claude/Codex sessions. Hindsight does not install automatically with Omnigent; its native Codex runner bridges user hooks/config into a private `CODEX_HOME`, while native Claude inherits user settings unless its config home is overridden.
+Hindsight runs once on the VPS. After client bootstrap, Claude Code, Codex, OMP and Omnigent's native Claude/Codex sessions on the Mac and VPS point at the same per-repository bank. The database and OpenAI Codex OAuth extraction stay on the VPS; the Mac installs client hooks only. A Tailscale outage leaves Mac agents usable without memory, not with a divergent local database.
 
-Install the official hooks after installing Node.js and `uv`:
+On each workspace machine, install dotagents and run:
 
 ```sh
-npx @vectorize-io/hindsight-coding-agents install claude-code codex --server daemon
+~/.dotagents/patches/hindsight/bootstrap.sh
 ```
 
-The server and embedded database stay on this machine. Session capture sends conversation text to the existing OpenAI Codex OAuth provider for extraction, not to Hindsight Cloud. After installing the hooks, set private `~/.hindsight/coding-agent.json` to use the bounded local service rather than letting each hook start an uncapped daemon:
+The bootstrap reads `~/.dotagents-profile` (`mac` or `vps`), pins `@vectorize-io/hindsight-coding-agents@0.6.1`, installs its Codex hooks in self-hosted mode, and updates private `~/.hindsight/coding-agent.json` and `~/.omp/agent/.env` without dropping unrelated settings. The Mac points at the tailnet HTTPS endpoint; the VPS uses its own loopback API even when Tailscale is down. Claude hooks already live in `home/.claude/settings.shared.json`, so running the official Claude installer would duplicate them. Trust the changed Codex hooks once when Codex asks. The bootstrap does nothing in remote Claude Code containers. It never starts a server on the Mac.
 
-```json
-{
-  "serverMode": "self-hosted",
-  "apiUrl": "http://127.0.0.1:9077",
-  "autoUpdate": false,
-  "autoSeed": false,
-  "gitIngest": "none",
-  "codebaseSurvey": false,
-  "bankIdTemplate": "coding-agent-{gitProject}",
-  "maxParallelRetains": 2,
-  "retainSessions": true
-}
-```
+OMP's tracked `home/.omp/agent/config.yml` defaults to `http://127.0.0.1:9077`, `coding-agent` with `per-project` scoping, and five-second automatic recall/request deadlines. The bootstrap sets a machine-local `HINDSIGHT_API_URL` override in OMP's private `.env`; on the Mac it selects `https://cc-experiments.taile39822.ts.net:9443`. The coding-agents hooks use `coding-agent-{gitProject}`; both integrations resolve Trinity to `coding-agent-trinity`. OMP's three seeded mental models are disabled until their stale content and failed refreshes are repaired. Claude/Codex automatic hook calls still have host deadlines of 30 seconds at startup/prompt and 60 seconds at stop; an unreachable server can delay a prompt, but must not stop the agent. A failed OMP retain is not a durable offline queue: re-submit important unsaved memories after service returns.
 
-Set the private `~/.hindsight/profiles/coding-agent.env` for the local service:
+On the VPS only, the private `~/.hindsight/profiles/coding-agent.env` configures the pinned local API:
 
 ```sh
 HINDSIGHT_API_LLM_PROVIDER=openai-codex
@@ -179,13 +167,11 @@ OPENBLAS_NUM_THREADS=2
 MKL_NUM_THREADS=2
 NUMEXPR_NUM_THREADS=2
 HINDSIGHT_API_DATABASE_URL=pg0://hindsight-embed-coding-agent
-HINDSIGHT_API_HOST=127.0.0.1
-HINDSIGHT_API_PORT=9077
 ```
 
-The local reranker is disabled to avoid loading a second ML model; retrieval uses rank fusion instead. The existing local embedding model remains unchanged so stored vectors stay compatible. On Linux, run `uvx hindsight-api@0.10.1 --host 127.0.0.1 --port 9077` under a user systemd service with `EnvironmentFile=%h/.hindsight/profiles/coding-agent.env`, `MemoryMax=2G`, and `CPUQuota=150%`. Include the embedded PostgreSQL child in the same service cgroup. Enable the service for startup; `serverMode: self-hosted` prevents hooks from restarting an uncapped daemon if it stops. Claude's hooks pin the same provider and model in `settings.shared.json`. The Codex installer writes `~/.codex/hooks.json` outside dotagents: prefix each Hindsight hook command with `env HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6-astra`, then trust the changed hooks in Codex.
+Run `uvx hindsight-api@0.10.1 --host 127.0.0.1 --port 9077` in the foreground under a Linux user systemd service with `EnvironmentFile=%h/.hindsight/profiles/coding-agent.env`. The VPS unit limits the API and its PostgreSQL child together: `MemoryMax=2G`, `MemorySwapMax=0`, `CPUQuota=150%`, `Restart=on-failure`, `RestartSec=10`, `StartLimitIntervalSec=300`, `StartLimitBurst=3`. The RRF reranker avoids loading a second local model; preserve the existing embedding model so stored vectors stay comparable.
 
-OMP uses the same daemon and a per-repository bank. Its `home/.omp/agent/config.yml` sets `memory.backend: hindsight`, `hindsight.apiUrl: http://127.0.0.1:9077`, `hindsight.bankId: coding-agent`, and `hindsight.scoping: per-project`; for example, `~/dev/trinity` resolves to `coding-agent-trinity` in both integrations.
+Only after checking the tailnet grant for the intended Mac, expose that loopback API with Tailscale **Serve**, not public Funnel: `sudo tailscale serve --bg --https=9443 http://127.0.0.1:9077`. Serve encrypts transport and respects tailnet access rules, but Hindsight currently has no application API key: **every device allowed to reach this Serve port can read and change the memory bank**. Do not enable the route with a broad tailnet grant. If application authentication is added later, stage its key in every running client *before* requiring it on the server; changing the server first rejects in-flight retains. Keep keys, OAuth state, database, and generated hooks machine-local, never in dotagents.
 
 ### pixelrag bootstrap (per machine)
 

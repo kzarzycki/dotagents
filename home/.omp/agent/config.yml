@@ -5,6 +5,10 @@ hindsight:
   apiUrl: http://127.0.0.1:9077
   bankId: coding-agent
   scoping: per-project
+  requestTimeoutMs: 5000
+  recallTimeoutMs: 5000
+  mentalModelsEnabled: false
+  mentalModelAutoSeed: false
 enabledProviders:
   - claude
 modelRoles:
