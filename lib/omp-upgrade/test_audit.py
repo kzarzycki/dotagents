@@ -382,6 +382,31 @@ class StateTests(unittest.TestCase):
         light.assert_called_once()
         strict.assert_called_once()
 
+    def test_background_lightweight_check_preserves_strict_hold(self):
+        held = audit.now_report()
+        held.update(status="HOLD", review_mode="strict", version="18.3.0",
+                    summary="Whole-release review identified new risks")
+        audit.persist_report(held)
+        (self.state / "approved.json").write_text("{}")
+        (self.state / "candidate").write_bytes(b"candidate")
+        with mock.patch.object(audit, "lightweight_release") as light:
+            self.assertEqual(audit.check(force=True), 0)
+        light.assert_not_called()
+        self.assertEqual(json.loads((self.state / "report.json").read_text()), held)
+        self.assertFalse((self.state / "approved.json").exists())
+        self.assertFalse((self.state / "candidate").exists())
+
+    def test_overflowed_strict_hold_survives_background_check(self):
+        held = audit.now_report()
+        held.update(status="HOLD", review_mode="strict", version="18.3.0", risks=["x" * 4096])
+        with mock.patch.object(audit, "MAX_JSON", 2048):
+            self.assertFalse(audit.persist_report(held))
+            self.assertEqual(held["review_mode"], "strict")
+            with mock.patch.object(audit, "lightweight_release") as light:
+                self.assertEqual(audit.check(force=True), 0)
+            light.assert_not_called()
+        self.assertEqual(json.loads((self.state / "report.json").read_text())["status"], "HOLD")
+
     def test_lightweight_signature_check_rejects_signer_change(self):
         ok = mock.Mock(returncode=0, stderr="", stdout="")
         trusted = mock.Mock(returncode=0, stderr="TeamIdentifier=trusted\n", stdout="")

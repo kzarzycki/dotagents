@@ -2027,7 +2027,7 @@ def persist_report(report):
         full_report = STATE / "report-overflow.json"
         atomic_bytes(full_report, payload)
         retained = {}
-        for key in ("version", "installed_version", "checked_at", "checked_at_epoch", "evidence_path", "diff_sha256", "chunk_count"):
+        for key in ("version", "installed_version", "checked_at", "checked_at_epoch", "evidence_path", "diff_sha256", "chunk_count", "review_mode"):
             value = report.get(key)
             retained[key] = value[:1024] if isinstance(value, str) else value if type(value) in (int, float) else None
         features = [item[:512] for item in report.get("features", [])[:10] if isinstance(item, str)]
@@ -2220,15 +2220,20 @@ def check(force=False, version=None, context_paths=(), strict=False):
         except BlockingIOError:
             return 3
         mode = "strict" if strict else "lightweight"
-        if not force:
-            try:
-                previous = strict_json(read_bytes(STATE / "report.json", MAX_JSON))
+        try:
+            previous = strict_json(read_bytes(STATE / "report.json", MAX_JSON))
+            if not strict and previous.get("review_mode") == "strict" and previous.get("status") in ("HOLD", "APPROVED", "ACCEPTED"):
+                # Background artifact checks cannot erase a completed source decision.
+                if previous["status"] == "HOLD":
+                    clear_approval()
+                return 0
+            if not force:
                 stamp = previous.get("checked_at_epoch")
                 if (not version and not context_paths and previous.get("review_mode") == mode
                         and type(stamp) in (int, float) and 0 <= time.time() - stamp < 86400):
                     return 0
-            except (OSError, Hold, AttributeError):
-                pass
+        except (OSError, Hold, AttributeError):
+            pass
         clear_approval()
         report = now_report()
         report.update(requested_version=version, context_paths=list(context_paths), review_mode=mode)

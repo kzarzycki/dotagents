@@ -30,7 +30,7 @@ ASSET = {
 }.get((platform.system(), platform.machine()))
 MIN_SIZE = 1024 * 1024
 MAX_SIZE = 1024 * 1024 * 1024
-REPORT_LIMIT = 2 * 1024 * 1024
+REPORT_LIMIT = 8 * 1024 * 1024  # Same cap as audit.MAX_JSON.
 MANIFEST_KEYS = {"version", "commit", "sha256"}
 APPROVAL_KEYS = MANIFEST_KEYS | {"size", "base_sha256", "asset_url"}
 # Executable header identities for the published assets; 64-bit little-endian only.
@@ -391,6 +391,62 @@ def activate_if_ready(allow_install=True):
             installed = manifest(read_json(STATE / "installed.json"))
             approval = read_json(STATE / "approved.json")
             validate_approval(approval, installed)
+            decision = read_json(STATE / "report.json")
+            if not isinstance(decision, dict):
+                raise Hold("Release review report is invalid")
+            reviewed = decision.get("target")
+            if (decision.get("review_mode") != "strict" or not isinstance(reviewed, dict)
+                    or any(reviewed.get(key) != approval[key] for key in ("version", "commit", "sha256", "size", "asset_url"))):
+                raise Hold("Candidate lacks a source review for this exact release")
+            verdict_keys = {"verdict", "reviewed", "chunk_id", "source_sha256", "risks",
+                            "breaking_changes", "features", "uncertainties", "capability_facts"}
+            reviews = decision.get("reviews")
+            baseline = decision.get("accepted_source")
+            if (not isinstance(reviews, list) or not reviews or decision.get("chunk_count") != len(reviews)
+                    or not hex_value(decision.get("diff_sha256"), 64) or not isinstance(baseline, dict)
+                    or not hex_value(baseline.get("commit"), 40)
+                    or any(not isinstance(item, dict) or set(item) != verdict_keys
+                           or item["chunk_id"] != f"chunk-{index:03d}-of-{len(reviews):03d}"
+                           or item["reviewed"] is not True or item["verdict"] not in ("SAFE", "HOLD")
+                           or not hex_value(item["source_sha256"], 64)
+                           or any(not isinstance(item[key], list) for key in
+                                  ("risks", "breaking_changes", "features", "uncertainties", "capability_facts"))
+                           for index, item in enumerate(reviews, 1))):
+                raise Hold("Release review lacks complete source coverage")
+            if decision.get("status") == "APPROVED":
+                coherence = decision.get("coherence_review")
+                recorded = decision.get("accepted_source_recorded")
+                if (decision.get("risks") != [] or not isinstance(coherence, dict)
+                        or set(coherence) != verdict_keys | {"resolved_concerns", "resolved_capabilities"}
+                        or coherence.get("chunk_id") != "whole-release"
+                        or not hex_value(decision.get("ledger_sha256"), 64)
+                        or coherence.get("source_sha256") != decision["ledger_sha256"]
+                        or coherence.get("verdict") != "SAFE" or coherence.get("reviewed") is not True
+                        or any(coherence.get(key) != [] for key in ("risks", "breaking_changes", "uncertainties"))
+                        or any(not isinstance(coherence.get(key), list) for key in
+                               ("features", "capability_facts", "resolved_concerns", "resolved_capabilities"))
+                        or not isinstance(recorded, dict) or recorded.get("basis") != "audited"
+                        or (recorded.get("version"), recorded.get("commit")) != (approval["version"], approval["commit"])):
+                    raise Hold("Source review did not approve this release")
+            elif decision.get("status") == "ACCEPTED":
+                acceptance = decision.get("acceptance")
+                if (decision.get("approval_basis") != "user-accepted" or not isinstance(acceptance, dict)
+                        or acceptance.get("basis") != "user-accepted" or acceptance.get("target") != reviewed
+                        or acceptance.get("base_sha256") != installed["sha256"]
+                        or not hex_value(acceptance.get("report_sha256"), 64)):
+                    raise Hold("User acceptance does not bind this release and baseline")
+                path = STATE / "evidence" / approval["version"] / f"accepted-report-{acceptance['report_sha256']}.json"
+                with regular_file(path) as (stream, _):
+                    original = stream.read(REPORT_LIMIT + 1)
+                if len(original) > REPORT_LIMIT or hashlib.sha256(original).hexdigest() != acceptance["report_sha256"]:
+                    raise Hold("Accepted review report changed or exceeds bound")
+                held = json.loads(original, object_pairs_hook=unique_object)
+                if (not isinstance(held, dict) or held.get("status") != "HOLD"
+                        or held.get("review_mode") != "strict" or held.get("target") != reviewed
+                        or held.get("risks") != acceptance.get("findings")):
+                    raise Hold("User acceptance does not match the reviewed findings")
+            else:
+                raise Hold("Source review is held or incomplete")
             release = approval["version"]
             staged = stage_candidate(approval)
             # Smoke the integrity-checked stage, not REAL: failed smoke never disturbs old OMP.
@@ -599,7 +655,7 @@ def show_status():
     print_report_body(value)
     if value.get("service_error"):
         print(f"Scheduling: {safe_text(value['service_error'])}")
-    print("Checks run in the background, at most daily. Use omp safe-update to activate a staged release, or omp --upgrade-status.")
+    print("Background checks inspect artifacts only. Run omp safe-update for a full source review; only an approved release can activate.")
     return 0
 
 
