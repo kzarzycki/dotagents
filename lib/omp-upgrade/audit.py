@@ -50,7 +50,7 @@ MIN_ASSET, MAX_ASSET = 1024 * 1024, 1024 * 1024 * 1024
 # 128 chunks of 64 KiB is the review cost cap; the gated budget must fit inside it.
 MAX_CHUNK, MAX_CHUNKS = 64 * 1024, 192
 MAX_SOURCE = MAX_CHUNK * MAX_CHUNKS
-REVIEW_WORKERS = 6
+REVIEW_WORKERS = 3
 # Raw Git, inventory results and structured JSON have independent memory bounds.
 MAX_RAW_DIFF, MAX_STRUCTURED_JSON = 64 * 1024 * 1024, 12 * 1024 * 1024
 # Keep surrounding code while leaving room for semantic records in the review budget.
