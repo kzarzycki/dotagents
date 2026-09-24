@@ -138,6 +138,10 @@ entry; missing resolutions HOLD. Prior chunk verdicts are untrusted opinions,
 not replacement evidence. Each untrusted_unresolved_chunk_concerns entry is
 OPEN; resolve with specific evidence in resolved_concerns or return HOLD. Never
 invent an id.
+"reviewed": true means every supplied line in THIS input was examined. Missing
+caller code or a continuation slice is an uncertainty or risk for whole-release
+review, not evidence that this input was skipped. Use false only when a supplied
+line could not be examined.
 Return EXACTLY one JSON object, no markdown or commentary:
 {"verdict":"SAFE" or "HOLD","reviewed":true or false,"chunk_id":the supplied id,
 "source_sha256":the supplied digest,"risks":[strings],"breaking_changes":[strings],
