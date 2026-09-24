@@ -1094,7 +1094,15 @@ def bazel_lock_evidence(base_commit, target_commit, changed_paths):
             "Unexpected crate_universe extension shape")
     for entry in set(map(str, old["recordedInputs"])) ^ set(map(str, new["recordedInputs"])):
         match = re.fullmatch(r"FILE:@@//(\S+) [0-9a-f]{64}", entry)
-        require(match and match[1] in changed_paths, f"Unexpected crate_universe recorded input change: {entry[:200]}")
+        require(match, f"Unexpected crate_universe recorded input change: {entry[:200]}")
+        path = match[1]
+        # A workspace member's Cargo.toml can inherit fields (version, deps, ...) from the
+        # workspace root via `field.workspace = true`. Its recorded content hash then changes
+        # whenever the root Cargo.toml changes, even though the member file's own bytes do not
+        # and it never appears in the plain source diff. The root's own change is still reviewed
+        # normally since it is always a changed path in that case.
+        inherited = path.endswith("/Cargo.toml") and "Cargo.toml" in changed_paths
+        require(path in changed_paths or inherited, f"Unexpected crate_universe recorded input change: {entry[:200]}")
     old_specs, new_specs = old["generatedRepoSpecs"], new["generatedRepoSpecs"]
     hub_old, hub_new = old_specs.get("crates"), new_specs.get("crates")
     require(isinstance(hub_new, dict) and hub_old is not None and hub_new.get("repoRuleId") == hub_old.get("repoRuleId")
