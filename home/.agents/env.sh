@@ -1,4 +1,4 @@
-# Shell extensions for dotagents-managed tools (memsearch, mdsmith, claude
+# Shell extensions for dotagents-managed tools (mdsmith, claude
 # wrappers in ~/.local/bin). Sourced from ~/.bashrc / ~/.zshrc via a line
 # `dotagents install` appends; the rc files themselves stay machine-owned.
 # POSIX sh — keep bash/zsh compatible. Add entries only for tools/skills this
@@ -18,9 +18,6 @@ if [ -d "$HOME/.local/share/mise/shims" ]; then
     *) export PATH="$PATH:$HOME/.local/share/mise/shims" ;;
   esac
 fi
-
-# memsearch global memory store
-[ -d "$HOME/dev/kb/memory" ] && export MEMSEARCH_DIR="$HOME/dev/kb/memory"
 
 # herdr: canonical config follows the repo, so prefix/ui settings are identical on
 # every machine. ~/.config/herdr/ stays machine-local (sessions, logs, plugins) —

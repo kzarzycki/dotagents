@@ -177,12 +177,9 @@ def test_home_configuration_does_not_enable_direct_matt_plugin():
         assert "mattpocock-skills" not in path.read_text(), path
 
 
-# Plugins enabled for every machine must be user-scoped, not project
-# capabilities: memory that follows you across repos. Ponytail is delivered
-# by the shared behavioral spec instead of a plugin.
-USER_SCOPED_PLUGINS = {
-    "memsearch@memsearch-plugins",  # memory: your history, every repo
-}
+# Machine-wide plugins are opt-in per project; persistent memory is provided
+# by the Hindsight integration rather than a Claude-only plugin.
+USER_SCOPED_PLUGINS = set()
 
 
 def test_home_claude_global_plugins_are_user_scoped_only():

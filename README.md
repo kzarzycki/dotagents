@@ -12,7 +12,6 @@ dotagents/
 │   ├── dotagents       ← the install command
 │   └── remote-setup.sh ← Claude Code on the web bootstrap (clone/find + install --profile remote)
 ├── patches/            ← overlay scripts run by SessionStart hooks
-│   ├── memsearch/      ← memsearch plugin patches + per-machine bootstrap
 │   ├── dev-marketplace/← live-dev plugin linker + tracked marketplace.json
 │   ├── pixelrag/       ← per-machine pixelshot binary bootstrap
 │   ├── omp/             ← per-machine OMP plugin bootstrap
@@ -20,7 +19,7 @@ dotagents/
 └── home/               ← install payload; 1:1 mirror of ~/
     ├── .agents/
     │   ├── AGENTS.md   ← canonical user behavioral spec, including Ponytail
-    │   └── env.sh      ← shell extensions for managed tools (PATH, MEMSEARCH_DIR)
+    │   └── env.sh      ← shell extensions for managed tools (PATH, tool env)
     ├── .claude/
     │   ├── CLAUDE.md            ← in-repo symlink → ../.agents/AGENTS.md
     │   ├── settings.shared.json ← config common to every machine
@@ -35,7 +34,7 @@ dotagents/
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
 
-The installed user baseline enables only the `memsearch` plugin (memory that follows you across repos). Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
+The installed user baseline enables no capability plugins globally. Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
 
 OMP (oh-my-pi) is a first-class payload under `home/.omp/`: its config, rules,
 and extensions install with the normal command just like Claude and Codex
@@ -71,7 +70,7 @@ After pulling updates:
 dotagents install
 ```
 
-The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) appends a one-time source line for `~/.agents/env.sh` to existing `~/.bashrc`/`~/.zshrc` — the rc files stay machine-owned, only the snippet is managed; `env.sh` carries shell extensions the managed tools need (PATH, `MEMSEARCH_DIR`), not general shell config, (6) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, (7) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
+The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) appends a one-time source line for `~/.agents/env.sh` to existing `~/.bashrc`/`~/.zshrc` — the rc files stay machine-owned, only the snippet is managed; `env.sh` carries shell extensions the managed tools need (PATH and tool-specific environment), not general shell config, (6) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, (7) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
 
 To install only selected top-level payloads, pass `--only` once per entry:
 
@@ -138,17 +137,41 @@ Auto-started daemons have no cwd or shell, so pin the var in the launcher instea
 
 Omit it (or point at `~/.claude-dev`) to get dev. Shell coverage is bash/zsh (env.sh is POSIX, same as the rest of the repo).
 
-### memsearch bootstrap (per machine)
+### Shared agent memory
 
-`home/.claude/settings.shared.json` enables the memsearch plugin and wires a SessionStart hook that runs `patches/memsearch/apply.sh` (idempotent, fast no-op once patched). The hook patches the installed plugin: PreCompact transcript capture, flock-guarded markdown writes, and a Milvus flush fix (upstream bug #534). To make memsearch actually function on a fresh machine, run once:
+Hindsight runs once on the VPS. After client bootstrap, Claude Code, Codex, OMP and Omnigent's native Claude/Codex sessions on the Mac and VPS point at the same per-repository bank. The database and OpenAI Codex OAuth extraction stay on the VPS; the Mac installs client hooks only. A Tailscale outage leaves Mac agents usable without memory, not with a divergent local database.
+
+On each workspace machine, install dotagents and run:
 
 ```sh
-~/.dotagents/patches/memsearch/bootstrap.sh
+~/.dotagents/patches/hindsight/bootstrap.sh
 ```
 
-It (a) installs `memsearch` via `uv tool install`, (b) writes `~/.memsearch/standalone/docker-compose.yml` (Milvus + etcd, relative volumes), (c) brings the stack up via `docker compose up -d`. Idempotent; safe to re-run.
+The bootstrap reads `~/.dotagents-profile` (`mac` or `vps`), pins `@vectorize-io/hindsight-coding-agents@0.6.1`, installs its Codex hooks in self-hosted mode, and updates private `~/.hindsight/coding-agent.json` and `~/.omp/agent/.env` without dropping unrelated settings. The Mac points at the tailnet HTTPS endpoint; the VPS uses its own loopback API even when Tailscale is down. Claude hooks already live in `home/.claude/settings.shared.json`, so running the official Claude installer would duplicate them. Trust the changed Codex hooks once when Codex asks. The bootstrap does nothing in remote Claude Code containers. It never starts a server on the Mac.
 
-Requirements: `uv` (https://docs.astral.sh/uv/), running Docker daemon, `python3`, `flock` (Linux: built-in; macOS: `brew install flock`). After bootstrap, restart Claude Code so the SessionStart hook applies the patches.
+OMP's tracked `home/.omp/agent/config.yml` defaults to `http://127.0.0.1:9077`, `coding-agent` with `per-project` scoping, and five-second automatic recall/request deadlines. The bootstrap sets a machine-local `HINDSIGHT_API_URL` override in OMP's private `.env`; on the Mac it selects `https://cc-experiments.taile39822.ts.net:9443`. The coding-agents hooks use `coding-agent-{gitProject}`; both integrations resolve Trinity to `coding-agent-trinity`. OMP's three seeded mental models are disabled until their stale content and failed refreshes are repaired. Claude/Codex automatic hook calls still have host deadlines of 30 seconds at startup/prompt and 60 seconds at stop; an unreachable server can delay a prompt, but must not stop the agent. A failed OMP retain is not a durable offline queue: re-submit important unsaved memories after service returns.
+
+On the VPS only, the private `~/.hindsight/profiles/coding-agent.env` configures the pinned local API:
+
+```sh
+HINDSIGHT_API_LLM_PROVIDER=openai-codex
+HINDSIGHT_API_LLM_MODEL=gpt-6-astra
+HINDSIGHT_API_RERANKER_PROVIDER=rrf
+HINDSIGHT_API_WORKER_MAX_SLOTS=2
+HINDSIGHT_API_WORKER_CONSOLIDATION_RESERVED_SLOTS=1
+HINDSIGHT_API_RETAIN_MEMORY_BUDGET_MB=64
+HINDSIGHT_API_DB_POOL_MIN_SIZE=2
+HINDSIGHT_API_DB_POOL_MAX_SIZE=20
+OMP_NUM_THREADS=2
+OPENBLAS_NUM_THREADS=2
+MKL_NUM_THREADS=2
+NUMEXPR_NUM_THREADS=2
+HINDSIGHT_API_DATABASE_URL=pg0://hindsight-embed-coding-agent
+```
+
+Run `uvx hindsight-api@0.10.1 --host 127.0.0.1 --port 9077` in the foreground under a Linux user systemd service with `EnvironmentFile=%h/.hindsight/profiles/coding-agent.env`. The VPS unit limits the API and its PostgreSQL child together: `MemoryMax=2G`, `MemorySwapMax=0`, `CPUQuota=150%`, `Restart=on-failure`, `RestartSec=10`, `StartLimitIntervalSec=300`, `StartLimitBurst=3`. The RRF reranker avoids loading a second local model; preserve the existing embedding model so stored vectors stay comparable.
+
+The VPS exposes that loopback API through Tailscale **Serve** (not public Funnel): `sudo tailscale serve --bg --https=9443 http://127.0.0.1:9077`. Serve encrypts traffic inside the tailnet. The owner chose tailnet access alone, without a Hindsight API key, to keep existing agent sessions working. The tailnet policy could not be inspected from the VPS, so **every device currently allowed to reach port 9443 can read, change, or delete the memory bank**; restrict the grant to the Mac when policy access is available. If application authentication is added later, stage its key in every running client *before* requiring it on the server; changing the server first rejects in-flight retains. Keep keys, OAuth state, database, and generated hooks machine-local, never in dotagents.
 
 ### pixelrag bootstrap (per machine)
 
@@ -199,7 +222,7 @@ Cloud sessions run in an ephemeral container, so dotagents re-applies the user b
 
 **How it fits together.** The harness runs the environment's setup script before Claude Code launches. `bin/remote-setup.sh` runs `dotagents install --profile remote`, writing user-scope settings and hooks. The repository setup installs and compiles its own APM dependencies. The harness keeps git-identity and stop-gate hooks in a separate layer; Claude Code merges hooks across layers.
 
-**The `remote` profile (`settings.remote.json`)** disables `memsearch` because the container has no persistent Milvus store. It also disables local development plugins and sets `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1`. Shared bootstrap hooks stay wired but self-guard to a silent no-op when their infrastructure is absent.
+**The `remote` profile (`settings.remote.json`)** disables local development plugins and sets `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1`. Shared bootstrap hooks stay wired but self-guard to a silent no-op when their infrastructure is absent.
 
 **Delivery — private repos need the harness credential.** A fresh container can clone *public* GitHub repos directly (the default **Trusted** network policy allowlists `github.com`), so public marketplace plugins install with no extra config. A *private* repo can only be cloned with the scoped credential the harness wires for repos **added to the environment** — a plain `git clone` or `raw.githubusercontent` fetch of a private repo fails in the sandbox. So:
 

@@ -1,7 +1,6 @@
 {
   "env": {
-    "CLAUDE_CODE_PLUGIN_PREFER_HTTPS": "1",
-    "MEMSEARCH_DIR": "/home/agent/dev/kb/memory"
+    "CLAUDE_CODE_PLUGIN_PREFER_HTTPS": "1"
   },
   "enabledPlugins": {
     "workflow@dev": false,
