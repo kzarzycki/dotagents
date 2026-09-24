@@ -1101,6 +1101,16 @@ def bazel_lock_evidence(base_commit, target_commit, changed_paths):
             and hub_new.keys() == {"repoRuleId", "attributes"} and hub_new["attributes"].keys() == {"contents"},
             "Unexpected crate_universe hub repository")
     hub_contents_safe(hub_old["attributes"]["contents"], hub_new["attributes"]["contents"])
+    hub_review = []
+    for path in sorted(hub_old["attributes"]["contents"].keys() | hub_new["attributes"]["contents"].keys()):
+        previous = hub_old["attributes"]["contents"].get(path, "").replace(*BAZEL_RENAME)
+        current = hub_new["attributes"]["contents"].get(path, "")
+        if previous == current:
+            continue
+        hub_review.append(f"hub-generated-file {path}\n")
+        hub_review.extend(line if line.endswith("\n") else line + "\n" for line in difflib.unified_diff(
+            previous.splitlines(keepends=True), current.splitlines(keepends=True),
+            fromfile=f"old/{path}", tofile=f"new/{path}", n=DIFF_CONTEXT))
     # A hub label without a generated repository defines nothing Bazel can fetch; it must
     # name a workspace-local crate (the generator's version can lag the workspace version).
     local = {package["name"] for package in
@@ -1121,9 +1131,10 @@ def bazel_lock_evidence(base_commit, target_commit, changed_paths):
             # Dependency labels may move to another pinned crate repository of the same crate.
             for label in re.findall(r"@(crates__[A-Za-z0-9_.+-]+)//", spec["attributes"]["build_file_content"]):
                 require(label in new_specs, f"Bazel crate depends on an unknown repository: {name} -> {label}")
-            unpin = lambda text: re.sub(r"@crates__([A-Za-z0-9_-]+?)-[0-9][A-Za-z0-9_.-]*//", r"@crates__\1//", text)
-            previous = dict(old_specs[name]["attributes"], build_file_content=unpin(old_specs[name]["attributes"]["build_file_content"].replace(*BAZEL_RENAME)))
-            current = dict(spec["attributes"], build_file_content=unpin(spec["attributes"]["build_file_content"]))
+            # Changing a dependency label can change which crate builds even when both
+            # versions already exist; keep the exact labels in the model-visible diff.
+            previous = dict(old_specs[name]["attributes"], build_file_content=old_specs[name]["attributes"]["build_file_content"].replace(*BAZEL_RENAME))
+            current = spec["attributes"]
             require({key: value for key, value in previous.items() if key != "build_file_content"}
                     == {key: value for key, value in current.items() if key != "build_file_content"},
                     f"Existing Bazel crate archive changed identity: {name}")
@@ -1140,9 +1151,9 @@ def bazel_lock_evidence(base_commit, target_commit, changed_paths):
             review.extend("+" + line + "\n" for line in spec["attributes"]["build_file_content"].splitlines())
     summary = (f"bazel-lock-evidence crate_universe: {renamed} existing crate repositories changed only by the "
                f"project rename; {len(new_crates)} new crates.io archives follow with their generated BUILD files, then "
-               f"BUILD diffs (dependency labels unpinned) of existing crates whose generated BUILD changed; "
-               f"hub changed only in alias/label/archive lines; all other lock content is byte-identical.\n")
-    return f"diff --git a/{BAZEL_LOCK} b/{BAZEL_LOCK}\n" + summary + "".join(review), new_crates, old_crates
+               f"verbatim BUILD diffs of existing crates whose generated BUILD changed; "
+               f"all changed generated hub files follow as verbatim diffs; all other lock content is byte-identical.\n")
+    return f"diff --git a/{BAZEL_LOCK} b/{BAZEL_LOCK}\n" + summary + "".join(hub_review + review), new_crates, old_crates
 
 
 # Dependency implementations are reviewed as source: every external package whose pinned
@@ -1608,11 +1619,64 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
     """
     name = Path(path).name
     for lock, parse, manifests in (("Cargo.lock", crates_io_packages, "Cargo.toml"), ("bun.lock", npm_packages, "package.json")):
-        if path == lock or name == manifests:
-            data = manifest_blob(target_commit, lock, MAX_DEPENDENCY_INPUT)
-            require(data is not None, f"{lock} is missing; dependencies would resolve unpinned")
-            parse(data)
+        if path != lock and name != manifests:
+            continue
+        data = manifest_blob(target_commit, lock, MAX_DEPENDENCY_INPUT)
+        require(data is not None, f"{lock} is missing; dependencies would resolve unpinned")
+        parse(data)
+        if path == lock:
             return True
+        require(lock in paths, f"{path}: changed manifest without a changed {lock}")
+        require(after is not None, f"{path}: deleted dependency manifest")
+        if lock == "bun.lock":
+            manifest = strict_json(after)
+            locked = json_with_trailing_commas(data.decode("utf-8"))
+            workspace = path.removesuffix("/package.json") if path != "package.json" else ""
+            require(isinstance(manifest, dict) and workspace in locked["workspaces"],
+                    f"{path}: manifest is not a locked workspace")
+            for field in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
+                require(manifest.get(field, {}) == locked["workspaces"][workspace].get(field, {}),
+                        f"{path}: {field} differs from bun.lock")
+            if workspace == "":
+                for field in ("overrides", "patchedDependencies"):
+                    require(manifest.get(field, {}) == locked.get(field, {}), f"{path}: {field} differs from bun.lock")
+                require(manifest.get("workspaces", {}).get("catalog", {}) == locked.get("catalog", {}),
+                        f"{path}: workspace catalog differs from bun.lock")
+        else:
+            manifest = tomllib.loads(after.decode("utf-8"))
+            locked = tomllib.loads(data.decode("utf-8"))["package"]
+            names = {package["name"] for package in locked}
+            if path != "Cargo.toml":
+                require(manifest.get("package", {}).get("name") in
+                        {package["name"] for package in locked if "source" not in package},
+                        f"{path}: crate is absent from Cargo.lock")
+            def dependencies(node, prefix=()):
+                for key, value in node.items():
+                    if key in ("dependencies", "dev-dependencies", "build-dependencies") and isinstance(value, dict):
+                        yield from ((prefix + (key, dependency), spec) for dependency, spec in value.items())
+                    elif isinstance(value, dict):
+                        yield from dependencies(value, prefix + (key,))
+            for location, spec in dependencies(manifest):
+                if isinstance(spec, dict):
+                    require("git" not in spec and spec.get("registry", "crates-io") == "crates-io",
+                            f"{path}: dependency outside reviewed crates.io registry")
+            # Only changed dependency identities need a fresh match in the reviewed lock.
+            old = tomllib.loads(before.decode("utf-8")) if before is not None else {}
+            previous = dict(dependencies(old))
+            for location, spec in dependencies(manifest):
+                if previous.get(location) == spec:
+                    continue
+                dependency = location[-1]
+                actual = spec.get("package", dependency) if isinstance(spec, dict) else dependency
+                require(actual in names and not (isinstance(spec, dict) and "path" in spec),
+                        f"{path}: {actual} is not a reviewed locked registry dependency")
+                version = spec.get("version") if isinstance(spec, dict) else spec
+                require(isinstance(version, str) and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version)
+                        and any(package["name"] == actual and package["version"] == version
+                                and package.get("source") == "registry+https://github.com/rust-lang/crates.io-index"
+                                for package in locked),
+                        f"{path}: {actual} version is not exactly pinned in Cargo.lock")
+        return True
     if path == BAZEL_LOCK:
         bazel_lock_evidence(base_commit, target_commit, paths)
         return True

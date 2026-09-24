@@ -852,10 +852,10 @@ class EvidenceGateTests(unittest.TestCase):
             return {"repoRuleId": audit.HTTP_ARCHIVE, "attributes": {
                 "build_file_content": build, "remote_patch_strip": 0, "sha256": "1" * 64,
                 "strip_prefix": "a-1.0.0", "type": "tar.gz", "urls": [url]}}
-        def lock(crate):
+        def lock(crate, contents=None):
             return {"lockFileVersion": 1, "moduleExtensions": {audit.CRATE_EXTENSION: {"general": {
                 "bzlTransitiveDigest": "d", "usagesDigest": "u", "recordedInputs": [],
-                "generatedRepoSpecs": {"crates": {"repoRuleId": "hub", "attributes": {"contents": {}}},
+                "generatedRepoSpecs": {"crates": {"repoRuleId": "hub", "attributes": {"contents": contents or {}}},
                                        "crates__a-1.0.0": crate}}}}}
         renamed = spec(build="# bazel mod show_repo 'omp'\n")
         foreign = spec(url="https://evil.example/crates/a/1.0.0/download")
@@ -870,6 +870,48 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertEqual(new, set())
         with mock.patch.object(audit, "manifest_blob", side_effect=blobs(foreign)), self.assertRaises(audit.Hold):
             audit.bazel_lock_evidence("base", "target", {audit.BAZEL_LOCK})
+        old_alias = 'alias(\n    name = "a",\n    actual = "@crates__a-1.0.0//:a",\n)\n'
+        new_alias = old_alias.replace("//:a", "//:different")
+        before = lock(spec(), {"a/BUILD.bazel": old_alias, "removed/BUILD.bazel": old_alias})
+        after = lock(renamed, {"a/BUILD.bazel": new_alias})
+        data = {("base", audit.BAZEL_LOCK): json.dumps(before).encode(),
+                ("target", audit.BAZEL_LOCK): json.dumps(after).encode(),
+                ("target", "Cargo.lock"): cargo}
+        with mock.patch.object(audit, "manifest_blob", side_effect=lambda commit, path, limit=None: data[(commit, path)]):
+            patch, _, _ = audit.bazel_lock_evidence("base", "target", {audit.BAZEL_LOCK})
+        self.assertIn('hub-generated-file a/BUILD.bazel', patch)
+        self.assertIn('-    actual = "@crates__a-1.0.0//:a"', patch)
+        self.assertIn('+    actual = "@crates__a-1.0.0//:different"', patch)
+        self.assertIn('hub-generated-file removed/BUILD.bazel', patch)
+        previous_build = 'deps = ["@crates__a-0.9.0//:a"]\n'
+        current_build = 'deps = ["@crates__a-1.0.0//:a"]\n'
+        data[("base", audit.BAZEL_LOCK)] = json.dumps(lock(spec(build=previous_build))).encode()
+        data[("target", audit.BAZEL_LOCK)] = json.dumps(lock(spec(build=current_build))).encode()
+        with mock.patch.object(audit, "manifest_blob", side_effect=lambda commit, path, limit=None: data[(commit, path)]):
+            patch, _, _ = audit.bazel_lock_evidence("base", "target", {audit.BAZEL_LOCK})
+        self.assertIn('-deps = ["@crates__a-0.9.0//:a"]', patch)
+        self.assertIn('+deps = ["@crates__a-1.0.0//:a"]', patch)
+
+    def test_changed_manifests_require_matching_changed_lock_entries(self):
+        cargo = (b'[[package]]\nname = "local"\nversion = "1.0.0"\n'
+                 b'[[package]]\nname = "safe"\nversion = "1.2.3"\n'
+                 b'source = "registry+https://github.com/rust-lang/crates.io-index"\n'
+                 + b'checksum = "' + b'1' * 64 + b'"\n')
+        bun = json.dumps({"workspaces": {"": {"dependencies": {"safe": "1.2.3"}}},
+                          "packages": {"safe": ["safe@1.2.3", "", {}, "sha512-" + "a" * 88]}}).encode()
+        with mock.patch.object(audit, "manifest_blob", side_effect=lambda commit, path, limit=None:
+                               {"Cargo.lock": cargo, "bun.lock": bun}[path]):
+            for path, before, after in (
+                ("Cargo.toml", b'[dependencies]\nsafe = "1.2.3"\n',
+                 b'[dependencies]\nsafe = "1.2.3"\nevil = { git = "https://evil.example/repo" }\n'),
+                ("package.json", b'{"dependencies":{"safe":"1.2.3"}}',
+                 b'{"dependencies":{"safe":"1.2.3","evil":"1.0.0"}}'),
+            ):
+                with self.subTest(path=path), self.assertRaises(audit.Hold):
+                    audit.dependency_source_reviewed(path, before, after, "base", "target", {path})
+                with self.subTest(path=path, changed_lock=True), self.assertRaises(audit.Hold):
+                    audit.dependency_source_reviewed(path, before, after, "base", "target",
+                                                     {path, "Cargo.lock" if path == "Cargo.toml" else "bun.lock"})
 
 
     def test_review_bypasses_found_in_independent_review_hold(self):
