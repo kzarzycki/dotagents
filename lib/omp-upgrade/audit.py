@@ -2031,11 +2031,28 @@ def persist_report(report):
             value = report.get(key)
             retained[key] = value[:1024] if isinstance(value, str) else value if type(value) in (int, float) else None
         features = [item[:512] for item in report.get("features", [])[:10] if isinstance(item, str)]
+        acceptance = report.get("installed_acceptance")
+        pointer = None
+        if (isinstance(acceptance, dict) and acceptance.get("basis") == "user-accepted"
+                and isinstance(acceptance.get("target"), dict)
+                and isinstance(acceptance["target"].get("version"), str)
+                and VERSION.fullmatch(acceptance["target"]["version"])
+                and isinstance(acceptance.get("report_sha256"), str)
+                and SHA.fullmatch(acceptance["report_sha256"])):
+            version, digest = acceptance["target"]["version"], acceptance["report_sha256"]
+            archive = STATE / "evidence" / version / f"acceptance-{digest}.json"
+            pointer = {"basis": "user-accepted", "target": {"version": version},
+                       "report_sha256": digest, "findings": [],
+                       "findings_path": str(archive if archive.is_file() else full_report)}
         report.clear()
         report.update(retained, status="HOLD", summary="Report exceeded bound; no approval. Full findings retained in overflow evidence.",
                       features=features, risks=["Report exceeded bound; aggregate review cannot be published completely."],
                       uncertainties=["Report exceeded bound; consult complete source and verdict evidence."],
                       baseline_risks=BASELINE, limitations=LIMITATIONS, full_report_path=str(full_report), reviews=[])
+        if pointer is not None:
+            report["installed_acceptance"] = pointer
+            report["baseline_risks"] = BASELINE + [
+                f"User-accepted {pointer['target']['version']}: full findings in {pointer['findings_path']}"]
         payload = (json.dumps(report, indent=2, ensure_ascii=True) + "\n").encode()
     atomic_bytes(STATE / "report.json", payload)
     return complete
@@ -2220,6 +2237,7 @@ def check(force=False, version=None, context_paths=(), strict=False):
         except BlockingIOError:
             return 3
         mode = "strict" if strict else "lightweight"
+        previous = {}
         try:
             previous = strict_json(read_bytes(STATE / "report.json", MAX_JSON))
             if not strict and previous.get("review_mode") == "strict" and previous.get("status") in ("HOLD", "APPROVED", "ACCEPTED"):
@@ -2246,6 +2264,24 @@ def check(force=False, version=None, context_paths=(), strict=False):
             reason = str(exc) if isinstance(exc, Hold) else f"{type(exc).__name__} during audit; no approval"
             report.update(status="HOLD", summary=reason)
             report["risks"].append(reason)
+        if isinstance(previous, dict):
+            accepted = previous.get("installed_acceptance")
+            if accepted is None and previous.get("status") == "INSTALLED":
+                accepted = previous.get("acceptance")
+            if (isinstance(accepted, dict) and accepted.get("basis") == "user-accepted"
+                    and isinstance(accepted.get("target"), dict)
+                    and isinstance(accepted["target"].get("version"), str)
+                    and isinstance(accepted.get("findings"), list)):
+                accepted_version = accepted["target"]["version"]
+                if report.get("installed_version") in (None, accepted_version):
+                    report["installed_acceptance"] = accepted
+                    if report.get("installed_version") == accepted_version:
+                        findings = accepted["findings"] or ([f"full findings in {accepted['findings_path']}"]
+                                                            if isinstance(accepted.get("findings_path"), str) else [])
+                        report["baseline_risks"] = BASELINE + [
+                            f"User-accepted {accepted_version}: {risk}" for risk in findings if isinstance(risk, str)]
+                        if report["status"] == "CURRENT":
+                            report["summary"] = "Installed asset is current; source findings were user-accepted and remain listed below."
         persist_report(report)
         print(json.dumps({key: report[key] for key in ("status", "version", "summary", "features")}, ensure_ascii=True))
         return 0 if report["status"] in ("CURRENT", "APPROVED") else 1

@@ -407,6 +407,90 @@ class StateTests(unittest.TestCase):
             light.assert_not_called()
         self.assertEqual(json.loads((self.state / "report.json").read_text())["status"], "HOLD")
 
+    def test_overflow_keeps_user_accepted_findings_pointer(self):
+        accepted = {"basis": "user-accepted", "target": {"version": BASE["version"]},
+                    "report_sha256": "a" * 64, "findings": ["x" * 5000]}
+        archive = self.state / "evidence" / BASE["version"] / f"acceptance-{'a' * 64}.json"
+        archive.parent.mkdir(parents=True)
+        archive.write_text(json.dumps(accepted))
+        report = audit.now_report()
+        report.update(status="CURRENT", review_mode="lightweight", installed_version=BASE["version"],
+                      installed_acceptance=accepted, baseline_risks=audit.BASELINE + accepted["findings"])
+        with mock.patch.object(audit, "MAX_JSON", 4096):
+            self.assertFalse(audit.persist_report(report))
+            compact = json.loads((self.state / "report.json").read_text())
+            self.assertEqual(compact["installed_acceptance"]["report_sha256"], "a" * 64)
+            self.assertEqual(compact["installed_acceptance"]["findings_path"], str(archive))
+            self.assertIn("full findings", compact["baseline_risks"][-1])
+            def current(next_report):
+                next_report.update(status="CURRENT", version=BASE["version"],
+                                   installed_version=BASE["version"], summary="Artifact current")
+            with mock.patch.object(audit, "audit_release", side_effect=current), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(audit.check(force=True, strict=True), 0)
+        value = json.loads((self.state / "report.json").read_text())
+        self.assertEqual(value["installed_acceptance"]["report_sha256"], "a" * 64)
+        self.assertIn("full findings", value["baseline_risks"][-1])
+
+    def test_lightweight_current_keeps_user_accepted_installed_risks(self):
+        accepted = {"basis": "user-accepted", "target": {"version": BASE["version"]},
+                    "findings": ["Conditional outbound credential disclosure"]}
+        installed = audit.now_report()
+        installed.update(status="INSTALLED", review_mode="strict", version=BASE["version"],
+                         risks=accepted["findings"], acceptance=accepted)
+        audit.persist_report(installed)
+        def current(report):
+            report.update(status="CURRENT", version=BASE["version"],
+                          installed_version=BASE["version"], summary="Artifact current")
+        with mock.patch.object(audit, "lightweight_release", side_effect=current), \
+             contextlib.redirect_stdout(io.StringIO()):
+            for _ in range(2):
+                self.assertEqual(audit.check(force=True), 0)
+                value = json.loads((self.state / "report.json").read_text())
+                self.assertEqual(value["installed_acceptance"], accepted)
+                self.assertIn("User-accepted 18.1.13: Conditional outbound credential disclosure",
+                              value["baseline_risks"])
+
+        def newer(report):
+            report.update(status="APPROVED", version="18.1.14",
+                          installed_version=BASE["version"], summary="New artifact")
+        with mock.patch.object(audit, "lightweight_release", side_effect=newer), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(audit.check(force=True), 0)
+        value = json.loads((self.state / "report.json").read_text())
+        self.assertEqual(value["version"], "18.1.14")
+        self.assertIn("User-accepted 18.1.13: Conditional outbound credential disclosure",
+                      value["baseline_risks"])
+        with mock.patch.object(audit, "audit_release", side_effect=current), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(audit.check(force=True, strict=True), 0)
+        value = json.loads((self.state / "report.json").read_text())
+        self.assertEqual(value["installed_acceptance"], accepted)
+        self.assertIn("User-accepted 18.1.13: Conditional outbound credential disclosure",
+                      value["baseline_risks"])
+        def held_newer(report):
+            report.update(status="HOLD", version="18.1.14", installed_version=BASE["version"],
+                          summary="New source risk", risks=["New release risk"])
+        with mock.patch.object(audit, "audit_release", side_effect=held_newer), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(audit.check(force=True, strict=True), 1)
+        value = json.loads((self.state / "report.json").read_text())
+        self.assertEqual(value["risks"], ["New release risk"])
+        self.assertEqual(value["installed_acceptance"], accepted)
+        self.assertIn("User-accepted 18.1.13: Conditional outbound credential disclosure",
+                      value["baseline_risks"])
+        with mock.patch.object(audit, "audit_release", side_effect=current), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(audit.check(force=True, strict=True), 0)
+        self.assertEqual(json.loads((self.state / "report.json").read_text())["installed_acceptance"], accepted)
+        with mock.patch.object(audit, "audit_release", side_effect=newer), \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(audit.check(force=True, strict=True), 0)
+        value = json.loads((self.state / "report.json").read_text())
+        self.assertEqual(value["status"], "APPROVED")
+        self.assertIn("User-accepted 18.1.13: Conditional outbound credential disclosure",
+                      value["baseline_risks"])
+
     def test_lightweight_signature_check_rejects_signer_change(self):
         ok = mock.Mock(returncode=0, stderr="", stdout="")
         trusted = mock.Mock(returncode=0, stderr="TeamIdentifier=trusted\n", stdout="")
