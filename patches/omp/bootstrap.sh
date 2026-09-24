@@ -33,6 +33,12 @@ if [ "$current" = "$SOURCE" ]; then
   fi
 else
   if [ -n "$installed_path" ]; then
+    if ! jq -e --arg name "$PLUGIN" \
+      '.settings[$name] == null or .settings[$name] == {}' \
+      "${installed_path%%/node_modules/*}/omp-plugins.lock.json" >/dev/null 2>&1; then
+      echo "[omp-bootstrap] existing plugin settings need manual migration; leaving plugin untouched" >&2
+      exit 1
+    fi
     omp plugin uninstall "$PLUGIN"
   fi
   if omp plugin install "$SOURCE"; then
@@ -46,7 +52,7 @@ else
         omp plugin uninstall "$PLUGIN"
       fi
       case "$current" in
-        github:*|git+*|https:*|http:*|file:*|link:*|/*|./*|../*) ;;
+        github:*|git@*|ssh:*|git:*|git+*|https:*|http:*|file:*|link:*|/*|./*|../*) ;;
         *) current="$PLUGIN@$current" ;;
       esac
       if omp plugin install "$current"; then

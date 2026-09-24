@@ -32,6 +32,8 @@ The bootstrap compares the exact GitHub commit in OMP's plugin dependency file
 and the enabled state. It uninstalls a different source before installing the
 pin, because replacing it in place can fail in Bun. OMP owns the package and
 lock files; dotagents does not copy them.
+If the installed plugin has saved settings, bootstrap stops before uninstalling it:
+OMP removes those settings on uninstall, so they need explicit migration.
 
 For a colleague's existing OMP installation, a pre-existing real
 `~/.omp/agent/config.yml` is reported as a CONFLICT and left untouched. Preserve
