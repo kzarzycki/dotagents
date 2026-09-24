@@ -12,13 +12,13 @@ hindsight:
 enabledProviders:
   - claude
 modelRoles:
-  task: openai-codex/gpt-6-sol:auto
-  advisor: anthropic/claude-opus-5-5:auto
+  task: anthropic/claude-opus-5-5:auto
+  advisor: openai-codex/gpt-6-sol:auto
   slow: anthropic/claude-opus-5-5:auto
   default: anthropic/claude-opus-5-5
   smol: openai-codex/gpt-6-luna:auto
   judge: openrouter/~typesafe/jev-latest
-  web: openai-codex/gpt-5.6-luna:auto
+  web: openai-codex/gpt-6-luna:auto
 defaultThinkingLevel: auto
 contextPromotion:
   enabled: false
@@ -30,6 +30,12 @@ compaction:
     - remote
     - soft
   thresholdTokens: 300000
+  idleEnabled: true
+  experimentalContextManagement: true
+  asyncEnabled: false
+  remoteStreamingV2Enabled: true
+  idleThresholdTokens: 100000
+  idleTimeoutSeconds: 3300
 dev:
   autoqaConsent: denied
   autoqa: false
@@ -44,8 +50,6 @@ retry:
       - openrouter/typesafe/jev-1.13
     default:
       - openai-codex/gpt-6-sol
-    slow:
-      - openai-codex/gpt-6-astra
     web:
       - openai-codex/gpt-5.6-luna
       - google/gemini-3.8-flash
@@ -75,7 +79,7 @@ retry:
       - web/google
       - web/mojeek
     task:
-      - anthropic/claude-opus-5-5
+      - openai-codex/gpt-6-sol
 advisor:
   enabled: true
   syncBacklog: "1"
@@ -141,6 +145,7 @@ cycleOrder:
   - default
   - slow
   - tiny
+  - task
 codexResets:
   autoRedeem: "yes"
 features:
