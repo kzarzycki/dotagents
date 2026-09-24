@@ -7,6 +7,7 @@
 | `home/.omp/agent/config.yml` | `~/.omp/agent/config.yml` | the whole agent config: model roles, compaction, tool approval, display |
 | `home/.omp/agent/rules/*.md` | `~/.omp/agent/rules/` | user-scope rules |
 | `home/.omp/agent/extensions/*.ts` | `~/.omp/agent/extensions/` | herdr state extension |
+| `home/.pi/agent/extensions/pi-automode/config.json` | `~/.pi/agent/extensions/pi-automode/config.json` | global `permissions.allow` for `todo`; an existing real config is left untouched by install, so merge the entry into it rather than replacing it |
 
 Everything else under `~/.omp` is runtime state (sqlite dbs, sessions, logs,
 `auth.json`, plugin caches, plugin registry files under `~/.omp/plugins/`, the
@@ -14,11 +15,11 @@ Everything else under `~/.omp` is runtime state (sqlite dbs, sessions, logs,
 linked.
 
 Install mirrors directories and links files, so the live state next to
-`config.yml` is untouched. Adding a *new* file under `home/.omp/` needs a
-`dotagents install` on each machine to appear there. To install OMP without
-the other agent payloads, use `dotagents install --only omp --no-pull`; this
-generic subset mode skips profiles, hooks, shell startup files, and generated
-Claude settings.
+`config.yml` is untouched. New files under `home/` require an install on each
+machine. Install the OMP config and pi-automode permission with
+`dotagents install --only omp --only pi --no-pull`.
+`--only omp` alone skips the `pi` payload. Subset installs skip profiles, hooks,
+shell startup files, and generated Claude settings.
 
 The VPS OMP setup enables the `kzarzycki/pi-automode` fork at a pinned commit
 because its Jev escalation needs the decision tool attached to the classifier request.
@@ -40,11 +41,12 @@ For a colleague's existing OMP installation, a pre-existing real
 any local settings, move the file aside, and rerun the subset install. Provider
 credentials and model access still need to be configured on that machine.
 
-Config edits inside OMP land in the linked repo file. That makes shared config
-changes reviewable and reproducible, but personal provider or model changes
-must not be committed to the shared clone. `omp config path` exposes one user
-config directory, and the CLI help exposes no config-overlay option; use a
-separate clone for personal variants.
+Config edits inside OMP land in the linked repo file. This makes shared defaults
+reviewable and reproducible. The shared advisor role is
+`openai-codex/gpt-6-luna:xhigh`; each machine still needs access to that model.
+Other personal provider or model changes must not be committed to the shared
+clone. `omp config path` exposes one user config directory, and the CLI help
+exposes no config-overlay option; use a separate clone for personal variants.
 
 ## Audited upgrades (`lib/omp-upgrade/`)
 

@@ -13,7 +13,7 @@ enabledProviders:
   - claude
 modelRoles:
   task: anthropic/claude-opus-5-5:auto
-  advisor: openai-codex/gpt-6-sol:auto
+  advisor: openai-codex/gpt-6-luna:xhigh
   slow: anthropic/claude-opus-5-5:auto
   default: anthropic/claude-opus-5-5
   smol: openai-codex/gpt-6-luna:auto
@@ -129,6 +129,7 @@ task:
   maxRecursionDepth: -1
   prewalk: true
   showResolvedModelBadge: true
+  maxEffort: high
 display:
   cacheMissMarker: true
   showTokenUsage: true
