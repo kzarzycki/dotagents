@@ -2248,6 +2248,7 @@ def check(force=False, version=None, context_paths=(), strict=False):
             if not force:
                 stamp = previous.get("checked_at_epoch")
                 if (not version and not context_paths and previous.get("review_mode") == mode
+                        and previous.get("status") in ("CURRENT", "APPROVED", "HOLD", "ACCEPTED", "INSTALLED")
                         and type(stamp) in (int, float) and 0 <= time.time() - stamp < 86400):
                     return 0
         except (OSError, Hold, AttributeError):
@@ -2255,7 +2256,22 @@ def check(force=False, version=None, context_paths=(), strict=False):
         clear_approval()
         report = now_report()
         report.update(requested_version=version, context_paths=list(context_paths), review_mode=mode)
-        persist_report(report)
+        accepted = previous.get("installed_acceptance") if isinstance(previous, dict) else None
+        if accepted is None and isinstance(previous, dict) and previous.get("status") == "INSTALLED":
+            accepted = previous.get("acceptance")
+        if (not isinstance(accepted, dict) or accepted.get("basis") != "user-accepted"
+                or not isinstance(accepted.get("target"), dict)
+                or not isinstance(accepted["target"].get("version"), str)
+                or not isinstance(accepted.get("findings"), list)):
+            accepted = None
+        if accepted is not None:
+            accepted_version = accepted["target"]["version"]
+            findings = accepted["findings"] or ([f"full findings in {accepted['findings_path']}"]
+                                                if isinstance(accepted.get("findings_path"), str) else [])
+            report["installed_acceptance"] = accepted
+            report["baseline_risks"] = BASELINE + [
+                f"User-accepted {accepted_version}: {risk}" for risk in findings if isinstance(risk, str)]
+        require(persist_report(report), "Review report exceeded bound before audit")
         try:
             (audit_release if strict else lightweight_release)(report)
         except Exception as exc:
@@ -2264,24 +2280,12 @@ def check(force=False, version=None, context_paths=(), strict=False):
             reason = str(exc) if isinstance(exc, Hold) else f"{type(exc).__name__} during audit; no approval"
             report.update(status="HOLD", summary=reason)
             report["risks"].append(reason)
-        if isinstance(previous, dict):
-            accepted = previous.get("installed_acceptance")
-            if accepted is None and previous.get("status") == "INSTALLED":
-                accepted = previous.get("acceptance")
-            if (isinstance(accepted, dict) and accepted.get("basis") == "user-accepted"
-                    and isinstance(accepted.get("target"), dict)
-                    and isinstance(accepted["target"].get("version"), str)
-                    and isinstance(accepted.get("findings"), list)):
-                accepted_version = accepted["target"]["version"]
-                if report.get("installed_version") in (None, accepted_version):
-                    report["installed_acceptance"] = accepted
-                    if report.get("installed_version") == accepted_version:
-                        findings = accepted["findings"] or ([f"full findings in {accepted['findings_path']}"]
-                                                            if isinstance(accepted.get("findings_path"), str) else [])
-                        report["baseline_risks"] = BASELINE + [
-                            f"User-accepted {accepted_version}: {risk}" for risk in findings if isinstance(risk, str)]
-                        if report["status"] == "CURRENT":
-                            report["summary"] = "Installed asset is current; source findings were user-accepted and remain listed below."
+        if accepted is not None:
+            if report.get("installed_version") not in (None, accepted_version):
+                report.pop("installed_acceptance", None)
+                report["baseline_risks"] = BASELINE
+            elif report["status"] == "CURRENT" and report.get("installed_version") == accepted_version:
+                report["summary"] = "Installed asset is current; source findings were user-accepted and remain listed below."
         persist_report(report)
         print(json.dumps({key: report[key] for key in ("status", "version", "summary", "features")}, ensure_ascii=True))
         return 0 if report["status"] in ("CURRENT", "APPROVED") else 1

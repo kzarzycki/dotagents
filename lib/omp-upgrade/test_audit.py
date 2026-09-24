@@ -432,6 +432,21 @@ class StateTests(unittest.TestCase):
         self.assertEqual(value["installed_acceptance"]["report_sha256"], "a" * 64)
         self.assertIn("full findings", value["baseline_risks"][-1])
 
+    def test_pre_review_overflow_never_runs_auditor(self):
+        accepted = {"basis": "user-accepted", "target": {"version": BASE["version"]},
+                    "report_sha256": "a" * 64, "findings": ["x" * 3000]}
+        previous = audit.now_report()
+        previous.update(status="INSTALLED", review_mode="strict", version=BASE["version"],
+                        installed_version=BASE["version"], acceptance=accepted)
+        with mock.patch.object(audit, "MAX_JSON", 6144):
+            self.assertTrue(audit.persist_report(previous))
+            with mock.patch.object(audit, "audit_release") as release, self.assertRaises(audit.Hold):
+                audit.check(force=True, strict=True)
+            release.assert_not_called()
+        compact = json.loads((self.state / "report.json").read_text())
+        self.assertEqual(compact["status"], "HOLD")
+        self.assertEqual(compact["installed_acceptance"]["report_sha256"], "a" * 64)
+
     def test_lightweight_current_keeps_user_accepted_installed_risks(self):
         accepted = {"basis": "user-accepted", "target": {"version": BASE["version"]},
                     "findings": ["Conditional outbound credential disclosure"]}
@@ -490,6 +505,32 @@ class StateTests(unittest.TestCase):
         self.assertEqual(value["status"], "APPROVED")
         self.assertIn("User-accepted 18.1.13: Conditional outbound credential disclosure",
                       value["baseline_risks"])
+
+    def test_interrupted_check_keeps_acceptance_and_retries(self):
+        accepted = {"basis": "user-accepted", "target": {"version": BASE["version"]},
+                    "findings": ["Accepted outbound risk"]}
+        previous = audit.now_report()
+        previous.update(status="INSTALLED", review_mode="strict", version=BASE["version"],
+                        installed_version=BASE["version"], acceptance=accepted)
+        audit.persist_report(previous)
+        def interrupt(_):
+            raise KeyboardInterrupt()
+        with mock.patch.object(audit, "audit_release", side_effect=interrupt), \
+             self.assertRaises(KeyboardInterrupt):
+            audit.check(force=True, strict=True)
+        checking = json.loads((self.state / "report.json").read_text())
+        self.assertEqual(checking["status"], "CHECKING")
+        self.assertEqual(checking["installed_acceptance"], accepted)
+        self.assertIn("User-accepted 18.1.13: Accepted outbound risk", checking["baseline_risks"])
+
+        def current(report):
+            report.update(status="CURRENT", version=BASE["version"],
+                          installed_version=BASE["version"], summary="Artifact current")
+        with mock.patch.object(audit, "audit_release", side_effect=current) as run, \
+             contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(audit.check(strict=True), 0)
+        run.assert_called_once()
+        self.assertEqual(json.loads((self.state / "report.json").read_text())["installed_acceptance"], accepted)
 
     def test_lightweight_signature_check_rejects_signer_change(self):
         ok = mock.Mock(returncode=0, stderr="", stdout="")
