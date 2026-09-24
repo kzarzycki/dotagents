@@ -31,13 +31,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash $HOME/.dotagents/patches/memsearch/apply.sh",
-            "timeout": 5
-          },
-          {
-            "type": "command",
             "command": "bash $HOME/.dotagents/patches/dev-marketplace/apply.sh",
             "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-sessionstart-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6-astra node \"$HOME/.hindsight/coding-agents/dist/claude-sessionstart-hook.js\"; fi",
+            "timeout": 30
           }
         ]
       }
@@ -50,6 +54,15 @@
             "command": "if [ -x \"$HOME/.orca/agent-hooks/claude-hook.sh\" ]; then /bin/sh \"$HOME/.orca/agent-hooks/claude-hook.sh\"; fi"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6-astra node \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\"; fi",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "Stop": [
@@ -58,6 +71,15 @@
           {
             "type": "command",
             "command": "if [ -x \"$HOME/.orca/agent-hooks/claude-hook.sh\" ]; then /bin/sh \"$HOME/.orca/agent-hooks/claude-hook.sh\"; fi"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6-astra node \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\"; fi",
+            "timeout": 60
           }
         ]
       }
@@ -140,7 +162,6 @@
     "playwright@kzarzycki-agent-skills": false,
     "comms-personal@kzarzycki-agent-skills-private": false,
     "voice-personal@kzarzycki-agent-skills-private": false,
-    "memsearch@memsearch-plugins": true,
     "drawio@365-skills": false,
     "pixelbrowse@pixelrag-plugins": false,
     "goal-creator@kzarzycki-agent-skills": false
@@ -186,12 +207,6 @@
       "source": {
         "source": "github",
         "repo": "kzarzycki/agent-skills-private"
-      }
-    },
-    "memsearch-plugins": {
-      "source": {
-        "source": "github",
-        "repo": "zilliztech/memsearch"
       }
     },
     "dev": {

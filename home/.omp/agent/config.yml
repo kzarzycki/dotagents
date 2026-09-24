@@ -1,4 +1,10 @@
 setupVersion: 2
+memory:
+  backend: hindsight
+hindsight:
+  apiUrl: http://127.0.0.1:9077
+  bankId: coding-agent
+  scoping: per-project
 enabledProviders:
   - claude
 modelRoles:

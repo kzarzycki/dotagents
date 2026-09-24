@@ -12,7 +12,6 @@ dotagents/
 │   ├── dotagents       ← the install command
 │   └── remote-setup.sh ← Claude Code on the web bootstrap (clone/find + install --profile remote)
 ├── patches/            ← overlay scripts run by SessionStart hooks
-│   ├── memsearch/      ← memsearch plugin patches + per-machine bootstrap
 │   ├── dev-marketplace/← live-dev plugin linker + tracked marketplace.json
 │   ├── pixelrag/       ← per-machine pixelshot binary bootstrap
 │   ├── omp/             ← per-machine OMP plugin bootstrap
@@ -20,7 +19,7 @@ dotagents/
 └── home/               ← install payload; 1:1 mirror of ~/
     ├── .agents/
     │   ├── AGENTS.md   ← canonical user behavioral spec, including Ponytail
-    │   └── env.sh      ← shell extensions for managed tools (PATH, MEMSEARCH_DIR)
+    │   └── env.sh      ← shell extensions for managed tools (PATH, tool env)
     ├── .claude/
     │   ├── CLAUDE.md            ← in-repo symlink → ../.agents/AGENTS.md
     │   ├── settings.shared.json ← config common to every machine
@@ -35,7 +34,7 @@ dotagents/
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
 
-The installed user baseline enables only the `memsearch` plugin (memory that follows you across repos). Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
+The installed user baseline enables no capability plugins globally. Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
 
 OMP (oh-my-pi) is a first-class payload under `home/.omp/`: its config, rules,
 and extensions install with the normal command just like Claude and Codex
@@ -71,7 +70,7 @@ After pulling updates:
 dotagents install
 ```
 
-The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) appends a one-time source line for `~/.agents/env.sh` to existing `~/.bashrc`/`~/.zshrc` — the rc files stay machine-owned, only the snippet is managed; `env.sh` carries shell extensions the managed tools need (PATH, `MEMSEARCH_DIR`), not general shell config, (6) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, (7) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
+The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) appends a one-time source line for `~/.agents/env.sh` to existing `~/.bashrc`/`~/.zshrc` — the rc files stay machine-owned, only the snippet is managed; `env.sh` carries shell extensions the managed tools need (PATH and tool-specific environment), not general shell config, (6) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, (7) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
 
 To install only selected top-level payloads, pass `--only` once per entry:
 
@@ -138,17 +137,55 @@ Auto-started daemons have no cwd or shell, so pin the var in the launcher instea
 
 Omit it (or point at `~/.claude-dev`) to get dev. Shell coverage is bash/zsh (env.sh is POSIX, same as the rest of the repo).
 
-### memsearch bootstrap (per machine)
+### Shared agent memory
 
-`home/.claude/settings.shared.json` enables the memsearch plugin and wires a SessionStart hook that runs `patches/memsearch/apply.sh` (idempotent, fast no-op once patched). The hook patches the installed plugin: PreCompact transcript capture, flock-guarded markdown writes, and a Milvus flush fix (upstream bug #534). To make memsearch actually function on a fresh machine, run once:
+Hindsight shares project memories across Claude Code, Codex CLI, OMP, and Omnigent's native Claude/Codex sessions. Hindsight does not install automatically with Omnigent; its native Codex runner bridges user hooks/config into a private `CODEX_HOME`, while native Claude inherits user settings unless its config home is overridden.
+
+Install the official hooks after installing Node.js and `uv`:
 
 ```sh
-~/.dotagents/patches/memsearch/bootstrap.sh
+npx @vectorize-io/hindsight-coding-agents install claude-code codex --server daemon
 ```
 
-It (a) installs `memsearch` via `uv tool install`, (b) writes `~/.memsearch/standalone/docker-compose.yml` (Milvus + etcd, relative volumes), (c) brings the stack up via `docker compose up -d`. Idempotent; safe to re-run.
+The server and embedded database stay on this machine. Session capture sends conversation text to the existing OpenAI Codex OAuth provider for extraction, not to Hindsight Cloud. After installing the hooks, set private `~/.hindsight/coding-agent.json` to use the bounded local service rather than letting each hook start an uncapped daemon:
 
-Requirements: `uv` (https://docs.astral.sh/uv/), running Docker daemon, `python3`, `flock` (Linux: built-in; macOS: `brew install flock`). After bootstrap, restart Claude Code so the SessionStart hook applies the patches.
+```json
+{
+  "serverMode": "self-hosted",
+  "apiUrl": "http://127.0.0.1:9077",
+  "autoUpdate": false,
+  "autoSeed": false,
+  "gitIngest": "none",
+  "codebaseSurvey": false,
+  "bankIdTemplate": "coding-agent-{gitProject}",
+  "maxParallelRetains": 2,
+  "retainSessions": true
+}
+```
+
+Set the private `~/.hindsight/profiles/coding-agent.env` for the local service:
+
+```sh
+HINDSIGHT_API_LLM_PROVIDER=openai-codex
+HINDSIGHT_API_LLM_MODEL=gpt-6-astra
+HINDSIGHT_API_RERANKER_PROVIDER=rrf
+HINDSIGHT_API_WORKER_MAX_SLOTS=2
+HINDSIGHT_API_WORKER_CONSOLIDATION_RESERVED_SLOTS=1
+HINDSIGHT_API_RETAIN_MEMORY_BUDGET_MB=64
+HINDSIGHT_API_DB_POOL_MIN_SIZE=2
+HINDSIGHT_API_DB_POOL_MAX_SIZE=20
+OMP_NUM_THREADS=2
+OPENBLAS_NUM_THREADS=2
+MKL_NUM_THREADS=2
+NUMEXPR_NUM_THREADS=2
+HINDSIGHT_API_DATABASE_URL=pg0://hindsight-embed-coding-agent
+HINDSIGHT_API_HOST=127.0.0.1
+HINDSIGHT_API_PORT=9077
+```
+
+The local reranker is disabled to avoid loading a second ML model; retrieval uses rank fusion instead. The existing local embedding model remains unchanged so stored vectors stay compatible. On Linux, run `uvx hindsight-api@0.10.1 --host 127.0.0.1 --port 9077` under a user systemd service with `EnvironmentFile=%h/.hindsight/profiles/coding-agent.env`, `MemoryMax=2G`, and `CPUQuota=150%`. Include the embedded PostgreSQL child in the same service cgroup. Enable the service for startup; `serverMode: self-hosted` prevents hooks from restarting an uncapped daemon if it stops. Claude's hooks pin the same provider and model in `settings.shared.json`. The Codex installer writes `~/.codex/hooks.json` outside dotagents: prefix each Hindsight hook command with `env HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6-astra`, then trust the changed hooks in Codex.
+
+OMP uses the same daemon and a per-repository bank. Its `home/.omp/agent/config.yml` sets `memory.backend: hindsight`, `hindsight.apiUrl: http://127.0.0.1:9077`, `hindsight.bankId: coding-agent`, and `hindsight.scoping: per-project`; for example, `~/dev/trinity` resolves to `coding-agent-trinity` in both integrations.
 
 ### pixelrag bootstrap (per machine)
 
@@ -199,7 +236,7 @@ Cloud sessions run in an ephemeral container, so dotagents re-applies the user b
 
 **How it fits together.** The harness runs the environment's setup script before Claude Code launches. `bin/remote-setup.sh` runs `dotagents install --profile remote`, writing user-scope settings and hooks. The repository setup installs and compiles its own APM dependencies. The harness keeps git-identity and stop-gate hooks in a separate layer; Claude Code merges hooks across layers.
 
-**The `remote` profile (`settings.remote.json`)** disables `memsearch` because the container has no persistent Milvus store. It also disables local development plugins and sets `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1`. Shared bootstrap hooks stay wired but self-guard to a silent no-op when their infrastructure is absent.
+**The `remote` profile (`settings.remote.json`)** disables local development plugins and sets `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1`. Shared bootstrap hooks stay wired but self-guard to a silent no-op when their infrastructure is absent.
 
 **Delivery — private repos need the harness credential.** A fresh container can clone *public* GitHub repos directly (the default **Trusted** network policy allowlists `github.com`), so public marketplace plugins install with no extra config. A *private* repo can only be cloned with the scoped credential the harness wires for repos **added to the environment** — a plain `git clone` or `raw.githubusercontent` fetch of a private repo fails in the sandbox. So:
 

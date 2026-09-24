@@ -4,8 +4,7 @@
 #
 # Installs the `pixelshot` binary that the pixelbrowse@pixelrag-plugins skill
 # shells out to, into an isolated uv tool env (not the README's global
-# `pip install pixelrag`, which pollutes the system Python) — same uv-tool
-# convention as memsearch here.
+# `pip install pixelrag`, which pollutes the system Python).
 #
 # Browser: pixelshot's default cdp backend launches its own headless browser
 # from $CHROME_PATH. Its bundled auto-download is linux-x64 only, so on macOS
