@@ -60,7 +60,23 @@ class LauncherTests(unittest.TestCase):
         return launcher.read_json(self.state / name)
 
     def approve(self, **changes):
-        self.put("approved.json", {**self.approval, **changes})
+        approved = {**self.approval, **changes}
+        self.put("approved.json", approved)
+        review = {"verdict": "SAFE", "reviewed": True, "chunk_id": "chunk-001-of-001",
+                  "source_sha256": "e" * 64, "risks": [], "breaking_changes": [], "features": [],
+                  "uncertainties": [], "capability_facts": []}
+        self.put("report.json", {"status": "APPROVED", "review_mode": "strict",
+                                 "target": {key: approved[key] for key in
+                                            ("version", "commit", "sha256", "size", "asset_url")},
+                                 "accepted_source": {"commit": self.old["commit"]},
+                                 "accepted_source_recorded": {"version": approved["version"],
+                                                              "commit": approved["commit"], "basis": "audited"},
+                                 "diff_sha256": "d" * 64, "ledger_sha256": "c" * 64,
+                                 "chunk_count": 1, "reviews": [review],
+                                 "coherence_review": {**review, "chunk_id": "whole-release",
+                                                      "source_sha256": "c" * 64,
+                                                      "resolved_concerns": [], "resolved_capabilities": []},
+                                 "risks": []})
         (self.state / "candidate").write_bytes(self.new_bytes)
         (self.state / "candidate").chmod(0o644)
 
@@ -88,6 +104,27 @@ class LauncherTests(unittest.TestCase):
         execute.assert_not_called()
         self.assert_old_held()
         self.assertIn("native", self.get("report.json")["summary"])
+
+    def test_lightweight_candidate_cannot_activate_after_strict_hold(self):
+        self.approve()
+        self.put("report.json", {"status": "APPROVED", "review_mode": "lightweight",
+                                 "target": self.approval, "summary": "No source review performed"})
+        with mock.patch.object(launcher, "smoke") as execute:
+            launcher.activate_if_ready()
+        execute.assert_not_called()
+        self.assert_old_held()
+
+    def test_incomplete_strict_approval_cannot_activate(self):
+        self.approve()
+        decision = self.get("report.json")
+        decision["reviews"] = []
+        self.put("report.json", decision)
+        with mock.patch.object(launcher, "smoke") as execute:
+            launcher.activate_if_ready()
+        execute.assert_not_called()
+        self.assert_old_held()
+
+
 
     def test_explicit_apply_activates_without_starting_session(self):
         self.approve()
@@ -162,7 +199,7 @@ class LauncherTests(unittest.TestCase):
 
     def test_valid_activation_commits_only_after_smoke(self):
         self.approve()
-        self.put("report.json", {"features": ["Useful feature"], "risks": [], "status": "APPROVED"})
+        self.put("report.json", {**self.get("report.json"), "features": ["Useful feature"]})
 
         def candidate_smoke(binary, expected):
             self.assertEqual(binary.read_bytes(), self.new_bytes)
@@ -178,6 +215,48 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(self.get("report.json")["features"], ["Useful feature"])
         for path in (self.root / "omp-rollback", self.root / "omp-staged", self.state / "approved.json", self.state / "candidate", self.state / "transaction.json"):
             self.assertFalse(path.exists(), str(path))
+
+    def test_audit_report_above_two_megabytes_can_activate(self):
+        self.approve()
+        decision = self.get("report.json")
+        decision["chunk_findings"] = [{"resolution": "n" * (2 * 1024 * 1024)}]
+        self.put("report.json", decision)
+        with mock.patch.object(launcher, "smoke"):
+            launcher.activate_if_ready()
+        self.assertEqual(self.get("installed.json"), self.new)
+
+    def test_explicit_user_acceptance_remains_activatable(self):
+        self.approve()
+        held = self.get("report.json")
+        held["coherence_review"]["verdict"] = "HOLD"
+        held.update(status="HOLD", risks=["Risk accepted by the user"])
+        raw = (json.dumps(held, indent=2, ensure_ascii=True) + "\n").encode()
+        digest = self.sha(raw)
+        evidence = self.state / "evidence" / self.new["version"]
+        evidence.mkdir(parents=True)
+        (evidence / f"accepted-report-{digest}.json").write_bytes(raw)
+        (evidence / f"accepted-report-{digest}.json").chmod(0o600)
+        held.update(status="ACCEPTED", approval_basis="user-accepted",
+                    acceptance={"basis": "user-accepted", "target": held["target"],
+                                "base_sha256": self.old["sha256"], "report_sha256": digest,
+                                "findings": ["Risk accepted by the user"]})
+        self.put("report.json", held)
+        with mock.patch.object(launcher, "smoke"):
+            launcher.activate_if_ready()
+        self.assertEqual(self.get("installed.json"), self.new, self.get("report.json")["summary"])
+
+    def test_acceptance_without_review_digest_cannot_activate(self):
+        self.approve()
+        decision = self.get("report.json")
+        decision.update(status="ACCEPTED", approval_basis="user-accepted",
+                        acceptance={"basis": "user-accepted", "target": decision["target"],
+                                    "base_sha256": self.old["sha256"]})
+        self.put("report.json", decision)
+        with mock.patch.object(launcher, "smoke") as execute:
+            launcher.activate_if_ready()
+        execute.assert_not_called()
+        self.assert_old_held()
+
 
     def test_smoke_failure_never_replaces_last_known_good(self):
         self.approve()

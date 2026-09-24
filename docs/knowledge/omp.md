@@ -204,6 +204,11 @@ separate `user-accepted` record under `evidence/VERSION/`; the model verdict sta
 HOLD. Source trust advances for the next delta, but the exception cannot authorize
 another artifact or future finding. `ACCEPTED` means staged, not yet installed.
 
+After installation, `CURRENT` means the GitHub artifact is current, not that
+the source review became SAFE. `report.json.installed_acceptance` and its
+version-labelled baseline risks retain the accepted findings across background
+checks and interrupted reviews; the exact HOLD report stays in `evidence/VERSION/`.
+
 The audit used to be triggered through a systemd user unit; it is now a detached
 child process (`request_audit` in `launcher.py`) — the audit serializes itself
 with its own lock and daily interval, so the unit bought nothing.
