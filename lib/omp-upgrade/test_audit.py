@@ -1,4 +1,5 @@
 """Deterministic fail-closed boundary tests; no network or model calls."""
+import collections
 import contextlib
 import hashlib
 import io
@@ -19,7 +20,8 @@ DIFF = "diff --git a/example.py b/example.py\n--- a/example.py\n+++ b/example.py
 def verdict(**overrides):
     value = {"verdict": "SAFE", "reviewed": True, "chunk_id": "chunk-001-of-001",
              "source_sha256": hashlib.sha256(DIFF.encode()).hexdigest(), "risks": [],
-             "breaking_changes": [], "features": ["Changes public example value"], "uncertainties": []}
+             "breaking_changes": [], "features": ["Changes public example value"], "uncertainties": [],
+             "capability_facts": []}
     value.update(overrides)
     return value
 
@@ -121,15 +123,15 @@ class VerdictTests(unittest.TestCase):
         self.assertEqual(audit.compact_json_path(("a/b", 0, {"id": "x/y~z"})), '/k:a~1b/i:0/@["id","x~1y~0z"]')
 
     def test_semantic_diff_preserves_container_removal_and_number_lexemes(self):
-        removed = audit.semantic_json_diff("catalog.json", b'{"rows":[[1]]}', b'{"rows":[]}')
-        retained = audit.semantic_json_diff("catalog.json", b'{"rows":[[1]]}', b'{"rows":[[]]}')
-        self.assertIn('["remove-container","/k:rows/i:0","array",1]', removed)
-        self.assertNotIn('["remove-container","/k:rows/i:0","array",1]', retained)
+        removed = audit.semantic_json_diff("catalog.json", b'{"paths":[[1]]}', b'{"paths":[]}')
+        retained = audit.semantic_json_diff("catalog.json", b'{"paths":[[1]]}', b'{"paths":[[]]}')
+        self.assertIn('["remove-container","/k:paths/i:0","array",1]', removed)
+        self.assertNotIn('["remove-container","/k:paths/i:0","array",1]', retained)
         self.assertNotEqual(removed, retained)
-        self.assertIn('["change","/k:value","#0","#-0"]', audit.semantic_json_diff(
-            "catalog.json", b'{"value":0}', b'{"value":-0}'))
-        self.assertIn('["change","/k:value","#0.0","#-0.0"]', audit.semantic_json_diff(
-            "catalog.json", b'{"value":0.0}', b'{"value":-0.0}'))
+        self.assertIn('["change","/k:token","#0","#-0"]', audit.semantic_json_diff(
+            "catalog.json", b'{"token":0}', b'{"token":-0}'))
+        self.assertIn('["change","/k:token","#0.0","#-0.0"]', audit.semantic_json_diff(
+            "catalog.json", b'{"token":0.0}', b'{"token":-0.0}'))
 
     def test_numeric_and_string_keyed_order_remains_type_sensitive(self):
         before = b'[{"id":1},{"id":"1"}]'
@@ -138,19 +140,19 @@ class VerdictTests(unittest.TestCase):
             audit.strict_json(before, preserve_numbers=True),
             audit.strict_json(after, preserve_numbers=True))], ["order", "order"])
         numeric_reorder = audit.semantic_json_diff(
-            "catalog.json", b'[{"id":1},{"id":2}]', b'[{"id":2},{"id":1}]')
+            "catalog.json", b'{"hosts":[{"id":1},{"id":2}]}', b'{"hosts":[{"id":2},{"id":1}]}')
         self.assertIn('"#2"', numeric_reorder)
         records = list(audit.json_order_side((), "value", 0, [audit.JSONNumber("1")] * 2000))
         self.assertTrue(records)
         self.assertTrue(all(len(json.dumps(["order", "", "value", 0, audit.json_semantic_value(record["items"])],
                                            ensure_ascii=True, separators=(",", ":")).encode()) <= audit.MAX_JSON_RECORD
                             for record in records))
-        self.assertIn('["change","/k:value","##literal","##next"]', audit.semantic_json_diff(
-            "catalog.json", b'{"value":"#literal"}', b'{"value":"#next"}'))
+        self.assertIn('["change","/k:token","##literal","##next"]', audit.semantic_json_diff(
+            "catalog.json", b'{"token":"#literal"}', b'{"token":"#next"}'))
 
     def test_oversized_json_blob_is_compacted_with_separate_bound(self):
-        before = b'{"padding":"' + b'a' * (1024 * 1024 + 1) + b'","route":"old"}'
-        after = before.replace(b'"route":"old"', b'"route":"new"')
+        before = b'{"padding":"' + b'a' * (1024 * 1024 + 1) + b'","endpoint":"old"}'
+        after = before.replace(b'"endpoint":"old"', b'"endpoint":"new"')
         patch = ("diff --git a/catalog.json b/catalog.json\nold mode 100644\nnew mode 100755\n"
                  "index " + "0" * 40 + ".." + "1" * 40 + "\n--- a/catalog.json\n+++ b/catalog.json\n"
                  "@@ -1 +1 @@\n+" + "x" * (audit.MAX_CHUNK + 1) + "\n")
@@ -162,7 +164,7 @@ class VerdictTests(unittest.TestCase):
         with mock.patch.object(audit, "manifest_blob", side_effect=blob):
             compacted = audit.compact_large_json_patches(patch, {"commit": "base"}, {"commit": "target"})
         self.assertLess(len(compacted.encode()), audit.MAX_CHUNK)
-        self.assertIn('["change","/k:route","old","new"]', compacted)
+        self.assertIn('["change","/k:endpoint","old","new"]', compacted)
         self.assertIn("old mode 100644", compacted)
         self.assertIn("new mode 100755", compacted)
         with mock.patch.object(audit, "MAX_STRUCTURED_JSON", 10), \
@@ -184,7 +186,7 @@ class VerdictTests(unittest.TestCase):
             audit.semantic_json_diff("catalog.json", b'{"a":1,"a":2}', b'{}')
 
     def test_semantic_expansion_is_incrementally_bounded(self):
-        after = json.dumps({"items": [0] * 10000}).encode()
+        after = json.dumps({"urls": [0] * 10000}).encode()
         with self.assertRaises(audit.Hold):
             audit.semantic_json_diff("large.json", None, after, max_bytes=4096)
         nested, current = {}, None
@@ -245,22 +247,16 @@ class VerdictTests(unittest.TestCase):
         with mock.patch.object(audit, "api_json", side_effect=replies), self.assertRaises(audit.Hold):
             audit.tag_commit("18.1.14")
 
-    def test_resolve_review_model_prefers_smol_role_then_falls_back_to_default(self):
+    def test_resolve_review_model_prefers_slow_role_then_falls_back_to_default(self):
         self.assertEqual(
-            audit.resolve_review_model("modelRoles:\n  smol: openai-codex/gpt-5.6-luna:high\n  default: openai-codex/gpt-6-astra\n"),
+            audit.resolve_review_model("modelRoles:\n  slow: openai-codex/gpt-5.6-luna:high\n  default: openai-codex/gpt-6-astra\n"),
             "openai-codex/gpt-5.6-luna:high")
         self.assertEqual(
             audit.resolve_review_model("modelRoles:\n  default: openai-codex/gpt-6-astra\n"),
             "openai-codex/gpt-6-astra")
-        self.assertEqual(
-            audit.resolve_review_model("modelRoles:\n  smol: openai-codex/gpt-6-luna:auto\n"),
-            "openai-codex/gpt-6-luna:auto")
-        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna:auto"),
-                         "openai-codex/gpt-6-luna:high")
-        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna"),
-                         "openai-codex/gpt-6-luna:high")
-        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna:low"),
-                         "openai-codex/gpt-6-luna:low")
+        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna:auto"), "openai-codex/gpt-6-luna:low")
+        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna"), "openai-codex/gpt-6-luna:low")
+        self.assertEqual(audit.pin_review_effort("openai-codex/gpt-6-luna:high"), "openai-codex/gpt-6-luna:high")
         with self.assertRaises(audit.Hold):
             audit.resolve_review_model("modelRoles:\n  task: openai-codex/gpt-5.6-luna:xhigh\n")
 
@@ -322,6 +318,10 @@ class StateTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         audit.save_source_baseline(BASE["version"], BASE["commit"], "user-accepted", "test", "Explicit fixture trust")
+        # Tree inventory needs a real git repository; these tests exercise the flow around it.
+        patcher = mock.patch.object(audit, "capability_plan", return_value=([], collections.defaultdict(list)))
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
 
     def test_large_json_and_small_code_change_reach_model_review(self):
@@ -338,7 +338,7 @@ class StateTests(unittest.TestCase):
         def review(source, chunk_id, *args, **kwargs):
             value = verdict(chunk_id=chunk_id, source_sha256=hashlib.sha256(source.encode()).hexdigest())
             if kwargs.get("coherence"):
-                value["resolved_concerns"] = []
+                value["resolved_concerns"] = value["resolved_capabilities"] = []
             return value
 
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
@@ -503,7 +503,7 @@ class StateTests(unittest.TestCase):
         report = audit.now_report()
         def review(source, chunk_id, inventory, notes, identities, evidence, **kwargs):
             if kwargs.get("coherence"):
-                self.assertEqual(source, complete)
+                self.assertEqual(source, audit.release_ledger("e" * 40, [], complete))
                 self.assertEqual(len(kwargs["prior_reviews"]), 2)
                 self.assertEqual(len(kwargs["concerns"]), 2)
                 self.assertTrue(all(item["verdict"] == "HOLD" for item in kwargs["prior_reviews"]))
@@ -638,7 +638,8 @@ class AcceptanceTests(unittest.TestCase):
         target = {**audit.release_identity(release()), "commit": "e" * 40}
         chunk = verdict(verdict="HOLD", risks=["example.py:1 changed behavior"])
         whole = verdict(chunk_id="whole-release", verdict="HOLD", risks=["example.py:1 changed behavior"],
-                        resolved_concerns=[])
+                        resolved_concerns=[], resolved_capabilities=[],
+                        source_sha256=hashlib.sha256(audit.release_ledger("e" * 40, [], DIFF).encode()).hexdigest())
         report = audit.now_report()
         report.update(status="HOLD", target=target, version=target["version"], reviews=[chunk],
                       coherence_review=whole, diff_sha256=hashlib.sha256(DIFF.encode()).hexdigest(),
@@ -769,7 +770,7 @@ class ContextReuseTests(unittest.TestCase):
 
     def test_supplemental_context_invalidates_only_matching_final_review(self):
         stream = model_stream(content=[{"type": "text", "text": json.dumps(
-            verdict(chunk_id="whole-release", resolved_concerns=[]))}])
+            verdict(chunk_id="whole-release", resolved_concerns=[], resolved_capabilities=[]))}])
         args = (DIFF, "whole-release", ["example.py"], "", {}, self.state)
         first = [{"path": "helper.py", "commit": "e" * 40, "source": "value = 1"}]
         second = [{"path": "helper.py", "commit": "e" * 40, "source": "value = 2"}]
@@ -780,6 +781,93 @@ class ContextReuseTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         payload = json.loads((self.state / "whole-release.input.txt").read_text())
         self.assertEqual(payload["untrusted_context_files"], second)
+
+
+class EvidenceGateTests(unittest.TestCase):
+    def test_every_assigned_capability_needs_an_acknowledgement(self):
+        good = verdict(capability_facts=[{"id": "host:new.example", "assessment": "Docs link, never fetched"}])
+        audit.parse_verdict(json.dumps(good), good["chunk_id"], good["source_sha256"], capability_ids=["host:new.example"])
+        for facts in ([], [{"id": "host:other.example", "assessment": "x"}], good["capability_facts"] * 2):
+            with self.subTest(facts=facts), self.assertRaises(audit.Hold):
+                audit.parse_verdict(json.dumps(verdict(capability_facts=facts)), good["chunk_id"], good["source_sha256"],
+                                    capability_ids=["host:new.example"])
+        whole = verdict(chunk_id="whole-release", resolved_concerns=[], resolved_capabilities=[])
+        with self.assertRaises(audit.Hold):
+            audit.parse_verdict(json.dumps(whole), "whole-release", whole["source_sha256"], [], ["host:new.example"])
+
+    def test_model_tool_use_holds(self):
+        stream = ('{"type":"tool_execution_start"}\n'.encode() + model_stream())
+        with self.assertRaises(audit.Hold):
+            audit.completion_text(stream, "openai-codex/gpt-6-astra")
+
+    def test_known_process_api_in_a_new_file_is_a_capability_change(self):
+        before = {"exec": {"spawn": ["a.ts:1"]}, "host": {"x.example": ["a.ts:2"]}}
+        after = {"exec": {"spawn": ["a.ts:1", "b.ts:9"]}, "host": {"x.example": ["a.ts:2", "b.ts:3"]}}
+        self.assertEqual([item["id"] for item in audit.inventory_delta(before, after)], ["exec:spawn@b.ts"])
+
+    def test_executable_or_undecodable_binary_holds(self):
+        for data in (b"\x7fELF" + b"\0" * 12, b"UTOK1\n" + b"\0" * 4 + b"\x7fELF", b"MZ" + b"\0" * 10):
+            with self.subTest(data=data), self.assertRaises(audit.Hold):
+                audit.binary_facts(data, "tokens.bin")
+        with self.assertRaises(audit.Hold):
+            audit.binary_facts(b"not zstd", "tokens.zst")
+
+    def test_oversized_hunk_splits_at_lines_without_loss(self):
+        patch = "diff --git a/big.txt b/big.txt\n--- /dev/null\n+++ b/big.txt\n@@ -0,0 +1,40 @@\n" + "".join(
+            f"+line {n:03d} {'x' * 20}\n" for n in range(40))
+        with mock.patch.object(audit, "MAX_CHUNK", 200):
+            chunks = audit.split_diff(patch)
+        self.assertGreater(len(chunks), 1)
+        self.assertTrue(all(chunk.startswith("continued-diff a/big.txt b/big.txt\n") for chunk in chunks[1:]))
+        with mock.patch.object(audit, "MAX_CHUNK", 200), self.assertRaises(audit.Hold):
+            audit.split_diff(patch.replace("+line 005", "+" + "y" * 300))
+
+    def test_module_bazel_accepts_in_repo_rules_but_not_new_modules(self):
+        before = '"""oh-my-pi docs"""\nmodule(name = "oh-my-pi")\nbazel_dep(name = "platforms", version = "1.1.0")\n'
+        after = ('"""omp docs"""\nmodule(name = "omp")\nbazel_dep(name = "platforms", version = "1.1.0")\n'
+                 'probe = use_repo_rule("//bazel/probe.bzl", "probe_repository")\nprobe(name = "probe")\n')
+        self.assertTrue(audit.module_bazel_safe(before, after))
+        for added in ('bazel_dep(name = "evil", version = "1.0")\n', 'x = use_repo_rule("@evil//:r.bzl", "r")\n',
+                      'other(name = "x")\n'):
+            with self.subTest(added=added), self.assertRaises(audit.Hold):
+                audit.module_bazel_safe(before, after + added)
+
+    def test_dependency_packages_hold_on_digest_mismatch_and_changed_binaries(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.side_effect = [b"payload", b""]
+        with mock.patch.object(audit, "open_public", return_value=response), self.assertRaises(audit.Hold):
+            audit.fetch_package("https://static.crates.io/crates/a/a-1.crate", "sha256", "0" * 64)
+        self.assertIn("+new\n", audit.package_patches("crates/a", {"src/lib.rs": b"old\n"}, {"src/lib.rs": b"new\n"})[0])
+        with self.assertRaises(audit.Hold):
+            audit.package_patches("crates/a", {"blob": b"\0a"}, {"blob": b"\0b"})
+        with self.assertRaises(audit.Hold):
+            audit.crates_io_packages(b'[[package]]\nname = "a"\nversion = "1"\nsource = "git+https://evil/a"\n')
+        with self.assertRaises(audit.Hold):
+            audit.public_url("https://evil.example/a.crate", "package")
+
+    def test_bazel_lock_accepts_rename_only_and_holds_on_foreign_archive(self):
+        def spec(url="https://static.crates.io/crates/a/1.0.0/download", build="# bazel mod show_repo 'oh-my-pi'\n"):
+            return {"repoRuleId": audit.HTTP_ARCHIVE, "attributes": {
+                "build_file_content": build, "remote_patch_strip": 0, "sha256": "1" * 64,
+                "strip_prefix": "a-1.0.0", "type": "tar.gz", "urls": [url]}}
+        def lock(crate):
+            return {"lockFileVersion": 1, "moduleExtensions": {audit.CRATE_EXTENSION: {"general": {
+                "bzlTransitiveDigest": "d", "usagesDigest": "u", "recordedInputs": [],
+                "generatedRepoSpecs": {"crates": {"repoRuleId": "hub", "attributes": {"contents": {}}},
+                                       "crates__a-1.0.0": crate}}}}}
+        renamed = spec(build="# bazel mod show_repo 'omp'\n")
+        foreign = spec(url="https://evil.example/crates/a/1.0.0/download")
+        cargo = b'[[package]]\nname = "local"\nversion = "1.0.0"\n'
+        def blobs(after):
+            data = {("base", audit.BAZEL_LOCK): json.dumps(lock(spec())).encode(),
+                    ("target", audit.BAZEL_LOCK): json.dumps(lock(after)).encode(), ("target", "Cargo.lock"): cargo}
+            return lambda commit, path, limit=None: data[(commit, path)]
+        with mock.patch.object(audit, "manifest_blob", side_effect=blobs(renamed)):
+            patch, new, old = audit.bazel_lock_evidence("base", "target", {audit.BAZEL_LOCK})
+        self.assertIn("1 existing crate repositories changed only by the project rename", patch)
+        self.assertEqual(new, set())
+        with mock.patch.object(audit, "manifest_blob", side_effect=blobs(foreign)), self.assertRaises(audit.Hold):
+            audit.bazel_lock_evidence("base", "target", {audit.BAZEL_LOCK})
 
 
 if __name__ == "__main__":
