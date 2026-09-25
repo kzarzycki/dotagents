@@ -6,7 +6,7 @@ from pathlib import Path
 GUARD = Path(__file__).resolve().parents[1] / "lib/postcheckout-guard.sh"
 
 
-def run_guard(tmp_path, config, pre_commit_exit):
+def run_guard(tmp_path, config, pre_commit_exit, extra_env=None):
     repo = tmp_path / "repo"
     repo.mkdir()
     if config is not None:
@@ -20,7 +20,7 @@ def run_guard(tmp_path, config, pre_commit_exit):
     result = subprocess.run(
         ["/bin/bash", str(GUARD), "0" * 40, "1" * 40, "1"],
         cwd=repo,
-        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}", **(extra_env or {})},
         capture_output=True,
         text=True,
     )
@@ -46,3 +46,9 @@ def test_opted_in_repo_delegates_and_never_fails_checkout(tmp_path):
     assert result.returncode == 0
     assert "--hook-type=post-checkout" in calls
     assert "exit 3" in result.stderr
+
+
+def test_parked_as_legacy_leaves_delegation_to_pre_commit(tmp_path):
+    config = "default_install_hook_types: [pre-commit, post-checkout]\n" + STAGELESS
+    result, calls = run_guard(tmp_path, config, 0, {"PRE_COMMIT_RUNNING_LEGACY": "1"})
+    assert result.returncode == 0 and calls == ""

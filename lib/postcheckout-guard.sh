@@ -13,6 +13,12 @@
 #       hook only breaks the tool that ran git. Warn and exit 0.
 # Deliberately no `set -e`.
 
+# Not when pre-commit's own hook called us: `pre-commit install` in an opted-in
+# repo parks this guard as post-checkout.legacy and runs it with
+# PRE_COMMIT_RUNNING_LEGACY=1 before delegating itself; delegating here too
+# makes pre-commit report "installed in migration mode".
+[ -z "${PRE_COMMIT_RUNNING_LEGACY:-}" ] || exit 0
+
 cfg=.pre-commit-config.yaml
 [ -f "$cfg" ] || exit 0
 grep -Eq '(^|[^[:alnum:]_-])post-checkout([^[:alnum:]_-]|$)' "$cfg" || exit 0
