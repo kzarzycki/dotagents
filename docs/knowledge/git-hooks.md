@@ -56,3 +56,14 @@ delegates to `pre-commit hook-impl` recurses, and pre-commit aborts the commit w
 pre-commit must skip that step when `PRE_COMMIT_RUNNING_LEGACY` is set (the guard
 does). Templated projects run `pre-commit install` from their mise postinstall, so
 this happens on every `mise install`, not just by hand.
+
+## A template-wide `post-checkout` runs every stage-less hook in every clone
+
+pre-commit runs a hook with no `stages:` at every hook type installed. So
+pre-commit's generated `post-checkout` in the template makes each clone of any
+pre-commit repo install that repo's linter envs, including clones that tools
+make for you (SwiftPM package checkouts, submodules). git turns the hook's exit
+status into the checkout's, so one failed env install fails the tool's
+checkout: `mlx-swift` (stage-less `cmake-format`) broke SwiftPM resolution.
+The template ships `lib/postcheckout-guard.sh` instead. It delegates only when
+the repo's config names `post-checkout`, and it always exits 0.
