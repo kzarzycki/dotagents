@@ -179,6 +179,10 @@ arm_precommit_hooks() {
   run mkdir -p "$tpl/hooks"
   run cp "$guard" "$tpl/hooks/pre-commit"
   run chmod +x "$tpl/hooks/pre-commit"
+  # post-checkout also fires in clones tools make (SwiftPM, submodules): the
+  # guard runs it only where the repo opted in, and never fails the checkout.
+  run cp "$REPO_ROOT/lib/postcheckout-guard.sh" "$tpl/hooks/post-checkout"
+  run chmod +x "$tpl/hooks/post-checkout"
   if [ "$(git config --global --get init.templateDir 2>/dev/null || true)" != "$tpl" ]; then
     run git config --global init.templateDir "$tpl"
     printf 'HOOKED: git init.templateDir -> %s (future clones)\n' "$tpl"
