@@ -7,7 +7,8 @@
 # containers). omnigent is a local agent runtime; remote sessions must have no
 # footprint, so this no-ops when CLAUDE_CODE_REMOTE=true.
 #
-#   1. Install the `omnigent` CLI via `uv tool install` if not already on PATH.
+#   1. Install the `omnigent` CLI from the kzarzycki/omnigent fork (branch
+#      `mine`, what the server runs) if not already on PATH.
 #   2. Ensure ~/.omnigent/ (0700) and seed ~/.omnigent/config.yaml from
 #      config.template.yaml ONLY if it's missing (omnigent owns the live file —
 #      it rewrites host_id + providers at runtime, so we never overwrite it and
@@ -38,6 +39,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OMNIGENT_DIR="$HOME/.omnigent"
 CONFIG_FILE="$OMNIGENT_DIR/config.yaml"
 TEMPLATE="$SCRIPT_DIR/config.template.yaml"
+# Git install: uv resolves the sibling omnigent-client/ui-sdk packages from the
+# repo; the PyPI release cannot, as its ==dev pins are not published.
+OMNIGENT_SOURCE="${OMNIGENT_SOURCE:-git+https://github.com/kzarzycki/omnigent@mine}"
 
 # --- (0b) Use the login-shell PATH ---
 # `omnigent host enable` bakes the CALLING process's PATH into the launchd plist
@@ -62,8 +66,8 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 if ! command -v omnigent >/dev/null 2>&1; then
-  echo "[omnigent-bootstrap] installing omnigent via uv..."
-  uv tool install omnigent
+  echo "[omnigent-bootstrap] installing omnigent from $OMNIGENT_SOURCE..."
+  uv tool install "omnigent @ $OMNIGENT_SOURCE"
 else
   echo "[omnigent-bootstrap] omnigent already installed ($(command -v omnigent)) — not upgrading"
 fi
