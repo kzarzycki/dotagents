@@ -62,7 +62,7 @@ DIFF_CONTEXT = 3
 # Bound individual records, nesting and quadratic order matching.
 MAX_JSON_RECORD, MAX_JSON_DEPTH, MAX_ORDER_ITEMS = 8 * 1024, 128, 4096
 MAX_NOTES, MAX_JSON, MAX_OUTPUT = 64 * 1024, 8 * 1024 * 1024, 4 * 1024 * 1024
-MAX_WHOLE_INPUT, MAX_DEPENDENCY_INPUT = 1024 * 1024, 12 * 1024 * 1024
+MAX_WHOLE_INPUT, MAX_DEPENDENCY_INPUT = 256 * 1024, 12 * 1024 * 1024
 MODEL_SECONDS = 240
 MAX_LEDGER, MAX_LEDGER_ENTRIES = 256 * 1024, 256
 REUSE_REVIEWS = True
@@ -86,6 +86,7 @@ LIMITATIONS = [
     "Only public upstream source changes are reviewed; this does not prove the downloaded binary was built from that source.",
     "New or worsened baseline risks, absent context, new unreviewed dependency code, or incomplete evidence block approval.",
     "The whole-release reviewer receives the deterministic capability ledger with source hunks, dependency changes, binary evidence and chunk findings, not the complete diff; the independent deterministic inventory is a compensating control.",
+    "The model reads only the risk surface: new capability sites, build-time code and obfuscated text. A hostile change using no new capability is not model-read; the release cooldown and OSV lookup compensate.",
 ]
 # Only source that ships in the omp binary blocks approval. Build/CI infrastructure, docs
 # and tests are still diffed and persisted as evidence, but a finding there is informational:
@@ -375,7 +376,8 @@ def blob_digest(data):
 
 PUBLIC_HOSTS = {False: {"api.github.com"},
                 True: {"github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"},
-                "package": {"static.crates.io", "registry.npmjs.org"}}
+                "package": {"static.crates.io", "registry.npmjs.org"},
+                "osv": {"api.osv.dev"}}
 
 
 def public_url(url, asset=False):
@@ -395,22 +397,26 @@ class PublicRedirect(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(request, fp, code, msg, headers, newurl)
 
 
-def open_public(url, asset=False):
+def open_public(url, asset=False, data=None):
     public_url(url, asset)
     # No netrc, GitHub token, ambient proxy, or user-configured opener.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), PublicRedirect(asset))
-    request = urllib.request.Request(url, headers={"User-Agent": "omp-upgrade-static-audit", "Accept": "application/vnd.github+json" if asset is False else "application/octet-stream"})
+    accept = "application/vnd.github+json" if asset is False else "application/json" if asset == "osv" else "application/octet-stream"
+    headers = {"User-Agent": "omp-upgrade-static-audit", "Accept": accept}
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(url, data=data, headers=headers)
     response = opener.open(request, timeout=25)
     public_url(response.geturl(), asset)
     return response
 
 
-def api_json(suffix):
+def api_json(suffix, kind=dict):
     with open_public(API + suffix) as response:
         data = response.read(MAX_JSON + 1)
     require(len(data) <= MAX_JSON, "GitHub metadata exceeds bound")
     value = strict_json(data)
-    require(isinstance(value, dict), "Expected GitHub metadata object")
+    require(isinstance(value, kind), "Unexpected GitHub metadata shape")
     return value
 
 
@@ -432,6 +438,56 @@ def release_identity(value):
     require(type(size) is int and MIN_ASSET <= size <= MAX_ASSET, "Asset size outside bound")
     require(isinstance(digest, str) and digest.startswith("sha256:") and SHA.fullmatch(digest[7:]), "Missing authoritative asset SHA256")
     return {"version": version, "size": size, "sha256": digest[7:], "asset_url": url}
+
+
+SETTINGS = HOME / ".config/omp-upgrade/settings.json"
+DEFAULT_COOLDOWN_DAYS = 7
+
+
+def cooldown_days():
+    """Days a release must be public before it is reviewed: settings.json {"cooldown_days": N}.
+    Dependencies need no cooldown of their own: the lockfile pins them before the release exists."""
+    value = strict_json(read_bytes(SETTINGS, 4096)).get("cooldown_days", DEFAULT_COOLDOWN_DAYS) \
+        if SETTINGS.exists() else DEFAULT_COOLDOWN_DAYS
+    require(type(value) is int and 0 <= value <= 90, f"cooldown_days in {SETTINGS} must be an integer 0-90")
+    return value
+
+
+def release_cooled(metadata, version, now=None):
+    """Hold a release until it has been public long enough for others to find and report a hostile one."""
+    published = metadata.get("published_at")
+    require(isinstance(published, str), "Release publication time missing")
+    published = datetime.datetime.fromisoformat(published.replace("Z", "+00:00"))
+    days = cooldown_days()
+    ready = published + datetime.timedelta(days=days)
+    require((now or datetime.datetime.now(datetime.timezone.utc)) >= ready,
+            f"Cooldown: {version} published {published.date()}; eligible from {ready.date()} "
+            f"({days}-day cooldown, set cooldown_days in {SETTINGS})")
+
+
+def release_metadata(requested, installed):
+    """The requested release, else the newest stable release past its cooldown and never older than the
+    installed one; with a note naming the newest release still cooling down."""
+    if requested:
+        metadata = api_json(f"/releases/tags/v{requested}")
+        if requested != installed:
+            release_cooled(metadata, requested)
+        return metadata, ""
+    stable = sorted(((tuple(map(int, item["tag_name"][1:].split("."))), item)
+                     for item in api_json("/releases?per_page=100", list)
+                     if isinstance(item, dict) and isinstance(item.get("tag_name"), str) and item["tag_name"].startswith("v")
+                     and VERSION.fullmatch(item["tag_name"][1:]) and item.get("draft") is False
+                     and item.get("prerelease") is False), key=lambda pair: pair[0])
+    floor, note = tuple(map(int, installed.split("."))), ""
+    for version, item in reversed(stable):
+        if version < floor:
+            break
+        try:
+            release_cooled(item, item["tag_name"][1:])
+            return item, note
+        except Hold as waiting:
+            note = note or str(waiting)
+    return api_json(f"/releases/tags/v{installed}"), note
 
 
 def tag_commit(version):
@@ -1506,10 +1562,39 @@ def dependency_source_review(base_commit, target_commit, paths):
         # Lazy: the repo-wide import search runs only for dev packages that actually ship a binary.
         return package_patches(f"{label}/{name}-{version}", old_files, new_files,
                                (lambda: unimported(name, target_commit)) if label == "npm" and name in dev_only else None)
+    for (ecosystem, name, version), ids in osv_advisories(
+            [("crates.io" if job[0] == "crates" else "npm", job[3][0], job[3][1]) for job in jobs]).items():
+        require(not any(item.startswith("MAL-") for item in ids),
+                f"Known-malicious dependency (OSV): {name} {version}: {' '.join(ids[:10])}")
+        patches.append(f"diff --git a/dependency/osv/{name}-{version} b/dependency/osv/{name}-{version}\n"
+                       f"WARNING osv-advisory {ecosystem} {name} {version}: {' '.join(ids[:20])}\n")
     with ThreadPoolExecutor(max_workers=REVIEW_WORKERS) as pool:
         for result in pool.map(review, jobs):
             patches.extend(result)
     return patches, cleared
+
+
+OSV_BATCH = "https://api.osv.dev/v1/querybatch"
+
+
+def osv_advisories(packages):
+    """{(ecosystem, name, version): [OSV ids]} for packages with any advisory; MAL- ids are known-malicious."""
+    found = {}
+    for start in range(0, len(packages), 1000):
+        batch = packages[start:start + 1000]
+        body = json.dumps({"queries": [{"package": {"ecosystem": ecosystem, "name": name}, "version": version}
+                                       for ecosystem, name, version in batch]}).encode()
+        with open_public(OSV_BATCH, asset="osv", data=body) as response:
+            data = response.read(MAX_JSON + 1)
+        require(len(data) <= MAX_JSON, "OSV response exceeds bound")
+        results = strict_json(data).get("results")
+        require(isinstance(results, list) and len(results) == len(batch), "Incomplete OSV response")
+        for package, result in zip(batch, results):
+            ids = [item.get("id") for item in (result or {}).get("vulns", [])]
+            require(all(isinstance(item, str) for item in ids), "Malformed OSV advisory id")
+            if ids:
+                found[package] = ids
+    return found
 
 
 def source_diff(base, target):
@@ -1624,28 +1709,157 @@ def chunk_paths(chunk):
     return set(re.findall(r"(?m)^(?:diff --git|continued-diff) a/(\S+) b/", chunk))
 
 
-def capability_plan(base_commit, target_commit, chunks):
-    """Deterministic capability delta, each id assigned to every chunk that shows one of its sites."""
+def capability_delta(base_commit, target_commit):
     include = lambda path: not INFORMATIONAL.match(path)
-    delta = inventory_delta(tree_inventory(base_commit, include), tree_inventory(target_commit, include))
+    return inventory_delta(tree_inventory(base_commit, include), tree_inventory(target_commit, include))
+
+
+def capability_plan(delta, chunks):
+    """Each capability delta id assigned to every chunk that shows one of its sites."""
     assignment = {}
     for index, chunk in enumerate(chunks, 1):
         paths = chunk_paths(chunk)
         assignment[f"chunk-{index:03d}-of-{len(chunks):03d}"] = [
             item["id"] for item in delta if any(site_path(site) in paths for site in item["sites"])]
-    return delta, assignment
+    return assignment
 
 
-def release_ledger(target_commit, delta, diff):
-    """Whole-release input: what changed in capability, dependency and binary terms, not the diff itself."""
+# The model reads only where a supply-chain change can act: new capability sites, build-time
+# code and obfuscated text. The rest of the diff is checked deterministically and kept as evidence.
+# ponytail: a hostile change using no new capability (a subtle logic change, an already-used host)
+# is not model-read; the release cooldown and the OSV lookup are its compensating controls.
+SURFACE_RADIUS, MAX_SURFACE, MAX_SURFACE_LINE = 12, 352 * 1024, 2048
+CAPABILITY = re.compile(CAPABILITY_PATTERN)
+CARGO_BUILD = re.compile(r'(?i)^\s*(?:build\s*=\s*"|links\s*=)|proc-macro\s*=\s*true')
+BAZEL_FETCH = re.compile(r"(?i)download|execute\s*\(|http_archive|http_file|git_repository|repository_rule|\burls?\s*=")
+OBFUSCATED = re.compile(r"[A-Za-z0-9+/]{160,}={0,2}|(?:\\x[0-9a-fA-F]{2}){32,}|[‪-‮⁦-⁩]")
+# Deterministically verified above: every new lockfile entry is a pinned registry package reviewed here.
+LOCKFILES = {"Cargo.lock", "bun.lock"}
+# The Bazel lock's generated BUILD rules: labels and crate_universe boilerplate are checked above;
+# what can still run or link something at build time is read.
+BAZEL_LOCK_RISK = re.compile(r'genrule|run_binary|\bcmd\s*=|build_script_env|"-[CLl]|"--codegen|link-arg|linkopts')
+PATCH_HEADER = ("diff --git ", "index ", "--- ", "+++ ", "new file mode ", "deleted file mode ", "old mode ", "new mode ",
+                "semantic-json-diff ", "vendored-from-pinned-crate ")
+# Prose, a crate's own lockfile (unused when it is a dependency) and manifest metadata links carry no capability.
+PROSE = re.compile(r"(?i)(?:^|/)(?:readme|changelog|license|copying|authors|notice)[^/]*$|\.(?:md|txt|html?|rst|adoc)$"
+                   r"|(?:^|/)Cargo\.(?:lock|toml\.orig)$")
+COMMENT = re.compile(r"\s*(?://|/\*|\*|<!--|#(?![\[!]))")
+
+
+def line_items(path, line):
+    """Capabilities one added dependency line brings; matches inside an identifier are not calls."""
+    if PROSE.search(path) or COMMENT.match(line):
+        return set()
+    found, word = set(), lambda char: char.isalnum() or char == "_"
+    for match in CAPABILITY.finditer(line):
+        if word(line[match.start() - 1:match.start()] or " ") or word(line[match.end():match.end() + 1] or " "):
+            continue
+        for kind, item in capability_items(path, match[0]):
+            # In Rust, spawn( is threads and tasks and eval( an ordinary fn; processes start with
+            # Command::new and dynamic code needs a loader.
+            if (kind, Path(path).name) not in {("host", "Cargo.toml"), ("host", "package.json")} \
+                    and not (kind == "exec" and path.endswith(".rs") and item != "command::new") \
+                    and not (kind == "dynamic_code" and path.endswith(".rs") and item in {"eval", "import", "require"}):
+                found.add((kind, item))
+    return found
+
+
+def build_time(path, line):
+    name = Path(path).name
+    if name == "Cargo.toml":
+        return bool(CARGO_BUILD.search(line))
+    return name == "build.rs" or (name in {"MODULE.bazel", "BUILD.bazel", "BUILD"} or name.endswith(".bzl")) \
+        and bool(BAZEL_FETCH.search(line))
+
+
+def surface_patch(patch, flagged):
+    """Diff lines within SURFACE_RADIUS of a flagged added line or JSON record, as excerpt hunks; '' if none."""
+    lines = patch.splitlines(keepends=True)
+    start = next((index for index, line in enumerate(lines) if not line.startswith(PATCH_HEADER)), len(lines))
+    head, body = lines[:start], lines[start:]
+    semantic = any(line.startswith("semantic-json-diff ") for line in head)
+    hits, number = [], 0
+    for index, line in enumerate(body):
+        if line.startswith("@@ "):
+            match = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)", line)
+            number = int(match[1]) if match else 0
+            continue
+        added = semantic or line.startswith("+")
+        if added and flagged(None if semantic else number, line):
+            hits.append(index)
+        number += not semantic and not line.startswith("-")
+    keep = sorted({position for index in hits
+                   for position in range(max(0, index - SURFACE_RADIUS), min(len(body), index + SURFACE_RADIUS + 1))})
+    out, last = list(head), None
+    for index in keep:
+        if last is None or index != last + 1:
+            out.append("@@ excerpt @@\n")
+        line = body[index]
+        # ponytail: an over-long line is cut; the cut is marked and flagged lines are still shown.
+        out.append(line if len(line) <= MAX_SURFACE_LINE else line[:MAX_SURFACE_LINE] + f" [cut {len(line) - MAX_SURFACE_LINE} bytes]\n")
+        last = index
+    return "".join(out) if keep else ""
+
+
+def dependency_package(path):
+    parts = path.split("/")
+    return "/".join(parts[:4 if parts[2].startswith("@") else 3])
+
+
+def risk_surface(diff, delta):
+    """The part of the gated diff the model reads, and the largest contributors when it is over budget."""
+    patches = [(re.match(r"diff --git a/(\S+) ", patch)[1], patch)
+               for patch in re.split(r"(?=^diff --git )", diff, flags=re.MULTILINE)[1:]]
+    sites, items = collections.defaultdict(set), collections.defaultdict(set)
+    for entry in delta:
+        for site in entry["sites"]:
+            sites[site_path(site)].add(int(site.rsplit(":", 1)[1]))
+            items[site_path(site)].add(entry["item"].lower())
+    # A dependency capability is new unless the package's removed lines already had it.
+    removed = collections.defaultdict(set)
+    for path, patch in patches:
+        if path.startswith("dependency/"):
+            for line in patch.splitlines():
+                if line.startswith("-") and not line.startswith("---"):
+                    removed[dependency_package(path)].update(line_items(path, line[1:]))
+    out = []
+    for path, patch in patches:
+        if path in LOCKFILES:
+            continue
+        if path == BAZEL_LOCK:
+            new = lambda number, line: bool(BAZEL_LOCK_RISK.search(line))
+        elif path.startswith("dependency/"):
+            known = removed[dependency_package(path)]
+            new = lambda number, line: bool(line_items(path, line[1:]) - known)
+        else:
+            new = lambda number, line: number in sites[path] if number is not None else \
+                any(item in line.lower() for item in items[path])
+        excerpt = surface_patch(patch, lambda number, line: new(number, line) or build_time(path, line.removeprefix("+"))
+                                or bool(OBFUSCATED.search(line)))
+        if excerpt:
+            out.append((path, excerpt))
+    surface = "".join(excerpt for _, excerpt in out)
+    largest = sorted(out, key=lambda item: -len(item[1]))[:8]
+    require(len(surface.encode()) <= MAX_SURFACE,
+            f"Risk surface {len(surface.encode()) // 1024} KiB exceeds review budget {MAX_SURFACE // 1024} KiB; largest: "
+            + ", ".join(f"{path} {len(excerpt) // 1024} KiB" for path, excerpt in largest))
+    return surface
+
+
+def release_ledger(target_commit, delta, diff, surface):
+    """Whole-release input: what changed in capability, dependency and binary terms, not the diff itself.
+    Sources the chunk reviews read are cited by path; the lockfiles were verified deterministically."""
     ledger = {
-        "capability_delta": [dict(item, site_count=len(item["sites"]), sites=item["sites"][:20],
-                                  context=[site_context(target_commit, site, 8, item["item"]) for site in item["sites"][:3]])
+        "capability_delta": [dict(item, site_count=len(item["sites"]), sites=item["sites"][:5],
+                                  context=[site_context(target_commit, item["sites"][0], 6, item["item"])])
                              for item in delta],
         "binary_evidence": re.findall(r"(?m)^binary-blob-evidence .*$", diff),
-        "bazel_lock_evidence": [patch for patch in re.split(r"(?=^diff --git )", diff, flags=re.MULTILINE)[1:]
-                                if patch.startswith(f"diff --git a/{BAZEL_LOCK} b/{BAZEL_LOCK}\n")],
-        "reviewed_dependency_files": sorted(path for path in chunk_paths(diff) if path.startswith("dependency/")),
+        "deterministic_evidence": sorted(set(re.findall(
+            r"(?m)^(identical-to-pinned-crate|vendored-from-pinned-crate|regenerated-by-pinned-tree-sitter-cli"
+            r"|unbuilt-test-fixture|WARNING [a-z-]+)", diff))),
+        "model_read_files": sorted(chunk_paths(surface)),
+        "dependency_packages_changed": len({dependency_package(path) for path in chunk_paths(diff)
+                                            if path.startswith("dependency/")}),
     }
     return json.dumps(ledger, ensure_ascii=True, sort_keys=True)
 
@@ -2285,7 +2499,8 @@ def lightweight_release(report):
     requested = report.get("requested_version")
     require(requested is None or isinstance(requested, str) and VERSION.fullmatch(requested),
             "Invalid requested release version")
-    metadata = api_json(f"/releases/tags/v{requested}" if requested else "/releases/latest")
+    metadata, cooling = release_metadata(requested, base["version"])
+    report["waiting"] = cooling
     target = release_identity(metadata)
     target["commit"] = tag_commit(target["version"])
     signature = verify_binary_signature(REAL)
@@ -2298,7 +2513,7 @@ def lightweight_release(report):
         require(target["commit"] == base["commit"] and target["sha256"] == base["sha256"],
                 "Unchanged release version has changed source or binary identity")
         require(REAL.stat().st_size == target["size"], "Unchanged release asset size mismatch")
-        report.update(status="CURRENT", summary="Installed release matches the stable GitHub asset identity and signer; no source review performed.")
+        report.update(status="CURRENT", summary="Installed release matches the stable GitHub asset identity and signer; no source review performed. " + cooling)
         return
     require(target["commit"] != base["commit"] and target["sha256"] != base["sha256"],
             "New version reuses installed source or binary identity")
@@ -2315,7 +2530,8 @@ def audit_release(report):
     requested = report.get("requested_version")
     require(requested is None or isinstance(requested, str) and VERSION.fullmatch(requested),
             "Invalid requested release version")
-    metadata = api_json(f"/releases/tags/v{requested}" if requested else "/releases/latest")
+    metadata, cooling = release_metadata(requested, base["version"])
+    report["waiting"] = cooling
     notes = metadata.get("body")
     require(notes is None or isinstance(notes, str), "Malformed release notes")
     notes = notes or ""
@@ -2334,7 +2550,7 @@ def audit_release(report):
     if latest == current:
         require(target["commit"] == base["commit"] and target["sha256"] == base["sha256"], "Unchanged release version has changed source or binary identity")
         require(REAL.stat().st_size == target["size"], "Unchanged release asset size mismatch")
-        report.update(status="CURRENT", summary="Installed version matches the latest stable release; no model call or download.")
+        report.update(status="CURRENT", summary="Installed version is the newest release past its cooldown; no model call or download. " + cooling)
         return
     require(target["commit"] != base["commit"] and target["sha256"] != base["sha256"], "New version reuses installed source or binary identity")
     require(len(notes.encode()) <= MAX_NOTES, "Release notes too large to review completely")
@@ -2350,11 +2566,16 @@ def audit_release(report):
                                       for line in patch.splitlines() if line.startswith(("+- ", "+* ")))
     inventory = {"gated_files": [path for path, _ in gated], "informational_files": [path for path, _ in informational]}
     require(diff, "No shipped-runtime source changed; nothing the gate can review")
-    chunks = split_diff(diff)
+    report["features"].extend("Warning: " + line[8:] for line in complete.splitlines() if line.startswith("WARNING "))
+    delta = capability_delta(baseline["commit"], target["commit"])
+    surface = risk_surface(diff, delta)
+    chunks = split_diff(surface) if surface else []
     evidence = STATE / "evidence" / target["version"]
     private_dir(evidence)
     atomic_bytes(evidence / "complete.diff", complete.encode())
     atomic_bytes(evidence / "gated.diff", diff.encode())
+    atomic_bytes(evidence / "surface.diff", surface.encode())
+    report["surface_sha256"] = hashlib.sha256(surface.encode()).hexdigest()
     excluded = "".join(patch for _, patch in informational).encode()
     atomic_bytes(evidence / "informational.diff", excluded)
     atomic_bytes(evidence / "system-prompt.txt", SYSTEM.encode())
@@ -2377,7 +2598,7 @@ def audit_release(report):
     atomic_json(evidence / "context-files.json", context)
     report["dependency_evidence"] = cleared
     require(not report["risks"], "Dependency identity gate lacks external implementation evidence")
-    delta, assignment = capability_plan(baseline["commit"], target["commit"], chunks)
+    assignment = capability_plan(delta, chunks)
     report["capability_delta"] = delta
     report["capability_assignment"] = assignment
     identities = {"base": base, "accepted_source": {key: baseline[key] for key in ("version", "commit", "basis")},
@@ -2403,10 +2624,12 @@ def audit_release(report):
     report["risks"] = open_risks(concerns)
     require(persist_report(report), "Report exceeded bound; review held")
     require(len(report["reviews"]) == len(chunks), "Model review coverage is incomplete")
-    ledger = release_ledger(target["commit"], delta, diff)
+    ledger = release_ledger(target["commit"], delta, diff, surface)
     atomic_bytes(evidence / "whole-release-ledger.json", ledger.encode())
     report["ledger_sha256"] = hashlib.sha256(ledger.encode()).hexdigest()
-    coherence = review_chunk(ledger, "whole-release", inventory, notes, identities, evidence, coherence=True,
+    # The full file list stays in the report; the reviewer gets its size, and reads files via the ledger.
+    counts = {"gated_file_count": len(gated), "informational_file_count": len(informational)}
+    coherence = review_chunk(ledger, "whole-release", counts, notes, identities, evidence, coherence=True,
                              prior_reviews=list(report["reviews"]), concerns=concerns, dependency_evidence=cleared,
                              context_files=context, capability_deltas=delta)
     require(coherence["reviewed"] is True, "Whole-release review is incomplete; no verdict counts without complete coverage")
@@ -2434,10 +2657,10 @@ def audit_release(report):
     # Activating the binary stays the launcher's separate, digest-pinned decision.
     report["accepted_source_recorded"] = save_source_baseline(
         target["version"], target["commit"], "audited", "omp-upgrade audit gate",
-        f"Complete chunk and whole-release review of {base['version']} {base['commit']} -> "
+        f"Risk-surface and whole-release review of {base['version']} {base['commit']} -> "
         f"{target['version']} {target['commit']}; diff sha256 {report['diff_sha256']}, "
-        f"{len(chunks)} chunks, evidence {report['evidence_path']}")
-    report.update(status="APPROVED", summary="Complete source chunks and whole-release coherence passed both dependency and model gates; verified candidate staged. This is not binary attestation.")
+        f"surface sha256 {report['surface_sha256']}, {len(chunks)} chunks, evidence {report['evidence_path']}")
+    report.update(status="APPROVED", summary="Deterministic gates, risk-surface chunks and whole-release coherence passed; verified candidate staged. This is not binary attestation.")
 
 
 def check(force=False, version=None, context_paths=(), strict=False):
@@ -2497,7 +2720,7 @@ def check(force=False, version=None, context_paths=(), strict=False):
                 report.pop("installed_acceptance", None)
                 report["baseline_risks"] = BASELINE
             elif report["status"] == "CURRENT" and report.get("installed_version") == accepted_version:
-                report["summary"] = "Installed asset is current; source findings were user-accepted and remain listed below."
+                report["summary"] = "Installed asset is current; source findings were user-accepted and remain listed below. " + report.get("waiting", "")
         persist_report(report)
         print(json.dumps({key: report[key] for key in ("status", "version", "summary", "features")}, ensure_ascii=True))
         return 0 if report["status"] in ("CURRENT", "APPROVED") else 1
@@ -2586,8 +2809,11 @@ def accept_reviewed(version, commit, sha256, report_sha256, detail):
         complete, paths = source_diff(baseline, target)
         diff, _, _ = scope_diff(complete, paths)
         require(hashlib.sha256(diff.encode()).hexdigest() == report.get("diff_sha256"), "Reviewed source changed")
-        chunks = split_diff(diff)
-        delta, assignment = capability_plan(baseline["commit"], commit, chunks)
+        delta = capability_delta(baseline["commit"], commit)
+        surface = risk_surface(diff, delta)
+        require(hashlib.sha256(surface.encode()).hexdigest() == report.get("surface_sha256"), "Reviewed risk surface changed")
+        chunks = split_diff(surface) if surface else []
+        assignment = capability_plan(delta, chunks)
         reviews = report.get("reviews")
         require(isinstance(reviews, list) and len(reviews) == len(chunks), "Incomplete chunk coverage cannot be accepted")
         concerns = []
@@ -2598,7 +2824,7 @@ def accept_reviewed(version, commit, sha256, report_sha256, detail):
             require(parsed["reviewed"], "Incomplete chunk cannot be accepted")
             concerns.extend(chunk_concerns(parsed))
         coherence = parse_verdict(json.dumps(report.get("coherence_review")), "whole-release",
-                                  hashlib.sha256(release_ledger(commit, delta, diff).encode()).hexdigest(), concerns,
+                                  hashlib.sha256(release_ledger(commit, delta, diff, surface).encode()).hexdigest(), concerns,
                                   [item["id"] for item in delta])
         require(coherence["reviewed"], "Incomplete whole-release review cannot be accepted")
         risks, _ = dependency_risks(baseline, target, paths)
