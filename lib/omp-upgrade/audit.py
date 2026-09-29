@@ -2126,14 +2126,15 @@ def review_chunk(chunk, chunk_id, inventory, notes, identities, evidence_dir, *,
     capability_ids = [item["id"] for item in capability_deltas]
     source_sha256 = hashlib.sha256(chunk.encode()).hexdigest()
     prompt = {"chunk_id": chunk_id, "source_sha256": source_sha256, "identities": identities,
-              "accepted_baseline_risks": BASELINE, "changed_file_inventory": inventory,
-              "untrusted_release_notes": notes,
+              "accepted_baseline_risks": BASELINE, "untrusted_release_notes": notes,
               "untrusted_recorded_dependency_evidence": list(dependency_evidence),
               "review_scope": "whole-release coherence" if coherence else "complete individual chunk"}
     prompt["untrusted_release_ledger" if coherence else "untrusted_complete_diff_chunk"] = chunk
     if not coherence:
         prompt["untrusted_added_capability_deltas"] = list(capability_deltas)
     if coherence:
+        # Only the cross-file review needs every changed path; per chunk it doubled the input.
+        prompt["changed_file_inventory"] = inventory
         require(isinstance(prior_reviews, list) and prior_reviews, "Missing per-chunk evidence for whole-release review")
         prompt["untrusted_prior_chunk_reviews"] = prior_reviews
         prompt["untrusted_unresolved_chunk_concerns"] = list(concerns)
