@@ -111,6 +111,11 @@ else
   echo "[omnigent-bootstrap] $CONFIG_FILE exists — left untouched (omnigent owns it; may hold host_id/secrets)"
 fi
 
+# --- (3b) Updater, run daily by an Omnigent scheduled task ---
+mkdir -p "$HOME/.local/bin"
+install -m 0755 "$SCRIPT_DIR/update.sh" "$HOME/.local/bin/omnigent-update"
+echo "[omnigent-bootstrap] installed ~/.local/bin/omnigent-update"
+
 # --- (4) Host service ---
 if [ -n "$SERVER" ]; then
   echo "[omnigent-bootstrap] enabling host service for $SERVER..."
