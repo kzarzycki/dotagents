@@ -1108,6 +1108,72 @@ class EvidenceGateTests(unittest.TestCase):
         with self.assertRaises(audit.Hold):
             audit.dependency_source_reviewed("infra/r.bzl", b"a = 1\n", b"a = 2\n", "b", "t", set())
 
+    def test_dependency_binary_allowed_only_as_unreferenced_test_fixture(self):
+        blob = b"\x80\x02\0pickle"
+        patch = audit.package_patches("crates/c-1", {}, {"tests/t.pth": blob, "src/lib.rs": b'//! np.load("t.pth")\nfn a() {}',
+                                                           "Makefile": b"t.pth: x", "Cargo.toml": b'path = "tests/t.pth"'})
+        self.assertIn("unbuilt-test-fixture", "".join(patch))
+        for files in ({"src/t.pth": blob}, {"tests/t.pth": blob, "build.rs": b'include_bytes!("../tests/t.pth")'}):
+            with self.subTest(files=list(files)), self.assertRaises(audit.Hold):
+                audit.package_patches("crates/c-1", {}, files)
+
+    def test_piwp_prior_parses_completely_or_holds(self):
+        import struct
+
+        def piwp(deltas=(0, 1), words=b"a\nb\n", trailer=b""):
+            return (b"PIWP" + struct.pack("<5Id", 1, 2, 0, 1, 2, 3.0) + struct.pack("<2f", 1, 2) + b"\x01"
+                    + struct.pack("<3I", 2, 2, *deltas[:1]) + struct.pack("<I", deltas[1]) + struct.pack("<2f", 1, 1)
+                    + words + trailer)
+
+        self.assertEqual(audit.piwp_table(piwp(), "p")["bigrams"], 2)
+        for bad in (piwp(trailer=b"x"), piwp(deltas=(0, 5)), piwp(words=b"b\na\n"), piwp(words=b"a\n\x7fELF\n")):
+            with self.subTest(bad=bad[-12:]), self.assertRaises(audit.Hold):
+                audit.piwp_table(bad, "p")
+
+    def test_hub_allows_only_workspace_edition_entries(self):
+        audit.hub_contents_safe({"crates.bzl": ""}, {"crates.bzl": '    "crates/vendor/brush-parser": "2024",\n'
+            '    "crates/vendor/brush-parser": {\n        "cfg(target_os = \\"macos\\")": {\n        },\n        _COMMON_CONDITION: {\n            "bon": Label("//bon-3.10.1"),\n        },\n    },\n'
+            '"cfg(windows)": ["@@//bazel/triples:aarch64-pc-windows-msvc","@@//bazel/triples:x86_64-pc-windows-msvc"],'})
+        with self.assertRaises(audit.Hold):
+            audit.hub_contents_safe({"crates.bzl": ""}, {"crates.bzl": '"cfg(windows)": ["@@//evil:x"],'})
+        for line in ('"crates/x": "2024", rctx.execute(["sh"])', '"../x": "2024",', '"crates/x": { "y": run("z") },'):
+            with self.subTest(line=line), self.assertRaises(audit.Hold):
+                audit.hub_contents_safe({"crates.bzl": ""}, {"crates.bzl": line})
+
+    def test_dev_tooling_native_binary_warns_only_when_unreachable_and_unimported(self):
+        lock = json.dumps({"workspaces": {"": {"dependencies": {"app": "1"}, "devDependencies": {"lint": "1"}}},
+                           "packages": {"app": ["app@1", "", {"optionalDependencies": {"app-native": "1"}}, "sha512-a"],
+                                        "app-native": ["app-native@1", "", {}, "sha512-b"],
+                                        "lint": ["lint@1", "", {"optionalDependencies": {"lint-native": "1"}}, "sha512-c"],
+                                        "lint-native": ["lint-native@1", "", {}, "sha512-d"]}}).encode()
+        self.assertEqual(audit.npm_dev_only(lock), {"lint", "lint-native"})
+        binary = {"lint.node": b"\x7fELF\0"}
+        patch = audit.package_patches("npm/lint-native-1", {}, binary, lambda: True)
+        self.assertIn("WARNING dev-tooling-native-binary", patch[0])
+        for dev_only in (None, lambda: False):
+            with self.subTest(dev_only=dev_only), self.assertRaises(audit.Hold):
+                audit.package_patches("npm/lint-native-1", {}, binary, dev_only)
+
+    def test_vendored_crate_reviewed_as_difference_from_pinned_crate(self):
+        base, target = {"commit": "a" * 40}, {"commit": "b" * 40}
+        new = "diff --git a/crates/vendor/x/{0} b/crates/vendor/x/{0}\nnew file mode 100644\n+whole file\n"
+        blobs = {"src/lib.rs": b"fn a() {}\n", "src/extra.rs": b"fn b() {}\n", "src/parser.c": b"tables\n"}
+        crate = ("x", "1.0.0", {"src/lib.rs": b"fn a() {}\n", "src/extra.rs": b"fn c() {}\n"})
+        with mock.patch.object(audit, "manifest_blob", lambda commit, path, *_: blobs.get(path.removeprefix("crates/vendor/x/"))), \
+                mock.patch.object(audit, "pinned_vendor_crate", return_value=crate), \
+                mock.patch.object(audit, "regenerated_grammar", return_value={"src/parser.c": b"tables\n"}):
+            crates = {}
+            self.assertIn("identical-to-pinned-crate x-1.0.0", audit.vendored_patch(
+                "crates/vendor/x/src/lib.rs", new.format("src/lib.rs"), base, target, crates))
+            changed = audit.vendored_patch("crates/vendor/x/src/extra.rs", new.format("src/extra.rs"), base, target, crates)
+            self.assertIn("-fn c() {}", changed)
+            self.assertIn("+fn b() {}", changed)
+            self.assertIn("regenerated-by-pinned-tree-sitter-cli", audit.vendored_patch(
+                "crates/vendor/x/src/parser.c", new.format("src/parser.c"), base, target, crates))
+            crates["crates/vendor/x#grammar"] = {"src/parser.c": b"other\n"}
+            patch = new.format("src/parser.c")
+            self.assertEqual(audit.vendored_patch("crates/vendor/x/src/parser.c", patch, base, target, crates), patch)
+
 
 if __name__ == "__main__":
     unittest.main()

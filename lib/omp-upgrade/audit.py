@@ -2,6 +2,7 @@
 """Static public-source review gate. A model verdict is not binary attestation."""
 import argparse
 import base64
+import collections
 import contextlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime
@@ -11,6 +12,7 @@ import gzip
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -18,11 +20,13 @@ import re
 import selectors
 import signal
 import stat
+import struct
 import subprocess
 import tarfile
 import tempfile
 import time
 import tomllib
+import unicodedata
 import urllib.parse
 import urllib.request
 
@@ -913,14 +917,97 @@ def semantic_json_diff(path, before, after, *, max_bytes=MAX_SOURCE, extended_he
     return "".join(lines)
 
 
+VENDORED = re.compile(r"(crates/vendor/[A-Za-z0-9_.-]+)/(.+)\Z")
+
+
+def pinned_vendor_crate(directory, base, target):
+    """Files of the crates.io package a newly vendored crate replaces: same name and version,
+    pinned with a checksum in the installed release's Cargo.lock. None when there is no such pin."""
+    if manifest_blob(base["commit"], f"{directory}/Cargo.toml") is not None:
+        return None
+    package = tomllib.loads(manifest_blob(target["commit"], f"{directory}/Cargo.toml").decode("utf-8"))["package"]
+    pins = [item for item in crates_io_packages(manifest_blob(base["commit"], "Cargo.lock", MAX_DEPENDENCY_INPUT))
+            if item[:2] == (package["name"], package["version"])]
+    if not pins:
+        return None
+    name, version, checksum = pins[0]
+    return name, version, package_files(fetch_package(crate_url(name, version), "sha256", checksum), f"{name}-{version}")
+
+
+# A vendored tree-sitter grammar's generated C is reviewed as its reviewed src/grammar.json once this
+# pinned generator, run with no network, reproduces it byte for byte.
+TREE_SITTER_CLI = ("https://github.com/tree-sitter/tree-sitter/releases/download/v0.25.8/tree-sitter-linux-x64.gz",
+                   "c9d46697e3e5ae6900a39ad4483667d2ba14c8ffb12c3f863bcf82a9564ee19f")
+TREE_SITTER_OUTPUTS = ("src/parser.c", "src/node-types.json")
+EMPTY_IMAGE = "omp-audit-empty"
+
+
+def regenerated_grammar(directory, target):
+    """`tree-sitter generate` outputs for a vendored grammar, or {} when it cannot run here (holds)."""
+    grammar = manifest_blob(target["commit"], f"{directory}/src/grammar.json", MAX_SOURCE)
+    if grammar is None or platform.machine() != "x86_64" or not Path("/usr/bin/docker").exists():
+        return {}
+    cli = gzip.decompress(fetch_package(TREE_SITTER_CLI[0], "sha256", TREE_SITTER_CLI[1], asset=True))
+    environment = {"PATH": "/usr/bin:/bin", "HOME": str(HOME)}
+    with tempfile.TemporaryDirectory() as work:
+        root = Path(work)
+        (root / "src").mkdir()
+        (root / "src/grammar.json").write_bytes(grammar)
+        config = manifest_blob(target["commit"], f"{directory}/tree-sitter.json")
+        if config is not None:
+            (root / "tree-sitter.json").write_bytes(config)
+        (root / "ts").write_bytes(cli)
+        (root / "ts").chmod(0o500)
+        if run_bounded(["/usr/bin/docker", "image", "ls", "-q", EMPTY_IMAGE], root, environment, 30, 4096).strip() == b"":
+            run_bounded(["/usr/bin/docker", "import", "-", EMPTY_IMAGE], root, environment, 60, 4096, b"\0" * 10240)
+        # Host system libraries only; the grammar directory is the one writable mount.
+        run_bounded(["/usr/bin/docker", "run", "--rm", "--network", "none", "--read-only", "--cap-drop", "ALL",
+                     "--security-opt", "no-new-privileges", "--user", f"{os.getuid()}:{os.getgid()}",
+                     "-v", "/usr:/usr:ro", "-v", "/usr/lib:/lib:ro", "-v", "/usr/lib64:/lib64:ro",
+                     "-v", "/etc/ld.so.cache:/etc/ld.so.cache:ro", "-v", f"{root / 'ts'}:/ts:ro",
+                     "-v", f"{root}:/work", "-w", "/work", "--tmpfs", "/tmp", "-e", "HOME=/tmp",
+                     EMPTY_IMAGE, "/ts", "generate", "src/grammar.json"], root, environment, 300, 64 * 1024)
+        return {name: (root / name).read_bytes() for name in TREE_SITTER_OUTPUTS if (root / name).is_file()}
+
+
+def vendored_patch(path, patch, base, target, crates):
+    """A newly vendored copy of a pinned crate is reviewed as its difference from that crate."""
+    match = VENDORED.match(path)
+    if match and match[2] in TREE_SITTER_OUTPUTS:
+        key = f"{match[1]}#grammar"
+        if key not in crates:
+            crates[key] = regenerated_grammar(match[1], target)
+        vendored = manifest_blob(target["commit"], path, MAX_SOURCE)
+        if vendored is not None and crates[key].get(match[2]) == vendored:
+            return (f"diff --git a/{path} b/{path}\nregenerated-by-pinned-tree-sitter-cli 0.25.8 from "
+                    f"{match[1]}/src/grammar.json sha256={hashlib.sha256(vendored).hexdigest()}\n")
+    if not match or not re.search(r"(?m)^new file mode ", patch):
+        return patch
+    if match[1] not in crates:
+        crates[match[1]] = pinned_vendor_crate(match[1], base, target)
+    if crates[match[1]] is None:
+        return patch
+    name, version, files = crates[match[1]]
+    published, vendored = files.get(match[2]), manifest_blob(target["commit"], path, MAX_SOURCE)
+    if published == vendored:
+        return f"diff --git a/{path} b/{path}\nidentical-to-pinned-crate {name}-{version} sha256={hashlib.sha256(vendored).hexdigest()}\n"
+    if published is None or b"\0" in published or not is_utf8(published):
+        return patch
+    lines = difflib.unified_diff(published.decode().splitlines(keepends=True), vendored.decode().splitlines(keepends=True),
+                                 f"a/crates.io/{name}-{version}/{match[2]}", f"b/{path}", n=DIFF_CONTEXT)
+    return f"diff --git a/{path} b/{path}\nvendored-from-pinned-crate {name}-{version}\n" + \
+        "".join(line if line.endswith("\n") else line + "\n" for line in lines)
+
+
 def compact_large_json_patches(text, base, target):
     patches = re.split(r"(?=^diff --git )", text, flags=re.MULTILINE)
     require(patches[0] == "", "Missing complete diff header")
-    compacted, raw_size, gated_size = [], 0, 0
+    compacted, raw_size, gated_size, crates = [], 0, 0, {}
     for patch in patches[1:]:
         match = re.match(r"diff --git a/(\S+) b/(\S+)\n", patch)
         require(match and match.group(1) == match.group(2), "Unparseable or renamed diff header")
         path = match.group(1)
+        patch = vendored_patch(path, patch, base, target, crates)
         informational = bool(INFORMATIONAL.match(path))
         if path.endswith(".json") and not informational and len(patch.encode()) > MAX_CHUNK:
             extended_header = []
@@ -944,7 +1031,10 @@ def compact_large_json_patches(text, base, target):
 # records. Anything else, including a valid container holding an unknown payload,
 # stays opaque and holds. UTOK1 (pi-natives tokenizer rank tables): "UTOK1\n",
 # u32le slot count, then per slot a LEB128 length and that many token bytes.
-MAX_BINARY, MAX_ZSTD_DECODE = 2 * 1024 * 1024, 16 * 1024 * 1024
+# PIWP (pi-predict n-gram web prior, layout in crates/pi-predict/scripts/build-web-prior.ts):
+# counts, a dictionary bitmap, sorted bigram tables and two sorted word lists.
+MAX_BINARY, MAX_ZSTD_DECODE = 4 * 1024 * 1024, 16 * 1024 * 1024
+MAX_PIWP_WORDS, MAX_PIWP_ROWS, MAX_PIWP_WORD = 1 << 20, 1 << 22, 256
 MAX_UTOK_SLOTS, MAX_UTOK_TOKEN = 1 << 20, 1024
 EXECUTABLE_MAGICS = (b"\x7fELF", b"\x00asm", b"\xfe\xed\xfa\xce", b"\xce\xfa\xed\xfe",
                      b"\xfe\xed\xfa\xcf", b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe",
@@ -983,17 +1073,73 @@ def utok_table(data, path):
     return slots, filled, longest
 
 
+def piwp_table(data, path):
+    """Parse a complete PIWP v1 prior; return its record counts."""
+    require(data.startswith(b"PIWP") and len(data) >= 32, f"Unknown binary format: {path}")
+    version, words, extra, contexts, rows = struct.unpack_from("<5I", data, 4)
+    (total,) = struct.unpack_from("<d", data, 24)
+    require(version == 1 and 0 < words <= MAX_PIWP_WORDS and extra <= MAX_PIWP_WORDS
+            and contexts <= words + 1 and rows <= MAX_PIWP_ROWS and math.isfinite(total) and total >= 0,
+            f"PIWP header out of bounds: {path}")
+    offset = 32
+
+    def take(fmt, count):
+        nonlocal offset
+        size = struct.calcsize("<" + fmt) * count
+        require(offset + size <= len(data), f"Truncated PIWP table: {path}")
+        values = struct.unpack_from(f"<{count}{fmt}", data, offset)
+        offset += size
+        return values
+
+    require(all(math.isfinite(value) and value >= 0 for value in take("f", words)), f"PIWP count out of bounds: {path}")
+    bitmap = take("B", (words + 7) // 8)
+    require(words % 8 == 0 or bitmap[-1] >> (words % 8) == 0, f"PIWP dictionary padding set: {path}")
+    context = take("I", contexts)
+    followers = take("I", contexts)
+    require(all(a < b for a, b in zip(context, context[1:])) and all(item <= words for item in context),
+            f"PIWP contexts unordered or out of range: {path}")
+    require(all(followers) and sum(followers) == rows, f"PIWP follower counts inconsistent: {path}")
+    deltas = take("I", rows)
+    start = 0
+    for length in followers:
+        word = -1
+        for delta in deltas[start:start + length]:
+            word = delta if word < 0 else word + delta
+            require((word == delta or delta > 0) and word < words, f"PIWP follower out of range: {path}")
+        start += length
+    require(all(math.isfinite(value) and value >= 0 for value in take("f", rows)), f"PIWP bigram count out of bounds: {path}")
+
+    def word_list(count):
+        nonlocal offset
+        previous = None
+        for _ in range(count):
+            end = data.find(b"\n", offset, offset + MAX_PIWP_WORD + 1)
+            require(end > offset, f"PIWP word list truncated: {path}")
+            raw = data[offset:end]
+            text = raw.decode("utf-8", errors="strict")
+            require(all(char == "'" or unicodedata.category(char)[0] in "LM" for char in text)
+                    and (previous is None or previous < raw), f"PIWP word invalid or unordered: {path}")
+            previous, offset = raw, end + 1
+
+    word_list(words)
+    word_list(extra)
+    require(offset == len(data), f"Trailing bytes after PIWP table: {path}")
+    return {"words": words, "dictionary_words": extra, "contexts": contexts, "bigrams": rows}
+
+
 def binary_facts(data, path):
     require(len(data) <= MAX_BINARY, f"Binary payload exceeds review bound: {path}")
     decoded = zstd_decode(data, path) if path.endswith(".zst") else data
     for layer in (data, decoded):
         require(not layer.startswith((b"MZ", b"#!")), f"Executable magic in binary source: {path}")
     require(not any(magic in decoded for magic in EXECUTABLE_MAGICS), f"Executable magic in binary source: {path}")
+    facts = {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data),
+             "container": "zstd" if decoded is not data else "none", "decoded_size": len(decoded),
+             "decoded_sha256": hashlib.sha256(decoded).hexdigest()}
+    if decoded.startswith(b"PIWP"):
+        return {**facts, "format": "PIWP", **piwp_table(decoded, path)}
     slots, filled, longest = utok_table(decoded, path)
-    return {"sha256": hashlib.sha256(data).hexdigest(), "size": len(data), "format": "UTOK1",
-            "container": "zstd" if decoded is not data else "none", "decoded_size": len(decoded),
-            "decoded_sha256": hashlib.sha256(decoded).hexdigest(), "slots": slots,
-            "filled_slots": filled, "longest_token": longest}
+    return {**facts, "format": "UTOK1", "slots": slots, "filled_slots": filled, "longest_token": longest}
 
 
 def binary_blob_evidence(path, before_commit, target_commit):
@@ -1042,7 +1188,10 @@ HUB_LINE = re.compile(
     r"(?:|\)|#+|# @generated|# DO NOT MODIFY: This file is auto-generated by a crate_universe tool\. To"
     r"|# regenerate this file, run the following:|#|#     bazel mod show_repo 'omp'|alias\(|maybe\(|http_archive,"
     r"|(?:name|actual|sha256|type|strip_prefix) = S,|urls = \[S\],|build_file = Label\(S\),|tags = \[S\],"
-    r"|S: Label\(S\),|struct\(repo=S, is_dev_dep = False\),|package\(default_visibility = \[S\]\))\Z")
+    r"|S: Label\(S\),|S: \{|_COMMON_CONDITION: \{|\},?|struct\(repo ?= ?S, is_dev_dep = (?:True|False)\),|package\(default_visibility = \[S\]\))\Z")
+WORKSPACE_EDITION = re.compile(r'"crates/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)?": "20[0-9]{2}",')
+# cfg/triple condition -> in-repo platform labels only.
+PLATFORM_TRIPLES = re.compile(r'"(?:[a-z0-9_-]+|cfg\((?:[^"\\]|\\")*\))": \[(?:"@@//bazel/triples:[a-z0-9_-]+",?)+\],')
 CRATE_URL = re.compile(r"https://static\.crates\.io/crates/([A-Za-z0-9_-]+)/([0-9A-Za-z.+-]+)/download\Z")
 
 
@@ -1069,8 +1218,10 @@ def hub_contents_safe(before, after):
         for line in difflib.unified_diff(old.splitlines(), text.splitlines(), lineterm="", n=0):
             if line.startswith(("---", "+++", "@@")) or not line.startswith("+"):
                 continue
-            shape = re.sub(r'"[^"\s]*"', "S", line[1:].strip())
-            require(HUB_LINE.fullmatch(shape), f"Unexpected generated Bazel hub line in {path}: {line[:200]}")
+            shape = re.sub(r'"[^"\s]*"|"cfg\((?:[^"\\]|\\")*\)"', "S", line[1:].strip())
+            # Workspace-member edition entries (_CRATE_EDITIONS); the member's own source is reviewed as upstream code.
+            require(HUB_LINE.fullmatch(shape) or WORKSPACE_EDITION.fullmatch(line[1:].strip())
+                    or PLATFORM_TRIPLES.fullmatch(line[1:].strip()), f"Unexpected generated Bazel hub line in {path}: {line[:200]}")
             for url in re.findall(r'urls = \["([^"]*)"\]', line):
                 require(CRATE_URL.fullmatch(url), f"Bazel hub archive outside crates.io: {url}")
 
@@ -1165,9 +1316,9 @@ def bazel_lock_evidence(base_commit, target_commit, changed_paths):
 MAX_PACKAGE, MAX_PACKAGE_FILES, MAX_PACKAGE_UNPACKED = 32 * 1024 * 1024, 20000, 128 * 1024 * 1024
 
 
-def fetch_package(url, digest_name, digest):
+def fetch_package(url, digest_name, digest, asset="package"):
     data = bytearray()
-    with open_public(url, asset="package") as response:
+    with open_public(url, asset=asset) as response:
         while block := response.read(1024 * 1024):
             data += block
             require(len(data) <= MAX_PACKAGE, f"Package exceeds download bound: {url}")
@@ -1204,13 +1355,45 @@ def package_files(data, label):
     return files
 
 
-def package_patches(label, old_files, new_files):
+FIXTURE_DIRS = ("tests/", "benches/", "examples/")
+
+
+def binary_test_fixture(name, data, files):
+    """A crate binary Cargo never builds: under tests/benches/examples and named by no built Rust source."""
+    if not name.startswith(FIXTURE_DIRS) or (b"\0" not in data and is_utf8(data)):
+        return False
+    stem = Path(name).name.encode()
+    # Only compiled .rs (lib, build script, proc macro) can embed a file; whole-line // comments cannot.
+    return not any(stem in line for other, body in files.items()
+                   if other.endswith(".rs") and not other.startswith(FIXTURE_DIRS)
+                   for line in body.splitlines() if not line.lstrip().startswith(b"//"))
+
+
+def is_utf8(data):
+    try:
+        data.decode("utf-8")
+        return True
+    except UnicodeError:
+        return False
+
+
+def package_patches(label, old_files, new_files, dev_only=None):
     patches = []
     for name in sorted(set(old_files) | set(new_files)):
         old, new = old_files.get(name), new_files.get(name)
         if old == new:
             continue
         path = f"dependency/{label}/{name}"
+        if new is not None and binary_test_fixture(name, new, new_files):
+            patches.append(f"diff --git a/{path} b/{path}\nunbuilt-test-fixture sha256={hashlib.sha256(new).hexdigest()} "
+                           f"size={len(new)}\n")
+            continue
+        if dev_only and new is not None and (b"\0" in new or not is_utf8(new)) and dev_only():
+            # Warn, don't hold: tooling-only packages never reach the shipped build.
+            patches.append(f"diff --git a/{path} b/{path}\nWARNING dev-tooling-native-binary (unreviewable; runs only in "
+                           f"upstream development/CI, not in the shipped OMP build) sha256={hashlib.sha256(new).hexdigest()} "
+                           f"size={len(new)}\n")
+            continue
         texts = []
         for data in (old, new):
             try:
@@ -1256,6 +1439,30 @@ def npm_packages(data):
     return found
 
 
+def npm_dev_only(data):
+    """Package names no workspace reaches through dependencies, optionalDependencies or peerDependencies."""
+    lock = json_with_trailing_commas(data.decode("utf-8"))
+    kinds = ("dependencies", "optionalDependencies", "peerDependencies")
+    edges = collections.defaultdict(set)
+    for record in lock["packages"].values():
+        meta = record[2] if len(record) > 2 and isinstance(record[2], dict) else {}
+        edges[record[0].rpartition("@")[0]].update(*(meta.get(kind, {}) for kind in kinds))
+    reached = set()
+    todo = [name for workspace in lock["workspaces"].values() for kind in kinds for name in workspace.get(kind, {})]
+    while todo:
+        name = todo.pop()
+        if name not in reached:
+            reached.add(name)
+            todo.extend(edges[name])
+    return edges.keys() - reached
+
+
+def unimported(name, commit):
+    """No tracked file outside lockfiles and manifests names the package, so the bundler cannot embed it."""
+    return not any(hit[0] != "nix/bun.nix" and Path(hit[0]).name not in ("bun.lock", "package.json")
+                   for hit in git_hits(commit, name, fixed=True))
+
+
 def crate_url(name, version):
     return f"https://static.crates.io/crates/{name}/{name}-{version}.crate"
 
@@ -1277,6 +1484,8 @@ def dependency_source_review(base_commit, target_commit, paths):
         for package in sorted(new - old):
             jobs.append((label, url, digest, package, old))
         cleared.add(lock)
+    dev_only = npm_dev_only(manifest_blob(target_commit, "bun.lock", MAX_DEPENDENCY_INPUT)) \
+        if "bun.lock" in paths else set()
     if BAZEL_LOCK in paths:
         _, bazel, bazel_old = bazel_lock_evidence(base_commit, target_commit, set(paths))
         cargo_old = crates_io_packages(manifest_blob(base_commit, "Cargo.lock", MAX_DEPENDENCY_INPUT))
@@ -1294,7 +1503,9 @@ def dependency_source_review(base_commit, target_commit, paths):
         if earlier:
             _, old_version, old_integrity = earlier[-1]
             old_files = package_files(fetch_package(url(name, old_version), digest, old_integrity), f"{name}-{old_version}")
-        return package_patches(f"{label}/{name}-{version}", old_files, new_files)
+        # Lazy: the repo-wide import search runs only for dev packages that actually ship a binary.
+        return package_patches(f"{label}/{name}-{version}", old_files, new_files,
+                               (lambda: unimported(name, target_commit)) if label == "npm" and name in dev_only else None)
     with ThreadPoolExecutor(max_workers=REVIEW_WORKERS) as pool:
         for result in pool.map(review, jobs):
             patches.extend(result)
