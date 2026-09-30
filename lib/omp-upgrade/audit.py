@@ -2275,7 +2275,8 @@ def module_bazel_safe(before, after):
             require(callee in tags and prior is not None, hold)
             keywords = {keyword: keywords[keyword] for keyword in changed(prior) if keyword in keywords}
             digests, pinned = keywords.pop("sha256s", {}), prior.get("sha256s", {})
-            require(isinstance(digests, dict) and isinstance(pinned, dict), hold)
+            require(isinstance(digests, dict) and isinstance(pinned, dict)
+                    and all(digests.get(key) == digest for key, digest in pinned.items()), hold)
             # A new component of an already pinned toolchain release; a changed digest or a new release holds.
             for key, digest in digests.items():
                 match = RUST_DIST.fullmatch(key) if isinstance(key, str) else None

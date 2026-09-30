@@ -1029,7 +1029,9 @@ class EvidenceGateTests(unittest.TestCase):
                                      + 'msvc_cc(name = "x", source = "https://evil.example/x")\n'),
             "annotation moved to another crate": (before + 'crate.annotation(crate = "a", patches = ["//bazel:a.patch"])\n',
                                                   before + 'crate.annotation(crate = "ring", patches = ["//bazel:a.patch"])\n'),
-            "removed toolchain digests": before.replace("sha256s", "unused"),
+            "removed toolchain digests": re.sub(r"    sha256s = .*\n", "", before),
+            "removed toolchain digest": module(pins='"2026-04-29/cargo.tar.xz": "%s",' % digest).replace(
+                '"2026-04-29/rustc-nightly-x86_64-unknown-linux-gnu.tar.xz": "%s",' % ("a" * 64), ""),
         }.items():
             with self.subTest(name=name), self.assertRaises(audit.Hold):
                 audit.module_bazel_safe(*(after if isinstance(after, tuple) else (before, after)))
