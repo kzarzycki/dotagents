@@ -1951,7 +1951,8 @@ def dependency_identity(path, data):
         return sorted(identities)
     if name == "Cargo.toml":
         manifest = tomllib.loads(text)
-        sections = {"dependencies", "dev-dependencies", "build-dependencies", "patch", "replace", "source", "features"}
+        sections = {"dependencies", "dev-dependencies", "build-dependencies", "patch", "replace", "source", "features",
+                    *CARGO_ALIASES}
         found = {}
         def visit(value, prefix=()):
             for key, item in value.items():
@@ -1977,9 +1978,14 @@ def dependency_identity(path, data):
     raise Hold("Opaque dependency/build manifest changed without implementation evidence")
 
 
+# Spellings Cargo still accepts before edition 2024; the gate reads only the current ones.
+CARGO_ALIASES = {"build_dependencies", "dev_dependencies", "project"}
+CARGO_DEPENDENCY_KEYS = {"version", "features", "optional", "default-features", "package", "path", "registry", "workspace"}
+
+
 def cargo_sources(path, manifest):
     """Repository paths of the build script and targets a Cargo manifest names explicitly."""
-    package, lib, bins = manifest.get("package", {}), manifest.get("lib", {}), manifest.get("bin", [])
+    package, lib, bins = manifest.get("package", manifest.get("project", {})), manifest.get("lib", {}), manifest.get("bin", [])
     require(isinstance(package, dict) and isinstance(lib, dict) and isinstance(bins, list)
             and all(isinstance(item, dict) for item in bins), f"{path}: malformed Cargo targets")
     named = [item for item in [package.get("build"), lib.get("path"), *(item.get("path") for item in bins)]
@@ -1990,8 +1996,13 @@ def cargo_sources(path, manifest):
 
 def cargo_sources_reviewed(path, manifest):
     # Targets outside the repository or under paths the review skips would be built unread.
+    def keys(node):
+        return {key for key, value in node.items()} | {key for value in node.values() if isinstance(value, dict) for key in keys(value)}
+    require(not keys(manifest) & CARGO_ALIASES, f"{path}: deprecated Cargo keys the gate does not read")
     for source in cargo_sources(path, manifest):
-        require(not source.startswith(("/", "..")) and not INFORMATIONAL.match(source),
+        # Spellings that reach a skipped path on a case-insensitive or Windows build host hold too.
+        require(not source.startswith(("/", "..")) and "\\" not in source
+                and not INFORMATIONAL.match(source) and not INFORMATIONAL.match(source.lower()),
                 f"{path}: builds source outside the reviewed diff: {source}")
 
 
@@ -2030,7 +2041,7 @@ def dependency_risks(base, target, paths):
         try:
             before, after = blob(base["commit"], path), blob(target["commit"], path)
             require(before is not None or after is not None, "Changed dependency manifest is absent from both trees")
-        except (Hold, ValueError, UnicodeError) as exc:
+        except (Hold, ValueError, UnicodeError, RecursionError, MemoryError) as exc:
             # Bytes we cannot read are not bytes anyone reviewed, so no evidence can apply to them.
             risks.append(f"{path}: {str(exc) if isinstance(exc, Hold) else 'Unreadable dependency manifest'}")
             continue
@@ -2039,12 +2050,12 @@ def dependency_risks(base, target, paths):
             require(same_identity(dependency_identity(path, before), dependency_identity(path, after)),
                     "Dependency identities changed; external implementation evidence is not supplied")
             continue
-        except (Hold, ValueError, UnicodeError) as exc:
+        except (Hold, ValueError, UnicodeError, RecursionError, MemoryError) as exc:
             reason = str(exc) if isinstance(exc, Hold) else "Unparseable dependency evidence"
         try:
             if dependency_source_reviewed(path, before, after, base["commit"], target["commit"], set(paths)):
                 continue
-        except (Hold, ValueError, UnicodeError, KeyError, TypeError, AttributeError, RecursionError) as exc:
+        except (Hold, ValueError, UnicodeError, KeyError, TypeError, AttributeError, RecursionError, MemoryError) as exc:
             reason = f"{reason}; source review not applicable: {exc}"
         review = matching_review(reviews, path, base["commit"], target, blob_digest(before), blob_digest(after))
         if review is None:
@@ -2119,7 +2130,7 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
                         yield from dependencies(value, prefix + (key,))
             for location, spec in dependencies(manifest):
                 if isinstance(spec, dict):
-                    require("git" not in spec and spec.get("registry", "crates-io") == "crates-io",
+                    require(set(spec) <= CARGO_DEPENDENCY_KEYS and spec.get("registry", "crates-io") == "crates-io",
                             f"{path}: dependency outside reviewed crates.io registry")
             # Only changed dependency identities need a fresh match in the reviewed lock.
             old = tomllib.loads(before.decode("utf-8")) if before is not None else {}
@@ -2154,7 +2165,8 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
                 dependency = location[-1]
                 if isinstance(spec, dict) and spec.get("workspace") is True:
                     # Inherits the root [workspace.dependencies] entry, which this same check covers.
-                    require("path" not in spec and "version" not in spec, f"{path}: {dependency} overrides its workspace entry")
+                    require(set(spec) <= {"workspace", "features", "optional", "default-features"},
+                            f"{path}: {dependency} overrides its workspace entry")
                     continue
                 actual = spec.get("package", dependency) if isinstance(spec, dict) else dependency
                 if isinstance(spec, dict) and "path" in spec:
@@ -2186,8 +2198,8 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
 
 def cargo_requirement_met(requirement, version):
     """Whether a locked version satisfies a caret or exact Cargo requirement; any other operator holds."""
-    wanted = re.fullmatch(r"\s*(=|\^)?\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?\s*", requirement)
-    locked = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\+[0-9A-Za-z.-]+)?", version)
+    wanted = re.fullmatch(r" *(=|\^)? *([0-9]+)(?:\.([0-9]+))?(?:\.([0-9]+))? *", requirement)
+    locked = re.fullmatch(r"([0-9]+)\.([0-9]+)\.([0-9]+)(?:\+[0-9A-Za-z.-]+)?", version)
     if not wanted or not locked:
         return False
     need, have = [int(part) for part in wanted.groups()[1:] if part is not None], [int(part) for part in locked.groups()]
@@ -2200,6 +2212,7 @@ def cargo_requirement_met(requirement, version):
 
 # Extension tag arguments that choose what is built and its build-script environment, never what is fetched.
 MODULE_TAG_ARGUMENTS = {"extra_target_triples", "supported_platform_triples", "build_script_env", "crate"}
+MODULE_RULE_ARGUMENT = re.compile(r"[A-Za-z0-9_+-]*|[0-9]+(?:\.[0-9]+)*|@{0,2}[A-Za-z0-9_.+-]*//[A-Za-z0-9_/.+-]*(?::[A-Za-z0-9_/.+-]+)?")
 RUST_DIST = re.compile(r"(\d{4}-\d{2}-\d{2})/[A-Za-z0-9._-]+\.tar\.(?:xz|gz)")
 
 
@@ -2209,12 +2222,15 @@ def module_bazel_safe(before, after):
     def parse(text):
         try:
             return ast.parse(text)
-        except SyntaxError:
+        except (SyntaxError, MemoryError):
             raise Hold("MODULE.bazel is not parseable")
-    def call(statement):
+    def call(statement, text=after):
         """(callee, positional literals, keyword literals) of a statement calling with literal arguments."""
         node = statement.value if isinstance(statement, (ast.Expr, ast.Assign)) else None
         if not isinstance(node, ast.Call):
+            return None
+        # Python folds identifier spellings and ** arguments that Starlark would read differently.
+        if ast.get_source_segment(text, node.func) != ast.unparse(node.func) or any(keyword.arg is None for keyword in node.keywords):
             return None
         try:
             return (ast.unparse(node.func), [ast.literal_eval(item) for item in node.args],
@@ -2228,13 +2244,15 @@ def module_bazel_safe(before, after):
             yield from (leaf for pair in value.items() for item in pair for leaf in strings(item))
         elif isinstance(value, (list, tuple)):
             yield from (leaf for item in value for leaf in strings(item))
+        else:
+            require(value is None or type(value) in (int, bool), "MODULE.bazel adds an unreviewed argument type")
     old_tree, new = parse(before), parse(after).body
     known = {ast.dump(statement) for statement in old_tree.body}
     old_strings = {node.value for node in ast.walk(old_tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)}
     dist_dates = {match[1] for match in map(RUST_DIST.fullmatch, old_strings) if match}
     tags = collections.defaultdict(list)
     for statement in old_tree.body:
-        parsed = call(statement)
+        parsed = call(statement, before)
         if parsed and "." in parsed[0] and not parsed[1]:
             tags[parsed[0]].append(parsed[2])
     def repo_rule(statement):
@@ -2249,7 +2267,10 @@ def module_bazel_safe(before, after):
         require(not INFORMATIONAL.match(f"{match[1]}/{match[2]}".lstrip("/")),
                 f"Repository rule outside reviewed source: {ast.unparse(statement)}")
         return statement.targets[0].id
-    rules = {name for name in map(repo_rule, new) if name}
+    # A rule name bound once: a second binding could point the same name at an external rule.
+    bound = collections.Counter(target.id for statement in new if isinstance(statement, ast.Assign)
+                                for target in statement.targets if isinstance(target, ast.Name))
+    rules = {name for name in map(repo_rule, new) if name and bound[name] == 1}
     for statement in new:
         if ast.dump(statement) in known or (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant)):
             continue
@@ -2264,14 +2285,17 @@ def module_bazel_safe(before, after):
             require(set(keywords) == {"name"} and isinstance(keywords["name"], str)
                     and re.fullmatch(r"[A-Za-z0-9_.-]+", keywords["name"]), hold)
             continue
-        if callee not in rules:
+        if callee in rules:
+            # The rule is reviewed source, but its arguments choose what it fetches: names, versions and labels only.
+            require(all(MODULE_RULE_ARGUMENT.fullmatch(text) for value in keywords.values() for text in strings(value)), hold)
+        else:
             # A tag of an extension already in use: only arguments that fetch nothing may take a new value.
-            # Either a new call, or one old call of the same tag with those arguments changed; an
-            # annotation keeps its crate, so its other arguments cannot move to another crate.
+            # One old call of the same tag with those arguments changed, or a new build-environment
+            # annotation; an annotation keeps its crate, so its other arguments cannot move to another.
             def changed(prior):
                 return {keyword for keyword in keywords.keys() | prior.keys() if keywords.get(keyword) != prior.get(keyword)}
-            prior = next((prior for prior in [*tags.get(callee, []), {}]
-                          if changed(prior) <= (MODULE_TAG_ARGUMENTS - ({"crate"} if prior else set())) | {"sha256s"}), None)
+            prior = next((prior for prior in tags.get(callee, []) if changed(prior) <= MODULE_TAG_ARGUMENTS - {"crate"} | {"sha256s"}),
+                         {} if "crate" in keywords and set(keywords) <= {"crate", "build_script_env"} else None)
             require(callee in tags and prior is not None, hold)
             keywords = {keyword: keywords[keyword] for keyword in changed(prior) if keyword in keywords}
             digests, pinned = keywords.pop("sha256s", {}), prior.get("sha256s", {})

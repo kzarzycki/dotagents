@@ -1025,6 +1025,17 @@ class EvidenceGateTests(unittest.TestCase):
             "url in rule argument": before + 'msvc_cc(name = "x", source = "https://evil.example/x")\n',
             "computed argument": before + 'msvc_cc(name = "x" + evil)\n',
             "unparseable": before + "if x {\n",
+            "parser overflow": before + "msvc_cc(name = " + "-" * 200000 + "1)\n",
+            "unpinned second toolchain": before + 'rust.toolchain(extra_target_triples = ["aarch64-apple-darwin"])\n',
+            "host in rule argument": before + 'msvc_cc(name = "x", host = "evil.example", file = "x.tgz")\n',
+            "remote in rule argument": before + 'msvc_cc(name = "x", remote = "git@github.com:evil/x.git")\n',
+            "unpacked rule arguments": before + 'msvc_cc(**{"source": "x"}, **{"name": "x"})\n',
+            "bytes argument": before + 'msvc_cc(name = "x", source = b"x")\n',
+            "folded identifier": before + 'ｍsvc_cc(name = "y")\n',
+            "rebound rule name": ('http_archive = use_repo_rule("@bazel_tools//tools:http.bzl", "http_archive")\n' + before,
+                                  'http_archive = use_repo_rule("//bazel:cc.bzl", "cc")\n'
+                                  'http_archive = use_repo_rule("@bazel_tools//tools:http.bzl", "http_archive")\n' + before
+                                  + 'http_archive(name = "evil")\n'),
             "url known from prose": ('"""https://evil.example/x"""\n' + before, '"""https://evil.example/x"""\n' + before
                                      + 'msvc_cc(name = "x", source = "https://evil.example/x")\n'),
             "annotation moved to another crate": (before + 'crate.annotation(crate = "a", patches = ["//bazel:a.patch"])\n',
@@ -1068,10 +1079,17 @@ class EvidenceGateTests(unittest.TestCase):
                       b'[patch.crates-io]\nnapi = { path = "crates/vendor/napi", version = "9" }\n',
                       b'[patch.crates-io]\nnapi = { path = "../napi" }\n',
                       b'[patch."https://evil.example/index"]\nnapi = { path = "crates/vendor/napi" }\n',
-                      b'[replace]\n"cc:1.2.30" = { path = "crates/vfs" }\n'):
+                      b'[replace]\n"cc:1.2.30" = { path = "crates/vfs" }\n',
+                      b'[dependencies]\ncc = { version = "1", registry-index = "https://evil.example/index" }\n',
+                      b'[dependencies]\ncc = { workspace = true, package = "evil" }\n',
+                      b'[build_dependencies]\ncc = "1"\n', b'[target."cfg(unix)".dev_dependencies]\ncc = "1"\n',
+                      b'build = "Tests/build.rs"\n[dependencies]\ncc = "1"\n', b'build = "src\\\\build.rs"\n[dependencies]\ncc = "1"\n'):
             with self.subTest(after=after), self.assertRaises(audit.Hold):
                 reviewed(after)
         manifest = b'[package]\nname = "app"\n'
+        self.assertFalse(audit.same_identity(audit.dependency_identity("Cargo.toml", manifest), audit.dependency_identity(
+            "Cargo.toml", manifest + b'[build_dependencies]\nevil = { git = "https://evil.example/x" }\n')))
+        self.assertFalse(audit.cargo_requirement_met("１", "1.0.0"))
         self.assertFalse(audit.same_identity(audit.dependency_identity("Cargo.toml", manifest),
                                              audit.dependency_identity("Cargo.toml", manifest + b'build = "tests/build.rs"\n')))
         with mock.patch.object(audit, "git", return_value=b""), mock.patch.object(audit, "dependency_reviews", return_value=[]), \
