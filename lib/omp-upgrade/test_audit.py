@@ -1025,9 +1025,14 @@ class EvidenceGateTests(unittest.TestCase):
             "url in rule argument": before + 'msvc_cc(name = "x", source = "https://evil.example/x")\n',
             "computed argument": before + 'msvc_cc(name = "x" + evil)\n',
             "unparseable": before + "if x {\n",
+            "url known from prose": ('"""https://evil.example/x"""\n' + before, '"""https://evil.example/x"""\n' + before
+                                     + 'msvc_cc(name = "x", source = "https://evil.example/x")\n'),
+            "annotation moved to another crate": (before + 'crate.annotation(crate = "a", patches = ["//bazel:a.patch"])\n',
+                                                  before + 'crate.annotation(crate = "ring", patches = ["//bazel:a.patch"])\n'),
+            "removed toolchain digests": before.replace("sha256s", "unused"),
         }.items():
             with self.subTest(name=name), self.assertRaises(audit.Hold):
-                audit.module_bazel_safe(before, after)
+                audit.module_bazel_safe(*(after if isinstance(after, tuple) else (before, after)))
         self.assertTrue(audit.build_time("MODULE.bazel", 'crate = "ring",'))
 
     def test_cargo_manifest_changes_must_resolve_to_the_lock_or_this_repository(self):
@@ -1037,7 +1042,9 @@ class EvidenceGateTests(unittest.TestCase):
                 b'source = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "' + b"1" * 64 + b'"\n')
         tree = {"Cargo.lock": lock, "crates/vfs/Cargo.toml": b'[package]\nname = "vfs"\n',
                 "crates/vendor/napi/Cargo.toml": b'[package]\nname = "napi"\n',
-                "tests/vfs/Cargo.toml": b'[package]\nname = "vfs"\n', "crates/other/Cargo.toml": b'[package]\nname = "other"\n'}
+                "tests/vfs/Cargo.toml": b'[package]\nname = "vfs"\n',
+                "crates/hidden/Cargo.toml": b'[package]\nname = "vfs"\n[lib]\npath = "tests/payload.rs"\n',
+                "crates/script/Cargo.toml": b'[package]\nname = "vfs"\nbuild = "../../docs/build.rs"\n', "crates/other/Cargo.toml": b'[package]\nname = "other"\n'}
         def reviewed(after, before=b'[package]\nname = "app"\n', path="Cargo.toml"):
             with mock.patch.object(audit, "manifest_blob", side_effect=lambda commit, name, limit=None: tree.get(name)):
                 return audit.dependency_source_reviewed(path, before, before + after, "base", "target", {path, "Cargo.lock"})
@@ -1052,7 +1059,9 @@ class EvidenceGateTests(unittest.TestCase):
                       b'[dependencies]\ncc = "*"\n', b'[dependencies]\nabsent = "1"\n',
                       b'[dependencies]\ncc = { workspace = true, path = "../cc" }\n',
                       b'[dependencies]\nvfs = { path = "../outside" }\n', b'[dependencies]\nvfs = { path = "tests/vfs" }\n',
-                      b'[dependencies]\nvfs = { path = "crates/other" }\n', b'[dependencies]\nvfs = { path = "crates/missing" }\n',
+                      b'[dependencies]\nvfs = { path = "crates/other" }\n', b'[dependencies]\nvfs = { path = "crates/hidden" }\n',
+                      b'[dependencies]\nvfs = { path = "crates/script" }\n', b'[lib]\npath = "tests/payload.rs"\n[dependencies]\ncc = "1"\n',
+                      b'[dependencies]\nvfs = { path = "crates/missing" }\n',
                       b'[patch.crates-io]\nnapi = { git = "https://evil.example/napi" }\n',
                       b'[patch.crates-io]\nnapi = { path = "crates/vendor/napi", version = "9" }\n',
                       b'[patch.crates-io]\nnapi = { path = "../napi" }\n',
@@ -1060,6 +1069,14 @@ class EvidenceGateTests(unittest.TestCase):
                       b'[replace]\n"cc:1.2.30" = { path = "crates/vfs" }\n'):
             with self.subTest(after=after), self.assertRaises(audit.Hold):
                 reviewed(after)
+        manifest = b'[package]\nname = "app"\n'
+        self.assertFalse(audit.same_identity(audit.dependency_identity("Cargo.toml", manifest),
+                                             audit.dependency_identity("Cargo.toml", manifest + b'build = "tests/build.rs"\n')))
+        with mock.patch.object(audit, "git", return_value=b""), mock.patch.object(audit, "dependency_reviews", return_value=[]), \
+             mock.patch.object(audit, "manifest_blob", side_effect=lambda commit, name, limit=None:
+                               {"Cargo.lock": lock}.get(name, b'[patch]\ncrates-io = 1\n' if commit == "t" else b"")):
+            risks, _ = audit.dependency_risks({"commit": "b"}, {"commit": "t", "version": "1"}, ["Cargo.toml", "Cargo.lock"])
+        self.assertEqual(len(risks), 1)
         for requirement, version, met in (("0.1", "0.1.7", True), ("0.1", "0.2.0", False), ("0", "0.9.1", True),
                                           ("0.0.3", "0.0.4", False), ("^1.2.3", "1.9.0", True), ("1.2.3", "1.2.2", False),
                                           ("=1.2", "1.2.9", True), ("=1.2.3", "1.2.4", False), ("1", "1.0.0+build.1", True),

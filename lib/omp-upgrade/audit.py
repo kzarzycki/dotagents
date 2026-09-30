@@ -1961,6 +1961,7 @@ def dependency_identity(path, data):
                 elif isinstance(item, dict):
                     visit(item, position)
         visit(manifest)
+        found["sources"] = cargo_sources(path, manifest)
         return found
     if name == "Cargo.lock":
         manifest = tomllib.loads(text)
@@ -1974,6 +1975,24 @@ def dependency_identity(path, data):
                 package.pop("version", None)
         return manifest
     raise Hold("Opaque dependency/build manifest changed without implementation evidence")
+
+
+def cargo_sources(path, manifest):
+    """Repository paths of the build script and targets a Cargo manifest names explicitly."""
+    package, lib, bins = manifest.get("package", {}), manifest.get("lib", {}), manifest.get("bin", [])
+    require(isinstance(package, dict) and isinstance(lib, dict) and isinstance(bins, list)
+            and all(isinstance(item, dict) for item in bins), f"{path}: malformed Cargo targets")
+    named = [item for item in [package.get("build"), lib.get("path"), *(item.get("path") for item in bins)]
+             if item is not None and not isinstance(item, bool)]
+    require(all(isinstance(item, str) for item in named), f"{path}: malformed Cargo targets")
+    return sorted(posixpath.normpath(posixpath.join(posixpath.dirname(path), item)) for item in named)
+
+
+def cargo_sources_reviewed(path, manifest):
+    # Targets outside the repository or under paths the review skips would be built unread.
+    for source in cargo_sources(path, manifest):
+        require(not source.startswith(("/", "..")) and not INFORMATIONAL.match(source),
+                f"{path}: builds source outside the reviewed diff: {source}")
 
 
 def same_identity(before, after):
@@ -2025,7 +2044,7 @@ def dependency_risks(base, target, paths):
         try:
             if dependency_source_reviewed(path, before, after, base["commit"], target["commit"], set(paths)):
                 continue
-        except (Hold, ValueError, UnicodeError, KeyError, TypeError) as exc:
+        except (Hold, ValueError, UnicodeError, KeyError, TypeError, AttributeError, RecursionError) as exc:
             reason = f"{reason}; source review not applicable: {exc}"
         review = matching_review(reviews, path, base["commit"], target, blob_digest(before), blob_digest(after))
         if review is None:
@@ -2104,6 +2123,7 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
                             f"{path}: dependency outside reviewed crates.io registry")
             # Only changed dependency identities need a fresh match in the reviewed lock.
             old = tomllib.loads(before.decode("utf-8")) if before is not None else {}
+            cargo_sources_reviewed(path, manifest)
             for field in ("replace", "source", "registries"):
                 require(manifest.get(field) == old.get(field),
                         f"{path}: {field} changes can replace locked dependency implementations")
@@ -2114,8 +2134,11 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
                 if directory.startswith(("/", "..")) or INFORMATIONAL.match(f"{directory}/Cargo.toml"):
                     return False
                 member = manifest_blob(target_commit, f"{directory}/Cargo.toml", MAX_SOURCE)
-                return crate in local and member is not None \
-                    and tomllib.loads(member.decode("utf-8")).get("package", {}).get("name") == crate
+                if crate not in local or member is None:
+                    return False
+                member = tomllib.loads(member.decode("utf-8"))
+                cargo_sources_reviewed(f"{directory}/Cargo.toml", member)
+                return member["package"]["name"] == crate
             # A patch may only swap a registry crate for a crate of this repository.
             patches, old_patches = manifest.get("patch", {}), old.get("patch", {})
             for registry, crates in patches.items():
@@ -2209,12 +2232,11 @@ def module_bazel_safe(before, after):
     known = {ast.dump(statement) for statement in old_tree.body}
     old_strings = {node.value for node in ast.walk(old_tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)}
     dist_dates = {match[1] for match in map(RUST_DIST.fullmatch, old_strings) if match}
-    tags = collections.defaultdict(lambda: collections.defaultdict(list))
+    tags = collections.defaultdict(list)
     for statement in old_tree.body:
         parsed = call(statement)
-        if parsed and "." in parsed[0]:
-            for keyword, value in parsed[2].items():
-                tags[parsed[0]][keyword].append(value)
+        if parsed and "." in parsed[0] and not parsed[1]:
+            tags[parsed[0]].append(parsed[2])
     def repo_rule(statement):
         parsed = call(statement)
         if not (isinstance(statement, ast.Assign) and parsed and parsed[0] == "use_repo_rule" and not parsed[2]
@@ -2244,18 +2266,23 @@ def module_bazel_safe(before, after):
             continue
         if callee not in rules:
             # A tag of an extension already in use: only arguments that fetch nothing may take a new value.
-            require(callee in tags, hold)
-            keywords = {keyword: value for keyword, value in keywords.items() if value not in tags[callee][keyword]}
-            digests = keywords.pop("sha256s", {})
-            require(set(keywords) <= MODULE_TAG_ARGUMENTS and isinstance(digests, dict), hold)
+            # Either a new call, or one old call of the same tag with those arguments changed; an
+            # annotation keeps its crate, so its other arguments cannot move to another crate.
+            def changed(prior):
+                return {keyword for keyword in keywords.keys() | prior.keys() if keywords.get(keyword) != prior.get(keyword)}
+            prior = next((prior for prior in [*tags.get(callee, []), {}]
+                          if changed(prior) <= (MODULE_TAG_ARGUMENTS - ({"crate"} if prior else set())) | {"sha256s"}), None)
+            require(callee in tags and prior is not None, hold)
+            keywords = {keyword: keywords[keyword] for keyword in changed(prior) if keyword in keywords}
+            digests, pinned = keywords.pop("sha256s", {}), prior.get("sha256s", {})
+            require(isinstance(digests, dict) and isinstance(pinned, dict), hold)
             # A new component of an already pinned toolchain release; a changed digest or a new release holds.
-            pinned = {key: digest for table in tags[callee]["sha256s"] if isinstance(table, dict) for key, digest in table.items()}
             for key, digest in digests.items():
                 match = RUST_DIST.fullmatch(key) if isinstance(key, str) else None
                 require(pinned.get(key) == digest or (key not in pinned and match and match[1] in dist_dates
                                                       and isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)), hold)
         for value in keywords.values():
-            require(all(text in old_strings or not EXTERNAL_PIN.search(text) for text in strings(value)), hold)
+            require(not any(EXTERNAL_PIN.search(text) for text in strings(value)), hold)
     return True
 
 
