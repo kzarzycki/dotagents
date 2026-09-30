@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 """Static public-source review gate. A model verdict is not binary attestation."""
 import argparse
+import ast
 import base64
 import collections
 import contextlib
@@ -16,6 +17,7 @@ import math
 import os
 from pathlib import Path
 import platform
+import posixpath
 import re
 import selectors
 import signal
@@ -1768,7 +1770,8 @@ def build_time(path, line):
     name = Path(path).name
     if name == "Cargo.toml":
         return bool(CARGO_BUILD.search(line))
-    return name == "build.rs" or (name in {"MODULE.bazel", "BUILD.bazel", "BUILD"} or name.endswith(".bzl")) \
+    # MODULE.bazel is read whole: its deterministic check admits build environment changes only a reader can judge.
+    return name in {"build.rs", "MODULE.bazel"} or (name in {"BUILD.bazel", "BUILD"} or name.endswith(".bzl")) \
         and bool(BAZEL_FETCH.search(line))
 
 
@@ -2101,23 +2104,46 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
                             f"{path}: dependency outside reviewed crates.io registry")
             # Only changed dependency identities need a fresh match in the reviewed lock.
             old = tomllib.loads(before.decode("utf-8")) if before is not None else {}
-            for field in ("patch", "replace", "source", "registries"):
+            for field in ("replace", "source", "registries"):
                 require(manifest.get(field) == old.get(field),
                         f"{path}: {field} changes can replace locked dependency implementations")
+            local = {package["name"] for package in locked if "source" not in package}
+            def in_repo(crate, spec):
+                """A path dependency on a crate of this repository: its source is in the gated diff, not fetched."""
+                directory = posixpath.normpath(posixpath.join(posixpath.dirname(path), spec["path"]))
+                if directory.startswith(("/", "..")) or INFORMATIONAL.match(f"{directory}/Cargo.toml"):
+                    return False
+                member = manifest_blob(target_commit, f"{directory}/Cargo.toml", MAX_SOURCE)
+                return crate in local and member is not None \
+                    and tomllib.loads(member.decode("utf-8")).get("package", {}).get("name") == crate
+            # A patch may only swap a registry crate for a crate of this repository.
+            patches, old_patches = manifest.get("patch", {}), old.get("patch", {})
+            for registry, crates in patches.items():
+                for crate, spec in crates.items():
+                    require(old_patches.get(registry, {}).get(crate) == spec
+                            or (registry == "crates-io" and isinstance(spec, dict) and set(spec) == {"path"}
+                                and in_repo(crate, spec)),
+                            f"{path}: patch changes can replace locked dependency implementations")
             previous = dict(dependencies(old))
             for location, spec in dependencies(manifest):
                 if previous.get(location) == spec:
                     continue
                 dependency = location[-1]
+                if isinstance(spec, dict) and spec.get("workspace") is True:
+                    # Inherits the root [workspace.dependencies] entry, which this same check covers.
+                    require("path" not in spec and "version" not in spec, f"{path}: {dependency} overrides its workspace entry")
+                    continue
                 actual = spec.get("package", dependency) if isinstance(spec, dict) else dependency
-                require(actual in names and not (isinstance(spec, dict) and "path" in spec),
-                        f"{path}: {actual} is not a reviewed locked registry dependency")
+                if isinstance(spec, dict) and "path" in spec:
+                    require(in_repo(actual, spec), f"{path}: {actual} is not a crate of this repository")
+                    continue
+                # Cargo keeps a locked version while it satisfies the requirement, so the pin decides what is built.
                 version = spec.get("version") if isinstance(spec, dict) else spec
-                require(isinstance(version, str) and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version)
-                        and any(package["name"] == actual and package["version"] == version
+                require(isinstance(version, str)
+                        and any(package["name"] == actual and cargo_requirement_met(version, package["version"])
                                 and package.get("source") == "registry+https://github.com/rust-lang/crates.io-index"
                                 for package in locked),
-                        f"{path}: {actual} version is not exactly pinned in Cargo.lock")
+                        f"{path}: {actual} requirement is not met by a pinned Cargo.lock package")
         return True
     if path == BAZEL_LOCK:
         bazel_lock_evidence(base_commit, target_commit, paths)
@@ -2135,26 +2161,101 @@ def dependency_source_reviewed(path, before, after, base_commit, target_commit, 
     return False
 
 
+def cargo_requirement_met(requirement, version):
+    """Whether a locked version satisfies a caret or exact Cargo requirement; any other operator holds."""
+    wanted = re.fullmatch(r"\s*(=|\^)?\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?\s*", requirement)
+    locked = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)(?:\+[0-9A-Za-z.-]+)?", version)
+    if not wanted or not locked:
+        return False
+    need, have = [int(part) for part in wanted.groups()[1:] if part is not None], [int(part) for part in locked.groups()]
+    if wanted[1] == "=":
+        return have[:len(need)] == need
+    # Caret: everything up to the leftmost non-zero component is fixed.
+    fixed = next((index for index, part in enumerate(need) if part), len(need) - 1) + 1
+    return have[:fixed] == need[:fixed] and have >= need + [0] * (3 - len(need))
+
+
+# Extension tag arguments that choose what is built and its build-script environment, never what is fetched.
+MODULE_TAG_ARGUMENTS = {"extra_target_triples", "supported_platform_triples", "build_script_env", "crate"}
+RUST_DIST = re.compile(r"(\d{4}-\d{2}-\d{2})/[A-Za-z0-9._-]+\.tar\.(?:xz|gz)")
+
+
 def module_bazel_safe(before, after):
-    """Module identity, docs and in-repo repository rules may change; external modules may not."""
-    def statements(text):
-        text = re.sub(r'\A\s*"""[\s\S]*?"""', "", text)
-        return [line.strip() for line in text.splitlines() if line.strip() and not line.strip().startswith("#")]
-    old, new = statements(before), statements(after)
-    rules = set()
-    for line in new:
-        match = re.fullmatch(r'([a-z_][a-z0-9_]*) = use_repo_rule\("//([A-Za-z0-9_/.-]*):([A-Za-z0-9_.-]+\.bzl)", "[A-Za-z0-9_]+"\)', line)
-        if match:
-            require(not INFORMATIONAL.match(f"{match[2]}/{match[3]}".lstrip("/")), f"Repository rule outside reviewed source: {line}")
-            rules.add(match[1])
-    for line in difflib.unified_diff(old, new, lineterm="", n=0):
-        if not line.startswith("+") or line.startswith("+++"):
+    """Module identity, docs, in-repo repository rules, build targets and build-script environment
+    may change; external modules, extensions, URLs and digests may not."""
+    def parse(text):
+        try:
+            return ast.parse(text)
+        except SyntaxError:
+            raise Hold("MODULE.bazel is not parseable")
+    def call(statement):
+        """(callee, positional literals, keyword literals) of a statement calling with literal arguments."""
+        node = statement.value if isinstance(statement, (ast.Expr, ast.Assign)) else None
+        if not isinstance(node, ast.Call):
+            return None
+        try:
+            return (ast.unparse(node.func), [ast.literal_eval(item) for item in node.args],
+                    {keyword.arg: ast.literal_eval(keyword.value) for keyword in node.keywords})
+        except ValueError:
+            return None
+    def strings(value):
+        if isinstance(value, str):
+            yield value
+        elif isinstance(value, dict):
+            yield from (leaf for pair in value.items() for item in pair for leaf in strings(item))
+        elif isinstance(value, (list, tuple)):
+            yield from (leaf for item in value for leaf in strings(item))
+    old_tree, new = parse(before), parse(after).body
+    known = {ast.dump(statement) for statement in old_tree.body}
+    old_strings = {node.value for node in ast.walk(old_tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+    dist_dates = {match[1] for match in map(RUST_DIST.fullmatch, old_strings) if match}
+    tags = collections.defaultdict(lambda: collections.defaultdict(list))
+    for statement in old_tree.body:
+        parsed = call(statement)
+        if parsed and "." in parsed[0]:
+            for keyword, value in parsed[2].items():
+                tags[parsed[0]][keyword].append(value)
+    def repo_rule(statement):
+        parsed = call(statement)
+        if not (isinstance(statement, ast.Assign) and parsed and parsed[0] == "use_repo_rule" and not parsed[2]
+                and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)
+                and len(parsed[1]) == 2 and all(isinstance(item, str) for item in parsed[1])):
+            return None
+        match = re.fullmatch(r"//([A-Za-z0-9_/.-]*):([A-Za-z0-9_.-]+\.bzl)", parsed[1][0])
+        if not match or not re.fullmatch(r"[A-Za-z0-9_]+", parsed[1][1]):
+            return None
+        require(not INFORMATIONAL.match(f"{match[1]}/{match[2]}".lstrip("/")),
+                f"Repository rule outside reviewed source: {ast.unparse(statement)}")
+        return statement.targets[0].id
+    rules = {name for name in map(repo_rule, new) if name}
+    for statement in new:
+        if ast.dump(statement) in known or (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant)):
             continue
-        line = line[1:]
-        call = re.fullmatch(r'([a-z_][a-z0-9_]*)\(name = "[A-Za-z0-9_]+"\)', line)
-        require(re.fullmatch(r'module\(name = "[A-Za-z0-9_.-]+"\)', line)
-                or re.fullmatch(r'[a-z_][a-z0-9_]* = use_repo_rule\("//[A-Za-z0-9_/.:-]+", "[A-Za-z0-9_]+"\)', line)
-                or (call and call[1] in rules), f"MODULE.bazel adds an unreviewed statement: {line[:200]}")
+        hold = f"MODULE.bazel adds an unreviewed statement: {ast.unparse(statement)[:200]}"
+        if isinstance(statement, ast.Assign):
+            require(repo_rule(statement), hold)
+            continue
+        parsed = call(statement)
+        require(parsed and not parsed[1], hold)
+        callee, _, keywords = parsed
+        if callee == "module":
+            require(set(keywords) == {"name"} and isinstance(keywords["name"], str)
+                    and re.fullmatch(r"[A-Za-z0-9_.-]+", keywords["name"]), hold)
+            continue
+        if callee not in rules:
+            # A tag of an extension already in use: only arguments that fetch nothing may take a new value.
+            require(callee in tags, hold)
+            keywords = {keyword: value for keyword, value in keywords.items() if value not in tags[callee][keyword]}
+            digests = keywords.pop("sha256s", {})
+            require(set(keywords) <= MODULE_TAG_ARGUMENTS and isinstance(digests, dict), hold)
+            # A new component of an already pinned toolchain release; a changed digest or a new release holds.
+            pinned = {key: digest for table in tags[callee]["sha256s"] if isinstance(table, dict) for key, digest in table.items()}
+            for key, digest in digests.items():
+                match = RUST_DIST.fullmatch(key) if isinstance(key, str) else None
+                require(pinned.get(key) == digest or (key not in pinned and match and match[1] in dist_dates
+                                                      and isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)), hold)
+        for value in keywords.values():
+            require(all(text in old_strings or not EXTERNAL_PIN.search(text) for text in strings(value)), hold)
     return True
 
 

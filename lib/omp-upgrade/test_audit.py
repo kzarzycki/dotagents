@@ -994,6 +994,79 @@ class EvidenceGateTests(unittest.TestCase):
             with self.subTest(added=added), self.assertRaises(audit.Hold):
                 audit.module_bazel_safe(before, after + added)
 
+    def test_module_bazel_accepts_build_targets_and_environment_but_not_new_external_code(self):
+        digest = "c" * 64
+        def module(triples='"x86_64-pc-windows-msvc"', pins="", env="", extra=""):
+            return ('bazel_dep(name = "rules_rust", version = "0.71.3")\n'
+                    'rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")\n'
+                    f'rust.toolchain(\n    extra_target_triples = [{triples}],\n'
+                    f'    sha256s = {{"2026-04-29/rustc-nightly-x86_64-unknown-linux-gnu.tar.xz": "{"a" * 64}",{pins}}},\n'
+                    '    versions = ["nightly/2026-04-29"],\n)\n'
+                    'crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")\n'
+                    f'crate.annotation(\n    build_script_env = {{"CFLAGS": "-O2",{env}}},\n    crate = "opus",\n)\n'
+                    'msvc_cc = use_repo_rule("//bazel/toolchains/msvc:cc.bzl", "msvc_cc_repository")\n'
+                    'msvc_cc(name = "msvc_cc")\n' + extra)
+        before = module()
+        arm64 = module(triples='"x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc"',
+                       pins=f'"2026-04-29/rust-std-nightly-aarch64-pc-windows-msvc.tar.xz": "{digest}",',
+                       env='"PATH": "$${pwd}/external/+msvc_cc_repository+msvc_cc_arm64/bin:/usr/bin",',
+                       extra='msvc_cc(\n    name = "msvc_cc_arm64",\n    arch = "aarch64",\n)\n'
+                             'crate.annotation(\n    build_script_env = {"PATH": "/usr/bin"},\n    crate = "ring",\n)\n')
+        self.assertTrue(audit.module_bazel_safe(before, arm64))
+        for name, after in {
+            "changed digest": before.replace("a" * 64, digest),
+            "new toolchain release": module(pins=f'"2026-05-01/rustc-nightly-x86_64-unknown-linux-gnu.tar.xz": "{digest}",'),
+            "toolchain version": before.replace('versions = ["nightly/2026-04-29"]', 'versions = ["nightly/2026-05-01"]'),
+            "module version": before.replace("0.71.3", "0.72.0"),
+            "new extension": before + 'evil = use_extension("@evil//:ext.bzl", "evil")\n',
+            "new tag": before + 'crate.from_git(name = "x")\n',
+            "patched crate": before + 'crate.annotation(crate = "ring", patches = ["//bazel:ring.patch"])\n',
+            "url in environment": module(env='"CC": "https://evil.example/cc",'),
+            "url in rule argument": before + 'msvc_cc(name = "x", source = "https://evil.example/x")\n',
+            "computed argument": before + 'msvc_cc(name = "x" + evil)\n',
+            "unparseable": before + "if x {\n",
+        }.items():
+            with self.subTest(name=name), self.assertRaises(audit.Hold):
+                audit.module_bazel_safe(before, after)
+        self.assertTrue(audit.build_time("MODULE.bazel", 'crate = "ring",'))
+
+    def test_cargo_manifest_changes_must_resolve_to_the_lock_or_this_repository(self):
+        lock = (b'[[package]]\nname = "app"\nversion = "1.0.0"\n[[package]]\nname = "vfs"\nversion = "1.0.0"\n'
+                b'[[package]]\nname = "napi"\nversion = "3.13.0"\n'
+                b'[[package]]\nname = "cc"\nversion = "1.2.30"\n'
+                b'source = "registry+https://github.com/rust-lang/crates.io-index"\nchecksum = "' + b"1" * 64 + b'"\n')
+        tree = {"Cargo.lock": lock, "crates/vfs/Cargo.toml": b'[package]\nname = "vfs"\n',
+                "crates/vendor/napi/Cargo.toml": b'[package]\nname = "napi"\n',
+                "tests/vfs/Cargo.toml": b'[package]\nname = "vfs"\n', "crates/other/Cargo.toml": b'[package]\nname = "other"\n'}
+        def reviewed(after, before=b'[package]\nname = "app"\n', path="Cargo.toml"):
+            with mock.patch.object(audit, "manifest_blob", side_effect=lambda commit, name, limit=None: tree.get(name)):
+                return audit.dependency_source_reviewed(path, before, before + after, "base", "target", {path, "Cargo.lock"})
+        for after in (b'[dependencies]\ncc = "1.2"\n', b'[dependencies]\ncc = "=1.2.30"\n', b'[build-dependencies]\ncc = "1"\n',
+                      b'[dependencies]\ncc.workspace = true\n', b'[dependencies]\ncc = { workspace = true, features = ["x"] }\n',
+                      b'[workspace.dependencies]\nvfs = { path = "crates/vfs" }\n',
+                      b'[patch.crates-io]\nnapi = { path = "crates/vendor/napi" }\n'):
+            with self.subTest(after=after):
+                self.assertTrue(reviewed(after))
+        self.assertTrue(reviewed(b'[dependencies]\nvfs = { path = "../vfs" }\n', path="crates/app/Cargo.toml"))
+        for after in (b'[dependencies]\ncc = "1.3"\n', b'[dependencies]\ncc = "2"\n', b'[dependencies]\ncc = ">=1"\n',
+                      b'[dependencies]\ncc = "*"\n', b'[dependencies]\nabsent = "1"\n',
+                      b'[dependencies]\ncc = { workspace = true, path = "../cc" }\n',
+                      b'[dependencies]\nvfs = { path = "../outside" }\n', b'[dependencies]\nvfs = { path = "tests/vfs" }\n',
+                      b'[dependencies]\nvfs = { path = "crates/other" }\n', b'[dependencies]\nvfs = { path = "crates/missing" }\n',
+                      b'[patch.crates-io]\nnapi = { git = "https://evil.example/napi" }\n',
+                      b'[patch.crates-io]\nnapi = { path = "crates/vendor/napi", version = "9" }\n',
+                      b'[patch.crates-io]\nnapi = { path = "../napi" }\n',
+                      b'[patch."https://evil.example/index"]\nnapi = { path = "crates/vendor/napi" }\n',
+                      b'[replace]\n"cc:1.2.30" = { path = "crates/vfs" }\n'):
+            with self.subTest(after=after), self.assertRaises(audit.Hold):
+                reviewed(after)
+        for requirement, version, met in (("0.1", "0.1.7", True), ("0.1", "0.2.0", False), ("0", "0.9.1", True),
+                                          ("0.0.3", "0.0.4", False), ("^1.2.3", "1.9.0", True), ("1.2.3", "1.2.2", False),
+                                          ("=1.2", "1.2.9", True), ("=1.2.3", "1.2.4", False), ("1", "1.0.0+build.1", True),
+                                          ("1", "1.0.0-rc.1", False), ("~1.2", "1.2.3", False)):
+            with self.subTest(requirement=requirement, version=version):
+                self.assertEqual(audit.cargo_requirement_met(requirement, version), met)
+
     def test_dependency_packages_hold_on_digest_mismatch_and_changed_binaries(self):
         response = mock.MagicMock()
         response.__enter__.return_value.read.side_effect = [b"payload", b""]
