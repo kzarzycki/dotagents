@@ -25,7 +25,6 @@ Pick the register by who reads it: a human or an agent.
 - Landing policy belongs to the project. Follow its instructions for merge criteria and authorization.
 - If a fix I asked for is in flight, wait for it and rebase; never route around another session's landing work.
 - Report the real exit code of every step; a chain's status is the last command's, not the one that mattered.
-- Separate agents (a Herdr pane, a worker, a reviewer) run in `omp` unless I name another harness.
 - sudo needed and no TTY password? Use `osascript -e 'do shell script "CMD" with administrator privileges'` (macOS GUI auth prompt). Don't hand the command back to me.
 
 ## Ponytail (lazy senior dev mode)
