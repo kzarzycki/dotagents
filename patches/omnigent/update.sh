@@ -3,9 +3,15 @@
 # `mine` branch. Run daily by an Omnigent scheduled task on each host; the
 # fork itself is rebased onto upstream elsewhere (audit-sync on the work Mac).
 #
-#   host CLI  reinstalled from git when its commit differs from `mine`
+#   host CLI  reinstalled from a local checkout (~/.cache/omnigent-src) when
+#             its commit differs from `mine`
 #   server    only where ~/services/omnigent/compose.yaml exists: the deploy
 #             checkout is reset to `mine` and the image rebuilt
+#
+# Nothing is installed unless the `mine` head is signed by a key in
+# ~/.config/omnigent/allowed_signers, so a push with a stolen GitHub token
+# can't reach this machine. Python dependencies are pinned to uv.lock: a plain
+# `uv tool install` resolves fresh and skips the lockfile and its cooldown.
 #
 # Nothing is touched while another session was active in the last 10 minutes
 # on what a restart would kill (this host; for the server, every host): the
@@ -20,6 +26,7 @@ REPO_URL="${OMNIGENT_REPO_URL:-https://github.com/kzarzycki/omnigent}"
 BRANCH="${OMNIGENT_BRANCH:-mine}"
 SERVER_DIR="$HOME/services/omnigent"
 CONFIG="$HOME/.omnigent/config.yaml"
+SIGNERS="${OMNIGENT_ALLOWED_SIGNERS:-$HOME/.config/omnigent/allowed_signers}"
 CHECK=0; [ "${1:-}" = "--check" ] && CHECK=1
 
 log() { echo "[omnigent-update] $*"; }
@@ -54,14 +61,33 @@ sys.exit(0 if active else 1)
 PY
 }
 
-head=$(git ls-remote "$REPO_URL" "refs/heads/$BRANCH" | cut -f1)
-[ -n "$head" ] || die "cannot read $BRANCH from $REPO_URL"
+[ -s "$SIGNERS" ] || die "no allowed signers at $SIGNERS (installed by bootstrap.sh)"
+
+# Fetch $BRANCH into checkout $1 and print its head, refusing an unsigned one.
+fetch_verified() {
+  git -C "$1" fetch -q origin "$BRANCH"
+  local head
+  head=$(git -C "$1" rev-parse "origin/$BRANCH")
+  git -C "$1" -c gpg.ssh.allowedSignersFile="$SIGNERS" verify-commit "$head" 2>/dev/null \
+    || die "$BRANCH head ${head:0:9} is not signed by a key in $SIGNERS — refusing to install"
+  echo "$head"
+}
+
+# Install the CLI from checkout $1 with every dependency pinned to its uv.lock.
+install_locked() {
+  local c
+  c=$(mktemp)
+  (cd "$1" && uv export -q --frozen --no-dev --no-emit-workspace --no-hashes) | grep -v '^-e ' > "$c"
+  [ -s "$c" ] || die "uv export from $1 produced no constraints"
+  (cd "$1" && uv tool install -q --force --reinstall --python 3.12 -c "$c" .)
+  rm -f "$c"
+}
 
 if [ -f "$SERVER_DIR/compose.yaml" ]; then
   # Server machine: the host runs from the deploy checkout's .venv, so the
   # checkout's commit is what both the server image and the host run.
   src="$SERVER_DIR/source"
-  git -C "$src" fetch -q origin "$BRANCH"
+  head=$(fetch_verified "$src")
   current=$(git -C "$src" rev-parse HEAD)
   log "server+host at ${current:0:9}, $BRANCH at ${head:0:9}"
   [ "$current" = "$head" ] && { log "up to date"; exit 0; }
@@ -76,8 +102,9 @@ if [ -f "$SERVER_DIR/compose.yaml" ]; then
     || die "$src has $local_only commit(s) on no origin branch — land them in $BRANCH first"
   if busy ""; then log "deferred — sessions active; next firing retries"; exit 0; fi
   git -C "$src" checkout -q "$BRANCH"
-  git -C "$src" reset -q --hard "origin/$BRANCH"
-  (cd "$src" && uv sync -q --frozen && uv tool install -q --force --python 3.12 .)
+  git -C "$src" reset -q --hard "$head"
+  (cd "$src" && uv sync -q --frozen)
+  install_locked "$src"
   (cd "$SERVER_DIR" && docker compose build -q omnigent)
   systemd-run --user -q --on-active=20 --unit="omnigent-update-restart-$(date +%s)" \
     sh -c "cd '$SERVER_DIR' && docker compose up -d omnigent && systemctl --user restart omnigent-host"
@@ -85,13 +112,17 @@ if [ -f "$SERVER_DIR/compose.yaml" ]; then
   exit 0
 fi
 
-# Host-only machine: the CLI is a uv tool installed from git.
+# Host-only machine: the CLI is a uv tool installed from a local checkout.
+src="$HOME/.cache/omnigent-src"
+[ -d "$src/.git" ] || git clone -q --filter=blob:none --no-checkout "$REPO_URL" "$src"
+head=$(fetch_verified "$src")
 current=$(omnigent --version | sed -n 's/.*(\([0-9a-f]*\),.*/\1/p')
 log "host at ${current:-unknown}, $BRANCH at ${head:0:9}"
 case "$head" in "$current"?*) log "up to date"; exit 0 ;; esac
 [ "$CHECK" = 1 ] && { log "update available"; exit 0; }
 if busy "$host_id"; then log "deferred — sessions active on this host; next firing retries"; exit 0; fi
-uv tool install -q --reinstall "omnigent @ git+$REPO_URL@$BRANCH"
+git -C "$src" checkout -q --detach "$head"
+install_locked "$src"
 case "$(uname -s)" in
   Darwin) restart="launchctl kickstart -k gui/$(id -u)/ai.omnigent.host" ;;
   *)      restart="systemctl --user restart omnigent-host" ;;

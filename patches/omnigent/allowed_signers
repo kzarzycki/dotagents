@@ -1,0 +1,4 @@
+# Keys whose signature on the fork's `mine` head lets omnigent-update install it.
+# One line per machine that commits to `mine` (work Mac, VPS running audit-sync).
+k.zarzycki@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPKptPzJ8UTmPCFM8zvpNPvwcFFoxfxFgv1O3StbIrQW omnigent-signing@ZarzBook
+k.zarzycki@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFR0+R2MoxoyM4eIXT1UEGXbazwK7fcX8fyzhJ6cSicA omnigent-signing@cc-experiments
