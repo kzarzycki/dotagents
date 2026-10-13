@@ -2,14 +2,6 @@
   "env": {
     "BRANDFETCH_CLIENT_ID": "1idStnJHAEZskBpUdQN"
   },
-  "extraKnownMarketplaces": {
-    "xebia-ai-skills": {
-      "source": {
-        "source": "github",
-        "repo": "xebia/ai-skills"
-      }
-    }
-  },
   "theme": "dark-daltonized",
   "voiceEnabled": true,
   "effortLevel": "medium"
