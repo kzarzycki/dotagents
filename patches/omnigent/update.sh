@@ -95,9 +95,12 @@ if [ -f "$SERVER_DIR/compose.yaml" ]; then
   [ -z "$(git -C "$src" status --porcelain --untracked-files=no)" ] \
     || die "$src has uncommitted changes — commit them into $BRANCH first"
   # Never reset away a commit that exists nowhere else: every commit must be
-  # on some origin branch (normally mine; a pushed backup branch also counts).
+  # on some origin branch (normally mine; a pushed backup branch also counts),
+  # or a past origin/mine head: the sync rebases mine and force-pushes, so the
+  # head this checkout was last reset to drops off origin on every sync.
   git -C "$src" fetch -q origin
-  local_only=$(git -C "$src" rev-list --count HEAD --not --remotes=origin)
+  local_only=$(git -C "$src" rev-list --count HEAD --not --remotes=origin \
+    $(git -C "$src" log -g --format=%H "refs/remotes/origin/$BRANCH"))
   [ "$local_only" = 0 ] \
     || die "$src has $local_only commit(s) on no origin branch — land them in $BRANCH first"
   if busy ""; then log "deferred — sessions active; next firing retries"; exit 0; fi
