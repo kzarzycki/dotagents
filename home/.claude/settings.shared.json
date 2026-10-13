@@ -143,29 +143,7 @@
     "type": "command",
     "command": "bash $HOME/.claude/statusline.sh"
   },
-  "enabledPlugins": {
-    "claude-code-setup@claude-plugins-official": false,
-    "claude-md-management@claude-plugins-official": false,
-    "code-review@claude-plugins-official": false,
-    "document-skills@anthropic-agent-skills": false,
-    "cli-anything@cli-anything": false,
-    "skill-creator@claude-plugins-official": false,
-    "codex@openai-codex": false,
-    "powerpoint-mcp@powerpoint-mcp": false,
-    "superpowers@claude-plugins-official": false,
-    "google-workspace@kzarzycki-agent-skills": false,
-    "experimental@dev": false,
-    "research@kzarzycki-agent-skills": false,
-    "engineering@kzarzycki-agent-skills": false,
-    "content@kzarzycki-agent-skills": false,
-    "workflow@kzarzycki-agent-skills": false,
-    "playwright@kzarzycki-agent-skills": false,
-    "comms-personal@kzarzycki-agent-skills-private": false,
-    "voice-personal@kzarzycki-agent-skills-private": false,
-    "drawio@365-skills": false,
-    "pixelbrowse@pixelrag-plugins": false,
-    "goal-creator@kzarzycki-agent-skills": false
-  },
+  "enabledPlugins": {},
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {
       "source": {

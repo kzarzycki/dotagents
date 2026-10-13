@@ -8,31 +8,7 @@
         "source": "github",
         "repo": "xebia/ai-skills"
       }
-    },
-    "draftsmith-local": {
-      "source": {
-        "source": "directory",
-        "path": "/Users/zarz/draftsmith-marketplace"
-      }
     }
-  },
-  "enabledPlugins": {
-    "pdlc@xebia-ai-skills": false,
-    "experimental@xebia-ai-skills": false,
-    "xebia-personal@kzarzycki-agent-skills-private": false,
-    "experimental@dev": false,
-    "xebia-personal@dev": false,
-    "draftsmith@draftsmith-local": false,
-    "workflow@dev": false,
-    "research@dev": false,
-    "engineering@dev": false,
-    "content@dev": false,
-    "playwright@dev": false,
-    "workflow@kzarzycki-agent-skills": false,
-    "research@kzarzycki-agent-skills": false,
-    "engineering@kzarzycki-agent-skills": false,
-    "content@kzarzycki-agent-skills": false,
-    "playwright@kzarzycki-agent-skills": false
   },
   "theme": "dark-daltonized",
   "voiceEnabled": true,

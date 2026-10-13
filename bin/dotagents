@@ -10,7 +10,7 @@
 # destinations are left alone and reported as conflicts. Local-override
 # patterns are skipped.
 #
-# Profile: machine-class overlay name (mac, vps, xebia-remote, ...). If not
+# Profile: machine-class overlay name (mac, vps, remote, ...). If not
 # supplied via --profile and $HOME/.dotagents-profile is missing, prompts on
 # a TTY. Resolved value is written to $HOME/.dotagents-profile.
 
@@ -41,7 +41,7 @@ Usage:
 Options:
   --no-pull          Skip the git pull step.
   --dry-run          Print actions without making changes.
-  --profile <name>   Machine-class profile (mac, vps, xebia-remote, ...).
+  --profile <name>   Machine-class profile (mac, vps, remote, ...).
                      Written to ~/.dotagents-profile. If omitted and the
                      file is missing, prompts on a TTY.
   --only <entry>     Install only this top-level home payload; repeatable.

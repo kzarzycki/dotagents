@@ -13,11 +13,6 @@
       "description": "Live working-tree experimental skills (communicating-in-html, update-delta-audit)"
     },
     {
-      "name": "xebia-personal",
-      "source": "./agents/agent-skills-private/xebia-personal",
-      "description": "Private personal skills (delegacja, playbook-review, submit-monthly-invoice)"
-    },
-    {
       "name": "workflow",
       "source": "./agents/agent-skills/workflow",
       "description": "Live working-tree copy of workflow (published as workflow@kzarzycki-agent-skills)"

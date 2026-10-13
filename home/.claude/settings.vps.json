@@ -1,16 +1,5 @@
 {
   "env": {
     "CLAUDE_CODE_PLUGIN_PREFER_HTTPS": "1"
-  },
-  "enabledPlugins": {
-    "workflow@dev": false,
-    "research@dev": false,
-    "engineering@dev": false,
-    "content@dev": false,
-    "xebia-personal@kzarzycki-agent-skills-private": false,
-    "workflow@kzarzycki-agent-skills": false,
-    "research@kzarzycki-agent-skills": false,
-    "engineering@kzarzycki-agent-skills": false,
-    "content@kzarzycki-agent-skills": false
   }
 }
