@@ -214,5 +214,6 @@
   "verbose": false,
   "autoCompactEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "outputStyle": "Concise"
+  "outputStyle": "Concise",
+  "syncClaudeAiSkills": false
 }
