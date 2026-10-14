@@ -11,7 +11,7 @@ BOOTSTRAP = Path(__file__).resolve().parents[1] / "patches/hindsight/bootstrap.s
 @pytest.mark.parametrize(
     ("profile", "url"),
     [
-        ("mac", "https://cc-experiments.taile39822.ts.net:9443"),
+        ("mac", "https://cc-experiments.taile39822.ts.net:9077"),
         ("vps", "http://127.0.0.1:9077"),
     ],
 )
