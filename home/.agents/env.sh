@@ -68,3 +68,9 @@ export OAUTH_CALLBACK_PORT=47563
 # each squatting a loopback ephemeral port. 10 min outlives a normal agent turn
 # but reaps anything abandoned.
 export AGENT_BROWSER_IDLE_TIMEOUT_MS=600000
+
+# Claude Code runs commands in the user's shell and snapshots its options, while
+# agents write bash: under zsh an unquoted $var stays one word, so a loop over
+# "a b" runs once with both. Split like bash in agent shells only (Claude Code
+# sets CLAUDECODE=1); interactive zsh keeps its default.
+[ -n "${ZSH_VERSION:-}" ] && [ -n "${CLAUDECODE:-}" ] && setopt SH_WORD_SPLIT
