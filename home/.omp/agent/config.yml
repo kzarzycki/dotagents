@@ -48,9 +48,9 @@ retry:
     judge:
       - openrouter/typesafe/jev-1.13
     default:
-      - openai-codex/gpt-6-astra
+      - openai-codex/gpt-6.1-sol
     slow:
-      - openai-codex/gpt-6-astra
+      - openai-codex/gpt-6.1-sol
     smol:
       - google-antigravity/gemini-3.8-flash
     task:
