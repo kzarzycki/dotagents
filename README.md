@@ -151,11 +151,13 @@ The bootstrap reads `~/.dotagents-profile` (`mac` or `vps`), pins `@vectorize-io
 
 OMP's tracked `home/.omp/agent/config.yml` defaults to `http://127.0.0.1:9077`, `coding-agent` with `per-project` scoping, and five-second automatic recall/request deadlines. The bootstrap sets a machine-local `HINDSIGHT_API_URL` override in OMP's private `.env`; on the Mac it selects `https://cc-experiments.taile39822.ts.net:9077`. The coding-agents hooks use `coding-agent-{gitProject}`; both integrations resolve Trinity to `coding-agent-trinity`. OMP's three seeded mental models are disabled until their stale content and failed refreshes are repaired. Claude/Codex automatic hook calls still have host deadlines of 30 seconds at startup/prompt and 60 seconds at stop; an unreachable server can delay a prompt, but must not stop the agent. A failed OMP retain is not a durable offline queue: re-submit important unsaved memories after service returns.
 
+Every LLM call Hindsight makes bills the ChatGPT plan the coding agents use, so the server runs on the same model they do, `gpt-6.1-sol`, and each bank refreshes a mental model at most hourly: `mental_model_min_refresh_interval_seconds` is 3600, set per bank with `PATCH /v1/default/banks/<bank>/config`. At the default of 0 a busy bank refreshed on every retain and drained the plan.
+
 On the VPS only, the private `~/.hindsight/profiles/coding-agent.env` configures the pinned local API:
 
 ```sh
 HINDSIGHT_API_LLM_PROVIDER=openai-codex
-HINDSIGHT_API_LLM_MODEL=gpt-6-astra
+HINDSIGHT_API_LLM_MODEL=gpt-6.1-sol
 HINDSIGHT_API_RERANKER_PROVIDER=rrf
 HINDSIGHT_API_WORKER_MAX_SLOTS=2
 HINDSIGHT_API_WORKER_CONSOLIDATION_RESERVED_SLOTS=1
