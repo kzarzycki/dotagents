@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-sessionstart-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6-astra node \"$HOME/.hindsight/coding-agents/dist/claude-sessionstart-hook.js\"; fi",
+            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-sessionstart-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6.1-sol node \"$HOME/.hindsight/coding-agents/dist/claude-sessionstart-hook.js\"; fi",
             "timeout": 30
           }
         ]
@@ -59,7 +59,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6-astra node \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\"; fi",
+            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6.1-sol node \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\"; fi",
             "timeout": 30
           }
         ]
@@ -78,7 +78,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6-astra node \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\"; fi",
+            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6.1-sol node \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\"; fi",
             "timeout": 60
           }
         ]
