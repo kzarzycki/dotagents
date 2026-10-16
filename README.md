@@ -202,12 +202,21 @@ Installs `herdr` (control the Herdr multiplexer; upstream `herdrdev/herdr`) and 
 Omnigent is a local agent runtime. Its configuration is versioned here as a template, but it runs only on workspace machines (mac/vps) — **not in remote Claude Code sessions** (web / ephemeral containers), which must keep no footprint. There is no plugin, marketplace entry, or SessionStart hook; install it once per workspace machine:
 
 ```sh
-~/.dotagents/patches/omnigent/bootstrap.sh
+~/.dotagents/patches/omnigent/bootstrap.sh [--server https://<server>:6767]
 ```
 
-It (a) `uv tool install omnigent` if the `omnigent` CLI isn't already on PATH (no silent upgrade), (b) ensures `~/.omnigent/` (0700) and seeds `~/.omnigent/config.yaml` from `patches/omnigent/config.template.yaml` only if it's missing. omnigent owns the live file — it rewrites the per-machine `host:` block (host_id + hostname) and providers at runtime — so the bootstrap never overwrites an existing config and the file is never symlinked back into the repo. The script no-ops when `CLAUDE_CODE_REMOTE=true`. Idempotent; safe to re-run.
+It (a) installs the `omnigent` CLI from the `mine` branch of the `kzarzycki/omnigent` fork (override with `OMNIGENT_SOURCE`) if it isn't already on PATH (no silent upgrade; move to the branch head with `uv tool install --reinstall "omnigent @ git+https://github.com/kzarzycki/omnigent@mine"`), (b) ensures `~/.omnigent/` (0700) and seeds `~/.omnigent/config.yaml` from `patches/omnigent/config.template.yaml` only if it's missing. omnigent owns the live file — it rewrites the per-machine `host:` block (host_id + hostname) and providers at runtime — so the bootstrap never overwrites an existing config and the file is never symlinked back into the repo. The script no-ops when `CLAUDE_CODE_REMOTE=true`. Idempotent; safe to re-run.
 
 Requirements: `uv` (https://docs.astral.sh/uv/). For the claude/codex/pi harnesses: Python 3.12+, Node.js 22 LTS+ with `npm`, `tmux`, and `bwrap` on Linux (`apt install bubblewrap`) — the script warns about any that are missing rather than failing. After bootstrap, run `omnigent setup` to log in the `claude`/`codex` CLIs and populate credentials. Secrets stay machine-local (OS keychain / `omnigent setup`) and are never committed — the template carries no keys and no host_id.
+
+`--server` also installs the host service (`omnigent host enable`). That command bakes the calling process's `PATH` into the launchd plist or systemd unit, so a run from ssh or a script leaves a host that is online but finds no harness. The script therefore adopts the login shell's `PATH` first (on macOS it adds Homebrew to `~/.zprofile` when missing, since a second macOS user shares `/opt/homebrew` without `brew shellenv`). On every run it checks that the installed service's `PATH` resolves `claude` and `tmux` (plus `bwrap` on Linux) and exits 1 naming what is missing.
+
+It also installs `~/.local/bin/omnigent-update` (`patches/omnigent/update.sh`), which brings the machine to the head of the fork's `mine`: it installs nothing unless that head is signed by a key in `~/.config/omnigent/allowed_signers` (seeded once from `patches/omnigent/allowed_signers`, never overwritten), pins Python dependencies to the fork's `uv.lock`, reinstalls the host CLI from a local checkout and, where `~/services/omnigent/compose.yaml` exists, the deploy checkout is reset and the server image rebuilt. It changes nothing while another session was active in the last 10 minutes on what the restart would kill, refuses to reset away commits that are on no origin branch, and restarts detached 20s later so the session running it can report. `--check` only reports. Each machine runs it from an Omnigent scheduled task a few times a night; the fork itself is rebased onto upstream by the `audit-sync` scheduled task on the VPS (see the fork's `.claude/skills/audit-sync`).
+
+Manual steps the script cannot do:
+
+- Start `claude` once in a terminal and clear every first-run prompt. Native sessions run the CLI inside tmux and stall on any dialog they cannot answer.
+- macOS: the service runs in the user's desktop session (`gui/<uid>`), so that user must stay logged in (switch users, don't log out; log in again after a reboot). CLI logins live in that session's keychain, which is why `claude auth status` over ssh reports logged out while the service works.
 
 ### dev marketplace (live local plugins)
 
