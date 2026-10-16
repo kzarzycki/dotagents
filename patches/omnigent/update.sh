@@ -5,8 +5,10 @@
 #
 #   host CLI  reinstalled from a local checkout (~/.cache/omnigent-src) when
 #             its commit differs from `mine`
-#   server    only where ~/services/omnigent/compose.yaml exists: the deploy
-#             checkout is reset to `mine` and the image rebuilt
+#   server    only where /etc/omnigent/compose.yaml exists (server/install.sh):
+#             root's omnigent-deploy unit, the one thing this user may sudo,
+#             rebuilds and restarts it from root's own signed checkout; the
+#             host's checkout here is reset to the same head
 #
 # Nothing is installed unless the `mine` head is signed by a key in
 # ~/.config/omnigent/allowed_signers, so a push with a stolen GitHub token
@@ -83,14 +85,15 @@ install_locked() {
   rm -f "$c"
 }
 
-if [ -f "$SERVER_DIR/compose.yaml" ]; then
+if [ -f /etc/omnigent/compose.yaml ]; then
   # Server machine: the host runs from the deploy checkout's .venv, so the
   # checkout's commit is what both the server image and the host run.
   src="$SERVER_DIR/source"
   head=$(fetch_verified "$src")
   current=$(git -C "$src" rev-parse HEAD)
-  log "server+host at ${current:0:9}, $BRANCH at ${head:0:9}"
-  [ "$current" = "$head" ] && { log "up to date"; exit 0; }
+  server=$(cat /srv/omnigent/deployed 2>/dev/null || echo none)
+  log "host at ${current:0:9}, server at ${server:0:9}, $BRANCH at ${head:0:9}"
+  [ "$current" = "$head" ] && [ "$server" = "$head" ] && { log "up to date"; exit 0; }
   [ "$CHECK" = 1 ] && { log "update available"; exit 0; }
   [ -z "$(git -C "$src" status --porcelain --untracked-files=no)" ] \
     || die "$src has uncommitted changes — commit them into $BRANCH first"
@@ -108,10 +111,13 @@ if [ -f "$SERVER_DIR/compose.yaml" ]; then
   git -C "$src" reset -q --hard "$head"
   (cd "$src" && uv sync -q --frozen)
   install_locked "$src"
-  (cd "$SERVER_DIR" && docker compose build -q omnigent)
+  sudo -n systemctl start omnigent-deploy.service \
+    || die "server deploy failed: journalctl -u omnigent-deploy"
+  server=$(cat /srv/omnigent/deployed)
+  [ "$server" = "$head" ] || log "server deployed ${server:0:9}: $BRANCH moved after ${head:0:9}"
   systemd-run --user -q --on-active=20 --unit="omnigent-update-restart-$(date +%s)" \
-    sh -c "cd '$SERVER_DIR' && docker compose up -d omnigent && systemctl --user restart omnigent-host"
-  log "updated to ${head:0:9}; server and host restart in 20s"
+    systemctl --user restart omnigent-host
+  log "updated to ${head:0:9}; server restarted, host restarts in 20s"
   exit 0
 fi
 
