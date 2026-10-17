@@ -1,0 +1,2 @@
+# @USER@ may start the Omnigent server deploy and nothing else: exact arguments, no wildcard.
+@USER@ ALL=(root) NOPASSWD: /usr/bin/systemctl start omnigent-deploy.service
