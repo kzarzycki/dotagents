@@ -46,3 +46,20 @@ def test_otel_settings_and_codex_block(tmp_path):
     assert result.returncode == 0
     assert "WARNING" in result.stderr and "[otel]" in result.stderr
     assert codex.read_text() == user_otel
+
+
+def test_codex_block_follows_codex_selection(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    (home / ".codex").mkdir()
+    codex = home / ".codex/config.toml"
+
+    result = run_install(repo, home, "--only", "claude", "--profile", "vps")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (home / ".claude/settings.json").exists()
+    assert list((home / ".codex").iterdir()) == []
+
+    (home / ".claude/settings.json").unlink()
+    result = run_install(repo, home, "--only", "codex", "--profile", "vps")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert tomllib.loads(codex.read_text())["otel"]["trace_exporter"] == "none"
+    assert not (home / ".claude/settings.json").exists()
