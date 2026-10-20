@@ -538,10 +538,14 @@ if is_selected ".claude" || is_selected ".codex"; then
 # (only project-level .claude/settings.local.json exists). Install generates
 # settings.json by deep-merging settings.shared.json + settings.<profile>.json
 # (profile wins per key; nested objects merge, arrays replace). Claude writes
-# runtime prefs (/model, /effort, don't-ask-again flags) into the same file
-# between installs; each install resets it to repo state and prints the diff,
-# so session churn stays visible and machine-local instead of dirtying the
-# repo. Edit the repo files, never the generated one.
+# runtime prefs (/model, permission prompts, /plugin) into the same file
+# between installs. The repo owns each top-level key it sets; every other key
+# the host has is kept. Claude also writes into permissions, enabledPlugins
+# and extraKnownMarketplaces, so there the repo owns only its own entries:
+# permission lists are unions (revoke with a deny rule), and a host plugin
+# entry stays only while enabled. Keys keep the host's order, so the diff
+# printed shows only repo changes.
+# Edit the repo files, never the generated one.
 USER_SETTINGS="$HOME/.claude/settings.json"
 SHARED_SETTINGS="$SRC/.claude/settings.shared.json"
 LEGACY_LOCAL="$HOME/.claude/settings.local.json"
@@ -612,19 +616,37 @@ if [ -f "$SHARED_SETTINGS" ]; then
     printf 'DRY: generate %s from: %s\n' "$USER_SETTINGS" "${merge_inputs[*]}"
     linked=$((linked + 1))
   else
+    host_settings=/dev/null
+    [ -f "$USER_SETTINGS" ] && host_settings=$USER_SETTINGS
     tmp=$(mktemp)
-    printf '%s\n' "$merged" > "$tmp"
-    if [ -f "$USER_SETTINGS" ] && ! cmp -s "$tmp" "$USER_SETTINGS"; then
-      # one-time safety copy before the first overwrite of a real file
-      if [ ! -e "$USER_SETTINGS.pre-dotagents.bak" ]; then
-        cp "$USER_SETTINGS" "$USER_SETTINGS.pre-dotagents.bak"
+    if ! jq --slurpfile h "$host_settings" '
+        ($h[0] // {}) as $h
+        | $h + .
+        | if .permissions and $h.permissions then .permissions |= ($h.permissions + .
+            | reduce ("allow", "deny", "ask", "additionalDirectories") as $k (.;
+                if .[$k] and $h.permissions[$k] then .[$k] = $h.permissions[$k] + (.[$k] - $h.permissions[$k]) else . end))
+          else . end
+        | if .enabledPlugins and $h.enabledPlugins then .enabledPlugins |= (. as $r
+            | $h.enabledPlugins + $r | with_entries(select(.value == true or (.key as $k | $r | has($k)))))
+          else . end
+        | if .extraKnownMarketplaces and $h.extraKnownMarketplaces
+          then .extraKnownMarketplaces |= $h.extraKnownMarketplaces + . else . end
+      ' <<<"$merged" > "$tmp"; then
+      printf 'WARNING: %s is not a valid settings object; left unchanged\n' "$USER_SETTINGS" >&2
+      rm -f "$tmp"
+    else
+      if [ -f "$USER_SETTINGS" ] && ! cmp -s "$tmp" "$USER_SETTINGS"; then
+        # one-time safety copy before the first overwrite of a real file
+        if [ ! -e "$USER_SETTINGS.pre-dotagents.bak" ]; then
+          cp "$USER_SETTINGS" "$USER_SETTINGS.pre-dotagents.bak"
+        fi
+        printf 'UPDATED %s:\n' "$USER_SETTINGS"
+        diff -u "$USER_SETTINGS" "$tmp" || true
       fi
-      printf 'UPDATED %s:\n' "$USER_SETTINGS"
-      diff -u "$USER_SETTINGS" "$tmp" || true
+      chmod 644 "$tmp"
+      mv "$tmp" "$USER_SETTINGS"
+      linked=$((linked + 1))
     fi
-    chmod 644 "$tmp"
-    mv "$tmp" "$USER_SETTINGS"
-    linked=$((linked + 1))
   fi
 
   # 4.5 Codex reads OTel only from ~/.codex/config.toml [otel]. Keep an owned
