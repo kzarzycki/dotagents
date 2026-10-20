@@ -632,11 +632,13 @@ if [ -f "$SHARED_SETTINGS" ]; then
   # source; telemetry off removes it. Owned = "[otel]", the marker line right
   # after it, then the contiguous keys written here. Codex rewrites the file
   # (`codex mcp add`) and inserts tables after that run, so nothing past it is
-  # ours; a trailing line that would fall into the previous table once the
-  # header is gone (a key the user added) leaves the file alone. Any other otel
-  # table or key is the user's. Codex 0.163.0 puts host.name on logs but not
-  # metrics, and Omnigent filters its env, so `environment` carries the host;
-  # the Collector copies it into host.name.
+  # ours. Only a table header or EOF ends [otel]: blank and comment lines past
+  # the run are kept for what follows, and a key after them (one the user added,
+  # or ours split off by a comment) would fall into the previous table once the
+  # header is gone, so it leaves the file alone. Any other otel table or key is
+  # the user's. Codex 0.163.0 puts host.name on logs but not metrics, and
+  # Omnigent filters its env, so `environment` carries the host; the Collector
+  # copies it into host.name.
   CODEX_CONFIG="$HOME/.codex/config.toml"
   if is_selected ".codex" && [ -d "$HOME/.codex" ]; then
     otel_ep=$(jq -r 'if .env.CLAUDE_CODE_ENABLE_TELEMETRY == "1"
@@ -649,11 +651,16 @@ if [ -f "$SHARED_SETTINGS" ]; then
       # Drop the owned block and one blank line around it.
       awk -v m="$otel_mark" '
         function flush() { if (hold) print ""; hold = 0 }
-        st == 2 {
-          if ($0 ~ /^(environment|log_user_prompt|exporter|metrics_exporter|trace_exporter)[[:space:]]*=/) next
-          if ($0 != "" && $0 !~ /^[[:space:]]*(#|\[)/) { bad = 1; exit }
+        function emit(l) { flush(); if (l == "") hold = 1; else print l }
+        function done(  i) {
           st = 3
-          if (!pre && $0 == "") next
+          for (i = 1; i <= n; i++) if (i > 1 || pre || buf[i] != "") emit(buf[i])
+        }
+        st == 2 {
+          if (!n && $0 ~ /^(environment|log_user_prompt|exporter|metrics_exporter|trace_exporter)[[:space:]]*=/) next
+          if ($0 == "" || $0 ~ /^[[:space:]]*#/) { buf[++n] = $0; next }
+          if ($0 !~ /^[[:space:]]*\[/) { bad = 1; exit }
+          done()
         }
         st == 1 {
           if ($0 == m) { st = 2; pre = hold; hold = 0; next }
@@ -662,7 +669,7 @@ if [ -f "$SHARED_SETTINGS" ]; then
         st == 0 && $0 == "[otel]" { st = 1; next }
         $0 == "" { flush(); hold = 1; next }
         { flush(); print }
-        END { if (bad) exit 3; if (st == 1) { flush(); print "[otel]" } flush() }
+        END { if (bad) exit 3; if (st == 1) { flush(); print "[otel]" } if (st == 2) done(); flush() }
       ' "$CODEX_CONFIG" > "$codex_tmp" || codex_ok=0
     fi
     if (( ! codex_ok )); then

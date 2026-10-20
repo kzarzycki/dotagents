@@ -90,6 +90,40 @@ def test_codex_rewrite_inside_block_keeps_user_tables(tmp_path):
     assert codex.read_bytes() == edited
 
 
+@pytest.mark.parametrize("profile", ["vps", "remote"])
+@pytest.mark.parametrize("old, new", [
+    ("log_user_prompt", "\nlog_user_prompt"),
+    ("log_user_prompt", "# why\nlog_user_prompt"),
+    ('trace_exporter = "none"\n', 'trace_exporter = "none"\n\nfoo = 1\n'),
+])
+def test_codex_key_past_blank_or_comment_leaves_file(tmp_path, profile, old, new):
+    # Only a header or EOF ends [otel]; a key after a blank or comment would
+    # join [mcp_servers.y] once the header goes.
+    repo, home = make_checkout(tmp_path)
+    codex = home / ".codex/config.toml"
+    codex.parent.mkdir()
+    codex.write_text(EXISTING)
+    assert run_install(repo, home, "--profile", "vps").returncode == 0
+    codex.write_text(codex.read_text().replace(old, new, 1))
+    edited = codex.read_bytes()
+    result = run_install(repo, home, "--profile", profile)
+    assert result.returncode == 0
+    assert "WARNING" in result.stderr
+    assert codex.read_bytes() == edited
+
+
+def test_codex_comment_before_next_table_is_kept(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    codex = home / ".codex/config.toml"
+    codex.parent.mkdir()
+    codex.write_text(EXISTING)
+    assert run_install(repo, home, "--profile", "vps").returncode == 0
+    tail = '\n# mine\n[mcp_servers.x]\ncommand = "x"\n'
+    codex.write_text(codex.read_text() + tail)
+    assert run_install(repo, home, "--profile", "remote").returncode == 0
+    assert codex.read_text() == EXISTING + tail
+
+
 @pytest.mark.skipif(not shutil.which("codex"), reason="codex CLI not on PATH")
 def test_real_codex_mcp_add_round_trip(tmp_path):
     repo, home = make_checkout(tmp_path)
