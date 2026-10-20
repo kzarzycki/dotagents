@@ -9,7 +9,16 @@
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "330000",
     "CLAUDE_CODE_FORK_SUBAGENT": "1",
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
-    "CLAUDE_CODE_WORKFLOWS": "1"
+    "CLAUDE_CODE_WORKFLOWS": "1",
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://cc-experiments.taile39822.ts.net:4318",
+    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "cumulative",
+    "OTEL_METRICS_INCLUDE_ACCOUNT_UUID": "false",
+    "OTEL_METRICS_INCLUDE_REPOSITORY": "true",
+    "OTEL_RESOURCE_ATTRIBUTES": "service.namespace=agents"
   },
   "permissions": {
     "allow": [],
