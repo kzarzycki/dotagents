@@ -597,7 +597,8 @@ if [ -f "$SHARED_SETTINGS" ]; then
   fi
   # Settings env values are literal, so the installer fills host.name: Claude
   # Code sends none, Codex sends gethostname(), and `hostname` matches it.
-  merged=$(jq -s --arg host "$(hostname 2>/dev/null || uname -n)" '
+  otel_host=$(hostname 2>/dev/null || uname -n)
+  merged=$(jq -s --arg host "$otel_host" '
     reduce .[] as $overlay ({}; . * $overlay)
     | if (.env.OTEL_RESOURCE_ATTRIBUTES // "") != ""
       then .env.OTEL_RESOURCE_ATTRIBUTES += ",host.name=" + $host else . end
@@ -623,7 +624,9 @@ if [ -f "$SHARED_SETTINGS" ]; then
   # 4.5 Codex reads OTel only from ~/.codex/config.toml [otel]. Keep a marked
   # block at its end, derived from the merged Claude settings so the endpoint
   # has one source; telemetry off removes it. An [otel] outside the markers is
-  # the user's: leave the file alone.
+  # the user's: leave the file alone. Codex 0.163.0 puts host.name on logs but
+  # not metrics, and Omnigent filters its env, so `environment` carries the
+  # host; the Collector copies it into host.name.
   CODEX_CONFIG="$HOME/.codex/config.toml"
   if [ -d "$HOME/.codex" ]; then
     otel_ep=$(jq -r 'if .env.CLAUDE_CODE_ENABLE_TELEMETRY == "1"
@@ -649,7 +652,7 @@ if [ -f "$SHARED_SETTINGS" ]; then
     else
       if [ -n "$otel_ep" ]; then
         if [ -s "$codex_tmp" ]; then echo >> "$codex_tmp"; fi
-        printf '%s\n' "$otel_begin" '[otel]' 'log_user_prompt = false' \
+        printf '%s\n' "$otel_begin" '[otel]' "environment = \"$otel_host\"" 'log_user_prompt = false' \
           "exporter = { otlp-http = { endpoint = \"$otel_ep/v1/logs\", protocol = \"binary\" } }" \
           "metrics_exporter = { otlp-http = { endpoint = \"$otel_ep/v1/metrics\", protocol = \"binary\" } }" \
           'trace_exporter = "none"' "$otel_end" >> "$codex_tmp"
