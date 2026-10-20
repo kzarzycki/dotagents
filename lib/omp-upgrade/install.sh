@@ -28,9 +28,9 @@ pick_python() {
     command -v "$candidate" >/dev/null 2>&1 || continue
     # tomllib for the audit, plus a populated CA store — a python.org framework
     # build without its certificate installer run fails every HTTPS fetch.
-    resolved=$("$candidate" -c 'import ssl, sys, tomllib
+    resolved=$("$candidate" -c 'import os, ssl, sys, tomllib
 assert ssl.create_default_context().cert_store_stats()["x509_ca"]
-print(sys.executable)' 2>/dev/null) || continue
+print(os.path.realpath(sys.executable))' 2>/dev/null) || continue
     [ -x "$resolved" ] && { printf '%s' "$resolved"; return 0; }
   done
   return 1
@@ -45,7 +45,7 @@ esac
 
 if [ "${1:-}" = "--uninstall" ]; then
   [ -x "$LIB/omp-real" ] && mv "$LIB/omp-real" "$SHIM" || rm -f "$SHIM"
-  rm -f "$LIB/launcher.py" "$LIB/audit.py"
+  rm -f "$LIB/launcher.py" "$LIB/audit.py" "$LIB/python"
   echo "omp-upgrade removed; state kept at $STATE"
   exit 0
 fi
@@ -54,6 +54,8 @@ mkdir -p "$LIB" "$STATE" "$(dirname "$SHIM")"
 chmod 700 "$LIB" "$STATE"
 ln -sfn "$REPO_DIR/launcher.py" "$LIB/launcher.py"
 ln -sfn "$REPO_DIR/audit.py" "$LIB/audit.py"
+# audit.py re-execs under this when run by an older python3.
+ln -sfn "$PY" "$LIB/python"
 
 # Adopt a published release: download this platform's asset and check it against
 # the digest in the release metadata before it is ever executed.

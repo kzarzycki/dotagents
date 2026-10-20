@@ -46,6 +46,19 @@ def model_stream(stop="stop", end=True, **overrides):
     return ("\n".join(map(json.dumps, events)) + "\n").encode()
 
 
+class DiffHeaderTests(unittest.TestCase):
+    def test_header_admits_spaces_but_never_a_rename(self):
+        def same_path(line):
+            match = re.match(audit.DIFF_HEADER, line)
+            return bool(match and match.group(1) == match.group(2)) and match.group(1)
+        spaced = "syntaxes/Regular Expressions (Elixir).sublime-syntax"
+        self.assertEqual(same_path(f"diff --git a/{spaced} b/{spaced}\n"), spaced)
+        self.assertEqual(same_path("diff --git a/x b/y b/x b/y\n"), "x b/y")
+        self.assertFalse(same_path("diff --git a/src/a.ts b/src/b.ts\n"))
+        self.assertFalse(same_path("diff --git a/a b/b/a\n"))
+        self.assertFalse(same_path('diff --git "a/caf\\303\\251" "b/caf\\303\\251"\n'))
+
+
 class VerdictTests(unittest.TestCase):
     def test_malformed_or_ambiguous_verdict_never_approves(self):
         good = verdict()

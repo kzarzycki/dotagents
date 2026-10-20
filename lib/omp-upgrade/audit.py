@@ -1,5 +1,16 @@
 #!/usr/bin/python3
 """Static public-source review gate. A model verdict is not binary attestation."""
+import os
+import sys
+
+# tomllib needs 3.11+, but `python3` is often older (macOS ships 3.9). Re-exec
+# under the interpreter install.sh pinned for the omp shim, still isolated.
+if sys.version_info < (3, 11):
+    _pinned = os.path.expanduser("~/.local/lib/omp-upgrade/python")
+    if os.access(_pinned, os.X_OK) and os.path.realpath(_pinned) != os.path.realpath(sys.executable):
+        os.execv(_pinned, [_pinned, "-I", os.path.abspath(__file__), *sys.argv[1:]])
+    sys.exit("audit.py needs python 3.11+ (tomllib); run lib/omp-upgrade/install.sh to pin one")
+
 import argparse
 import base64
 import contextlib
@@ -11,7 +22,6 @@ import gzip
 import hashlib
 import io
 import json
-import os
 from pathlib import Path
 import platform
 import re
@@ -33,6 +43,9 @@ REAL = ROOT / "omp-real"
 REPO = STATE / "upstream.git"
 API = "https://api.github.com/repos/can1357/oh-my-pi"
 UPSTREAM = "https://github.com/can1357/oh-my-pi.git"
+# Diffs run with --no-renames, so both sides name one path. The back-reference
+# admits paths with spaces yet still rejects a/X b/Y; git-quoted paths still HOLD.
+DIFF_HEADER = r"diff --git a/(.+) b/(\1)\n"
 # Release asset for this host. An unknown platform gets no asset name, so the
 # gate refuses to resolve a release rather than guessing one.
 ASSETS = {
@@ -918,7 +931,7 @@ def compact_large_json_patches(text, base, target):
     require(patches[0] == "", "Missing complete diff header")
     compacted, raw_size, gated_size = [], 0, 0
     for patch in patches[1:]:
-        match = re.match(r"diff --git a/(\S+) b/(\S+)\n", patch)
+        match = re.match(DIFF_HEADER, patch)
         require(match and match.group(1) == match.group(2), "Unparseable or renamed diff header")
         path = match.group(1)
         informational = bool(INFORMATIONAL.match(path))
@@ -1013,7 +1026,7 @@ def replace_binary_patches(text, paths, binaries, base, target):
     require(patches[0] == "", "Missing complete diff header")
     by_path = {}
     for patch in patches[1:]:
-        match = re.match(r"diff --git a/(\S+) b/(\S+)\n", patch)
+        match = re.match(DIFF_HEADER, patch)
         require(match and match[1] == match[2], "Unparseable or renamed diff header")
         by_path[match[1]] = patch
     require(set(by_path) == set(paths), "Diff and path inventory disagree")
@@ -1400,7 +1413,7 @@ def split_diff(text):
     require(pieces[0] == "", "Missing complete diff header")
     units = []
     for piece in pieces[1:]:
-        header = re.match(r"diff --git a/(\S+) b/(\S+)\n", piece)
+        header = re.match(DIFF_HEADER, piece)
         require(header and header.group(1) == header.group(2), "Unparseable or renamed diff header")
         units.extend(split_file_patch(header.group(1), piece))
     chunks, current = [], ""
@@ -1452,7 +1465,7 @@ def scope_diff(complete, paths):
     patches = re.split(r"(?=^diff --git )", complete, flags=re.MULTILINE)[1:]
     gated, informational = [], []
     for patch in patches:
-        header = re.match(r"diff --git a/(\S+) b/(\S+)\n", patch)
+        header = re.match(DIFF_HEADER, patch)
         require(header and header.group(1) == header.group(2), "Unparseable or renamed diff header")
         path = header.group(1)
         # Package authors choose their own directory names, so dependency files are never informational.
