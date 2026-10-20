@@ -10,12 +10,13 @@ def test_install_keeps_host_settings_the_repo_does_not_set(tmp_path):
     fresh = json.loads(settings.read_text())
 
     host = json.loads(settings.read_text())
-    host["model"] = "opus"
     host["env"]["CLAUDE_CODE_ENABLE_TELEMETRY"] = "0"
-    host["permissions"]["allow"].append("Bash(host-only:*)")
     host["permissions"]["additionalDirectories"] = ["/srv/host"]
     host["enabledPlugins"] = {"stale@host-market": False, "ponytail@host-market": True}
     host["extraKnownMarketplaces"]["host-market"] = {"source": {"source": "github", "repo": "x/y"}}
+    # Host key order differs from the repo's; it must not show up as a change.
+    host = {"model": "opus", **dict(reversed(list(host.items())))}
+    host["permissions"]["allow"].insert(0, "Bash(host-only:*)")
     settings.write_text(json.dumps(host, indent=2) + "\n")
 
     result = run_install(repo, home, "--profile", "vps")
@@ -23,15 +24,15 @@ def test_install_keeps_host_settings_the_repo_does_not_set(tmp_path):
     got = json.loads(settings.read_text())
     assert got["model"] == "opus"
     assert got["env"] == fresh["env"] and got["hooks"] == fresh["hooks"]
-    assert got["permissions"]["allow"] == fresh["permissions"]["allow"] + ["Bash(host-only:*)"]
+    assert got["permissions"]["allow"] == ["Bash(host-only:*)"] + fresh["permissions"]["allow"]
     assert got["permissions"]["additionalDirectories"] == ["/srv/host"]
     assert got["enabledPlugins"] == {"ponytail@host-market": True}
     assert got["extraKnownMarketplaces"] == {**fresh["extraKnownMarketplaces"], "host-market": host["extraKnownMarketplaces"]["host-market"]}
     # The printed diff carries only the repo's changes.
     changed = [l for l in result.stdout.splitlines() if l.startswith(("+", "-")) and not l.startswith(("+++", "---"))]
-    assert changed == [
-        '-    "CLAUDE_CODE_ENABLE_TELEMETRY": "0",',
+    assert sorted(changed) == [
         '+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",',
+        '-    "CLAUDE_CODE_ENABLE_TELEMETRY": "0",',
         '-    "stale@host-market": false,',
     ], result.stdout
 

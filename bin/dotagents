@@ -543,7 +543,8 @@ if is_selected ".claude" || is_selected ".codex"; then
 # the host has is kept. Claude also writes into permissions, enabledPlugins
 # and extraKnownMarketplaces, so there the repo owns only its own entries:
 # permission lists are unions (revoke with a deny rule), and a host plugin
-# entry stays only while enabled. The diff printed shows only repo changes.
+# entry stays only while enabled. Keys keep the host's order, so the diff
+# printed shows only repo changes.
 # Edit the repo files, never the generated one.
 USER_SETTINGS="$HOME/.claude/settings.json"
 SHARED_SETTINGS="$SRC/.claude/settings.shared.json"
@@ -619,18 +620,18 @@ if [ -f "$SHARED_SETTINGS" ]; then
     [ -f "$USER_SETTINGS" ] && host_settings=$USER_SETTINGS
     tmp=$(mktemp)
     if ! jq --slurpfile h "$host_settings" '
-        def keep($h): reduce ($h | to_entries[]) as $e (.; if has($e.key) then . else .[$e.key] = $e.value end);
         ($h[0] // {}) as $h
-        | keep($h)
-        | if .permissions and $h.permissions then .permissions |= (keep($h.permissions)
+        | $h + .
+        | if .permissions and $h.permissions then .permissions |= ($h.permissions + .
             | reduce ("allow", "deny", "ask", "additionalDirectories") as $k (.;
-                if .[$k] and $h.permissions[$k] then .[$k] += ($h.permissions[$k] - .[$k]) else . end))
+                if .[$k] and $h.permissions[$k] then .[$k] = $h.permissions[$k] + (.[$k] - $h.permissions[$k]) else . end))
           else . end
-        | if .enabledPlugins and $h.enabledPlugins
-          then .enabledPlugins |= keep($h.enabledPlugins | with_entries(select(.value == true))) else . end
+        | if .enabledPlugins and $h.enabledPlugins then .enabledPlugins |= (. as $r
+            | $h.enabledPlugins + $r | with_entries(select(.value == true or (.key as $k | $r | has($k)))))
+          else . end
         | if .extraKnownMarketplaces and $h.extraKnownMarketplaces
-          then .extraKnownMarketplaces |= keep($h.extraKnownMarketplaces) else . end
-      ' <<<"$merged" > "$tmp" 2>/dev/null; then
+          then .extraKnownMarketplaces |= $h.extraKnownMarketplaces + . else . end
+      ' <<<"$merged" > "$tmp"; then
       printf 'WARNING: %s is not a valid settings object; left unchanged\n' "$USER_SETTINGS" >&2
       rm -f "$tmp"
     else
