@@ -70,7 +70,7 @@ After pulling updates:
 dotagents install
 ```
 
-The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) appends a one-time source line for `~/.agents/env.sh` to existing `~/.bashrc`/`~/.zshrc` — the rc files stay machine-owned, only the snippet is managed; `env.sh` carries shell extensions the managed tools need (PATH and tool-specific environment), not general shell config, (6) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, (7) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
+The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions), (5) appends a one-time source line for `~/.agents/env.sh` to existing `~/.bashrc`/`~/.zshrc` — the rc files stay machine-owned, only the snippet is managed; `env.sh` carries shell extensions the managed tools need (PATH and tool-specific environment), not general shell config, (6) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, keeping the host's own settings (see Local overrides), (7) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts. `--dry-run` prints actions without changing anything. Requires `jq`.
 
 To install only selected top-level payloads, pass `--only` once per entry:
 
@@ -109,7 +109,7 @@ Some configuration is machine-class-specific, such as environment variables, loc
 - `home/.claude/settings.<profile>.json` — per-profile overlay (e.g. `mac`, `vps`, `remote`).
 - `~/.dotagents-profile` — single line naming the profile for this machine. Per-machine, not committed.
 
-`bin/dotagents install` resolves the profile in this order: `--profile <name>` flag, existing `~/.dotagents-profile`, interactive prompt (TTY only). The resolved value is written to `~/.dotagents-profile` so subsequent runs need no flag. Install deep-merges shared + profile (profile wins per key; nested objects merge, arrays replace — so profiles must not define `hooks`; install warns if one does) and writes the result to `~/.claude/settings.json` — Claude Code's only user-scope settings file (user-level `settings.local.json` is not read by CC). Regenerated on every install, diff printed when it changes. To change managed config: edit the repo files and re-run `dotagents install`, never the generated file. Add new profiles by creating new `home/.claude/settings.<name>.json` files; no install-script change needed.
+`bin/dotagents install` resolves the profile in this order: `--profile <name>` flag, existing `~/.dotagents-profile`, interactive prompt (TTY only). The resolved value is written to `~/.dotagents-profile` so subsequent runs need no flag. Install deep-merges shared + profile (profile wins per key; nested objects merge, arrays replace — so profiles must not define `hooks`; install warns if one does) and writes the result to `~/.claude/settings.json` — Claude Code's only user-scope settings file (user-level `settings.local.json` is not read by CC). Regenerated on every install, keeping what the host added (see Local overrides), diff printed when it changes. To change managed config: edit the repo files and re-run `dotagents install`, never the generated file. Add new profiles by creating new `home/.claude/settings.<name>.json` files; no install-script change needed.
 
 Between installs Claude Code persists runtime preferences (`/model`, `/effort`, don't-ask-again flags) into the same generated file. They stay machine-local and never dirty the repo; the next `dotagents install` resets the file to repo state, and the printed diff shows what got dropped.
 
@@ -261,7 +261,12 @@ bash "$(ls -d "$HOME"/*/dotagents/bin/remote-setup.sh /home/*/dotagents/bin/remo
 Machine-class config belongs in the committed profile overlay (`home/.claude/settings.<profile>.json`); `~/.claude/settings.json` is generated from the repo, not a free local file. Truly per-machine state, never committed:
 
 - `~/.dotagents-profile` — single line naming this machine's profile
-- Runtime prefs Claude writes into `~/.claude/settings.json` — machine-local until the next install resets them
+- Runtime prefs Claude writes into `~/.claude/settings.json` (`/model`, permission prompts, `/plugin`, `/config`) — kept by install under one rule: the repo owns each top-level key it sets, and every other key the host has is kept. Claude also writes into three repo keys, so inside those the repo owns only its own entries:
+  - `permissions`: the `allow`, `deny`, `ask` and `additionalDirectories` lists are unions of the repo's and the host's. Dropping a rule from the repo therefore doesn't revoke it on hosts that already have it; revoke it with a `deny` rule, which wins over `allow`.
+  - `enabledPlugins`: a host entry stays while it is `true`; disabled entries the repo doesn't set are dropped.
+  - `extraKnownMarketplaces`: host marketplaces stay.
+
+  A repo-owned key is reset to the repo's value (a host `outputStyle` or `env` change included), and a top-level key the repo stops setting stays on hosts that have it, so set its default in the repo to change it everywhere. An unparsable `settings.json` is left unchanged with a warning. `~/.codex/config.toml` is the host's except the `[otel]` block install owns at its end.
 - Files matching `*.local.*`, `.env*` under managed dotdirs — left alone by install
 
 ### Secret scanning
