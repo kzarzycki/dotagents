@@ -32,8 +32,14 @@ def release(version="18.1.14", digest="c" * 64, size=audit.MIN_ASSET):
     tag = "v" + version
     return {"draft": False, "prerelease": False, "tag_name": tag,
             "html_url": f"https://github.com/can1357/oh-my-pi/releases/tag/{tag}", "body": "- Public feature claim",
+            "published_at": "2020-01-01T00:00:00Z",
             "assets": [{"name": audit.ASSET, "state": "uploaded", "size": size, "digest": "sha256:" + digest,
                         "browser_download_url": f"https://github.com/can1357/oh-my-pi/releases/download/{tag}/{audit.ASSET}"}]}
+
+
+def listed(value):
+    """api_json stub: the release, or a one-release list for the release listing."""
+    return lambda suffix, kind=dict: [value] if kind is list else value
 
 
 def model_stream(stop="stop", end=True, **overrides):
@@ -320,10 +326,13 @@ class StateTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
         audit.save_source_baseline(BASE["version"], BASE["commit"], "user-accepted", "test", "Explicit fixture trust")
-        # Tree inventory needs a real git repository; these tests exercise the flow around it.
-        patcher = mock.patch.object(audit, "capability_plan", return_value=([], collections.defaultdict(list)))
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        # Tree inventory needs a real git repository; these tests exercise the chunk flow around it,
+        # so every gated line counts as risk surface.
+        for name, kwargs in (("capability_delta", {"return_value": []}),
+                             ("risk_surface", {"side_effect": lambda diff, delta: diff})):
+            patcher = mock.patch.object(audit, name, **kwargs)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
 
     def test_large_json_and_small_code_change_reach_model_review(self):
@@ -344,7 +353,7 @@ class StateTests(unittest.TestCase):
             return value
 
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
-             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "api_json", side_effect=listed(release())), \
              mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
              mock.patch.object(audit, "source_diff", return_value=(complete, ["catalog.json", "example.py"])), \
              mock.patch.object(audit, "dependency_risks", return_value=([], [])), \
@@ -358,7 +367,7 @@ class StateTests(unittest.TestCase):
     def test_lightweight_release_stages_exact_asset_without_source_review(self):
         report = audit.now_report()
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
-             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "api_json", side_effect=listed(release())), \
              mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
              mock.patch.object(audit, "verify_binary_signature", return_value="test-team") as signature, \
              mock.patch.object(audit, "stage_asset") as stage, \
@@ -590,7 +599,7 @@ class StateTests(unittest.TestCase):
         for digest, commit in (("f" * 64, BASE["commit"]), (BASE["sha256"], "f" * 40)):
             with self.subTest(digest=digest, commit=commit), \
                  mock.patch.object(audit, "installed_manifest", return_value=BASE), \
-                 mock.patch.object(audit, "api_json", return_value=release(BASE["version"], digest)), \
+                 mock.patch.object(audit, "api_json", side_effect=listed(release(BASE["version"], digest))), \
                  mock.patch.object(audit, "tag_commit", return_value=commit), self.assertRaises(audit.Hold):
                 audit.audit_release(audit.now_report())
 
@@ -598,7 +607,7 @@ class StateTests(unittest.TestCase):
         report = audit.now_report()
         risky = verdict(risks=["example.py:1 untrusted code execution"], features=["Public example feature"])
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
-             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "api_json", side_effect=listed(release())), \
              mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
              mock.patch.object(audit, "source_diff", return_value=(DIFF, ["example.py"])), \
              mock.patch.object(audit, "review_chunk", return_value=risky), \
@@ -655,7 +664,7 @@ class StateTests(unittest.TestCase):
         report = audit.now_report()
         def review(source, chunk_id, inventory, notes, identities, evidence, **kwargs):
             if kwargs.get("coherence"):
-                self.assertEqual(source, audit.release_ledger("e" * 40, [], complete))
+                self.assertEqual(source, audit.release_ledger("e" * 40, [], complete, complete))
                 self.assertEqual(len(kwargs["prior_reviews"]), 2)
                 self.assertEqual(len(kwargs["concerns"]), 2)
                 self.assertTrue(all(item["verdict"] == "HOLD" for item in kwargs["prior_reviews"]))
@@ -664,7 +673,7 @@ class StateTests(unittest.TestCase):
             return verdict(chunk_id=chunk_id, verdict="HOLD", uncertainties=["Caller in another chunk"],
                            source_sha256=hashlib.sha256(source.encode()).hexdigest())
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
-             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "api_json", side_effect=listed(release())), \
              mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
              mock.patch.object(audit, "source_diff", return_value=(complete, ["example.py", "second.py"])), \
              mock.patch.object(audit, "MAX_CHUNK", len(DIFF.encode()) + 1), \
@@ -680,7 +689,7 @@ class StateTests(unittest.TestCase):
     def test_incomplete_chunk_never_reaches_final_review(self):
         report = audit.now_report()
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
-             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "api_json", side_effect=listed(release())), \
              mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
              mock.patch.object(audit, "source_diff", return_value=(DIFF, ["example.py"])), \
              mock.patch.object(audit, "review_chunk", return_value=verdict(reviewed=False)) as review, \
@@ -722,7 +731,7 @@ class StateTests(unittest.TestCase):
     def test_dependency_gate_holds_before_model_and_keeps_feature_claims(self):
         report = audit.now_report()
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
-             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "api_json", side_effect=listed(release())), \
              mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
              mock.patch.object(audit, "source_diff", return_value=(DIFF, ["example.py"])), \
              mock.patch.object(audit, "dependency_risks", return_value=(["Cargo.lock: external code missing"], [])), \
@@ -744,7 +753,7 @@ class StateTests(unittest.TestCase):
         complete = "".join(DIFF.replace("example.py", path) for path in paths)
         report = audit.now_report()
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
-             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "api_json", side_effect=listed(release())), \
              mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
              mock.patch.object(audit, "source_diff", return_value=(complete, paths)), \
              mock.patch.object(audit, "dependency_risks", return_value=([], [])) as manifests, \
@@ -762,7 +771,7 @@ class StateTests(unittest.TestCase):
 
     def test_release_without_shipped_source_changes_holds_instead_of_approving(self):
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
-             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "api_json", side_effect=listed(release())), \
              mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
              mock.patch.object(audit, "source_diff", return_value=(DIFF.replace("example.py", "docs/a.md"), ["docs/a.md"])), \
              mock.patch.object(audit, "review_chunk") as review, \
@@ -776,7 +785,7 @@ class StateTests(unittest.TestCase):
                                 ("diff --git a/example.py b/renamed.py\n" + DIFF.split("\n", 1)[1], ["example.py"])):
             with self.subTest(paths=paths), \
                  mock.patch.object(audit, "installed_manifest", return_value=BASE), \
-                 mock.patch.object(audit, "api_json", return_value=release()), \
+                 mock.patch.object(audit, "api_json", side_effect=listed(release())), \
                  mock.patch.object(audit, "tag_commit", return_value="e" * 40), \
                  mock.patch.object(audit, "source_diff", return_value=(complete, paths)), \
                  mock.patch.object(audit, "review_chunk") as review, self.assertRaises(audit.Hold):
@@ -791,10 +800,11 @@ class AcceptanceTests(unittest.TestCase):
         chunk = verdict(verdict="HOLD", risks=["example.py:1 changed behavior"])
         whole = verdict(chunk_id="whole-release", verdict="HOLD", risks=["example.py:1 changed behavior"],
                         resolved_concerns=[], resolved_capabilities=[],
-                        source_sha256=hashlib.sha256(audit.release_ledger("e" * 40, [], DIFF).encode()).hexdigest())
+                        source_sha256=hashlib.sha256(audit.release_ledger("e" * 40, [], DIFF, DIFF).encode()).hexdigest())
         report = audit.now_report()
         report.update(status="HOLD", target=target, version=target["version"], reviews=[chunk],
                       coherence_review=whole, diff_sha256=hashlib.sha256(DIFF.encode()).hexdigest(),
+                      surface_sha256=hashlib.sha256(DIFF.encode()).hexdigest(),
                       accepted_source=audit.source_baselines()[0], risks=whole["risks"])
         audit.persist_report(report)
         digest = hashlib.sha256((self.state / "report.json").read_bytes()).hexdigest()
@@ -821,7 +831,7 @@ class AcceptanceTests(unittest.TestCase):
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
              mock.patch.object(audit, "source_diff", return_value=(DIFF, ["example.py"])), \
              mock.patch.object(audit, "dependency_risks", return_value=([], [])), \
-             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "api_json", side_effect=listed(release())), \
              mock.patch.object(audit, "tag_commit", return_value=target["commit"]), \
              mock.patch.object(audit, "stage_asset"), contextlib.redirect_stdout(io.StringIO()):
             audit.accept_reviewed(target["version"], target["commit"], target["sha256"], digest, "Explicit user decision")
@@ -845,7 +855,7 @@ class AcceptanceTests(unittest.TestCase):
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
              mock.patch.object(audit, "source_diff", return_value=(complete, ["docs/ignored.md", "example.py"])), \
              mock.patch.object(audit, "dependency_risks", return_value=([], [])), \
-             mock.patch.object(audit, "api_json", return_value=release()), \
+             mock.patch.object(audit, "api_json", side_effect=listed(release())), \
              mock.patch.object(audit, "tag_commit", return_value=target["commit"]), \
              mock.patch.object(audit, "stage_asset"), contextlib.redirect_stdout(io.StringIO()):
             audit.accept_reviewed(target["version"], target["commit"], target["sha256"], digest, "Accept scoped report")
@@ -907,7 +917,7 @@ class ReviewReuseTests(unittest.TestCase):
         report = audit.now_report()
         report["requested_version"] = BASE["version"]
         with mock.patch.object(audit, "installed_manifest", return_value=BASE), \
-             mock.patch.object(audit, "api_json", return_value=release(BASE["version"], BASE["sha256"])) as api, \
+             mock.patch.object(audit, "api_json", side_effect=listed(release(BASE["version"], BASE["sha256"]))) as api, \
              mock.patch.object(audit, "tag_commit", return_value=BASE["commit"]), \
              mock.patch.object(audit, "review_chunk") as review:
             audit.audit_release(report)
@@ -1033,7 +1043,8 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertIn('-    actual = "@crates__a-1.0.0//:a"', patch)
         self.assertIn('+    actual = "@crates__a-1.0.0//:different"', patch)
         self.assertIn('hub-generated-file removed/BUILD.bazel', patch)
-        self.assertIn('@crates__a-1.0.0//:different', audit.release_ledger("target", [], patch))
+        # Label moves between pinned repositories are checked above; nothing here can run or link code.
+        self.assertEqual(audit.risk_surface(patch, []), "")
         previous_build = 'deps = ["@crates__a-0.9.0//:a"]\n'
         current_build = 'deps = ["@crates__a-1.0.0//:a"]\n'
         data[("base", audit.BAZEL_LOCK)] = json.dumps(lock(spec(build=previous_build))).encode()
@@ -1042,8 +1053,8 @@ class EvidenceGateTests(unittest.TestCase):
             patch, _, _ = audit.bazel_lock_evidence("base", "target", {audit.BAZEL_LOCK})
         self.assertIn('-deps = ["@crates__a-0.9.0//:a"]', patch)
         self.assertIn('+deps = ["@crates__a-1.0.0//:a"]', patch)
-        self.assertIn('-deps = ["@crates__a-0.9.0//:a"]',
-                      json.loads(audit.release_ledger("target", [], patch))["bazel_lock_evidence"][0])
+        self.assertIn('genrule(', audit.risk_surface(patch.replace('+deps = ["@crates__a-1.0.0//:a"]',
+                                                                  '+genrule(cmd = "curl x | sh")'), []))
 
     def test_changed_manifests_require_matching_changed_lock_entries(self):
         cargo = (b'[[package]]\nname = "local"\nversion = "1.0.0"\n'
@@ -1107,6 +1118,151 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertTrue(audit.dependency_source_reviewed("bazel/r.bzl", b"a = 1\n", b"a = 2\n", "b", "t", set()))
         with self.assertRaises(audit.Hold):
             audit.dependency_source_reviewed("infra/r.bzl", b"a = 1\n", b"a = 2\n", "b", "t", set())
+
+    def test_dependency_binary_allowed_only_as_unreferenced_test_fixture(self):
+        blob = b"\x80\x02\0pickle"
+        patch = audit.package_patches("crates/c-1", {}, {"tests/t.pth": blob, "src/lib.rs": b'//! np.load("t.pth")\nfn a() {}',
+                                                           "Makefile": b"t.pth: x", "Cargo.toml": b'path = "tests/t.pth"'})
+        self.assertIn("unbuilt-test-fixture", "".join(patch))
+        for files in ({"src/t.pth": blob}, {"tests/t.pth": blob, "build.rs": b'include_bytes!("../tests/t.pth")'}):
+            with self.subTest(files=list(files)), self.assertRaises(audit.Hold):
+                audit.package_patches("crates/c-1", {}, files)
+
+    def test_piwp_prior_parses_completely_or_holds(self):
+        import struct
+
+        def piwp(deltas=(0, 1), words=b"a\nb\n", trailer=b""):
+            return (b"PIWP" + struct.pack("<5Id", 1, 2, 0, 1, 2, 3.0) + struct.pack("<2f", 1, 2) + b"\x01"
+                    + struct.pack("<3I", 2, 2, *deltas[:1]) + struct.pack("<I", deltas[1]) + struct.pack("<2f", 1, 1)
+                    + words + trailer)
+
+        self.assertEqual(audit.piwp_table(piwp(), "p")["bigrams"], 2)
+        for bad in (piwp(trailer=b"x"), piwp(deltas=(0, 5)), piwp(words=b"b\na\n"), piwp(words=b"a\n\x7fELF\n")):
+            with self.subTest(bad=bad[-12:]), self.assertRaises(audit.Hold):
+                audit.piwp_table(bad, "p")
+
+    def test_hub_allows_only_workspace_edition_entries(self):
+        audit.hub_contents_safe({"crates.bzl": ""}, {"crates.bzl": '    "crates/vendor/brush-parser": "2024",\n'
+            '    "crates/vendor/brush-parser": {\n        "cfg(target_os = \\"macos\\")": {\n        },\n        _COMMON_CONDITION: {\n            "bon": Label("//bon-3.10.1"),\n        },\n    },\n'
+            '"cfg(windows)": ["@@//bazel/triples:aarch64-pc-windows-msvc","@@//bazel/triples:x86_64-pc-windows-msvc"],'})
+        with self.assertRaises(audit.Hold):
+            audit.hub_contents_safe({"crates.bzl": ""}, {"crates.bzl": '"cfg(windows)": ["@@//evil:x"],'})
+        for line in ('"crates/x": "2024", rctx.execute(["sh"])', '"../x": "2024",', '"crates/x": { "y": run("z") },'):
+            with self.subTest(line=line), self.assertRaises(audit.Hold):
+                audit.hub_contents_safe({"crates.bzl": ""}, {"crates.bzl": line})
+
+    def test_dev_tooling_native_binary_warns_only_when_unreachable_and_unimported(self):
+        lock = json.dumps({"workspaces": {"": {"dependencies": {"app": "1"}, "devDependencies": {"lint": "1"}}},
+                           "packages": {"app": ["app@1", "", {"optionalDependencies": {"app-native": "1"}}, "sha512-a"],
+                                        "app-native": ["app-native@1", "", {}, "sha512-b"],
+                                        "lint": ["lint@1", "", {"optionalDependencies": {"lint-native": "1"}}, "sha512-c"],
+                                        "lint-native": ["lint-native@1", "", {}, "sha512-d"]}}).encode()
+        self.assertEqual(audit.npm_dev_only(lock), {"lint", "lint-native"})
+        binary = {"lint.node": b"\x7fELF\0"}
+        patch = audit.package_patches("npm/lint-native-1", {}, binary, lambda: True)
+        self.assertIn("WARNING dev-tooling-native-binary", patch[0])
+        for dev_only in (None, lambda: False):
+            with self.subTest(dev_only=dev_only), self.assertRaises(audit.Hold):
+                audit.package_patches("npm/lint-native-1", {}, binary, dev_only)
+
+    def test_vendored_crate_reviewed_as_difference_from_pinned_crate(self):
+        base, target = {"commit": "a" * 40}, {"commit": "b" * 40}
+        new = "diff --git a/crates/vendor/x/{0} b/crates/vendor/x/{0}\nnew file mode 100644\n+whole file\n"
+        blobs = {"src/lib.rs": b"fn a() {}\n", "src/extra.rs": b"fn b() {}\n", "src/parser.c": b"tables\n"}
+        crate = ("x", "1.0.0", {"src/lib.rs": b"fn a() {}\n", "src/extra.rs": b"fn c() {}\n"})
+        with mock.patch.object(audit, "manifest_blob", lambda commit, path, *_: blobs.get(path.removeprefix("crates/vendor/x/"))), \
+                mock.patch.object(audit, "pinned_vendor_crate", return_value=crate), \
+                mock.patch.object(audit, "regenerated_grammar", return_value={"src/parser.c": b"tables\n"}):
+            crates = {}
+            self.assertIn("identical-to-pinned-crate x-1.0.0", audit.vendored_patch(
+                "crates/vendor/x/src/lib.rs", new.format("src/lib.rs"), base, target, crates))
+            changed = audit.vendored_patch("crates/vendor/x/src/extra.rs", new.format("src/extra.rs"), base, target, crates)
+            self.assertIn("-fn c() {}", changed)
+            self.assertIn("+fn b() {}", changed)
+            self.assertIn("regenerated-by-pinned-tree-sitter-cli", audit.vendored_patch(
+                "crates/vendor/x/src/parser.c", new.format("src/parser.c"), base, target, crates))
+            crates["crates/vendor/x#grammar"] = {"src/parser.c": b"other\n"}
+            patch = new.format("src/parser.c")
+            self.assertEqual(audit.vendored_patch("crates/vendor/x/src/parser.c", patch, base, target, crates), patch)
+
+
+class RiskSurfaceTests(unittest.TestCase):
+    def test_newest_cooled_release_is_selected_over_younger_ones(self):
+        young = dict(release("18.4.3"), published_at="2999-01-01T00:00:00Z")
+        listing = [young, release("18.4.2"), release("18.3.9"), dict(release("18.5.0"), prerelease=True)]
+        tags = {"18.3.0": release("18.3.0")}
+        api = lambda suffix, kind=dict: listing if kind is list else tags[suffix.rsplit("v", 1)[1]]
+        with mock.patch.object(audit, "api_json", side_effect=api), \
+                mock.patch.object(audit, "cooldown_days", return_value=7):
+            chosen, note = audit.release_metadata(None, "18.3.0")
+            self.assertEqual(chosen["tag_name"], "v18.4.2")
+            self.assertIn("Cooldown: 18.4.3", note)
+            listing[1:] = []
+            chosen, note = audit.release_metadata(None, "18.3.0")
+            self.assertEqual(chosen["tag_name"], "v18.3.0")
+            self.assertIn("Cooldown: 18.4.3", note)
+
+    def test_cooldown_is_configurable_and_holds_young_releases(self):
+        now = audit.datetime.datetime(2026, 9, 10, tzinfo=audit.datetime.timezone.utc)
+        with tempfile.TemporaryDirectory() as directory:
+            settings = Path(directory) / "settings.json"
+            with mock.patch.object(audit, "SETTINGS", settings):
+                with self.assertRaisesRegex(audit.Hold, "7-day cooldown"):
+                    audit.release_cooled({"published_at": "2026-09-05T00:00:00Z"}, "1.2.3", now)
+                audit.release_cooled({"published_at": "2026-09-02T00:00:00Z"}, "1.2.3", now)
+                settings.write_text('{"cooldown_days": 2}')
+                audit.release_cooled({"published_at": "2026-09-05T00:00:00Z"}, "1.2.3", now)
+                for bad in ('{"cooldown_days": -1}', '{"cooldown_days": "7"}'):
+                    settings.write_text(bad)
+                    with self.assertRaises(audit.Hold):
+                        audit.release_cooled({"published_at": "2020-01-01T00:00:00Z"}, "1.2.3", now)
+            with mock.patch.object(audit, "SETTINGS", settings), self.assertRaises(audit.Hold):
+                audit.release_cooled({}, "1.2.3", now)
+
+    def test_osv_malicious_holds_and_other_advisories_warn(self):
+        def osv(results):
+            response = mock.MagicMock()
+            response.__enter__.return_value.read.return_value = json.dumps({"results": results}).encode()
+            return mock.patch.object(audit, "open_public", return_value=response)
+        packages = [("crates.io", "a", "1.0.0"), ("npm", "b", "2.0.0")]
+        with osv([{"vulns": [{"id": "RUSTSEC-1"}]}, {}]):
+            self.assertEqual(audit.osv_advisories(packages), {packages[0]: ["RUSTSEC-1"]})
+        with osv([{}]), self.assertRaises(audit.Hold):
+            audit.osv_advisories(packages)
+        job = ("npm", audit.npm_url, "sha512", ("b", "2.0.0", "x"), set())
+        with mock.patch.object(audit, "osv_advisories", return_value={("npm", "b", "2.0.0"): ["MAL-2026-1"]}), \
+             mock.patch.object(audit, "manifest_blob", return_value=None), \
+             mock.patch.object(audit, "npm_dev_only", return_value=set()), \
+             mock.patch.object(audit, "npm_packages", side_effect=[set(), {job[3]}]), \
+             self.assertRaisesRegex(audit.Hold, "Known-malicious"):
+            audit.dependency_source_review("base", "target", ["bun.lock"])
+
+    def test_model_reads_only_new_capabilities_build_code_and_obfuscation(self):
+        # Matches inside identifiers, Rust threads, prose and manifest links carry no capability.
+        for path, line in (("src/a.rs", "let s = in_stride_segment;"), ("src/a.rs", "s.spawn(move || x)"),
+                           ("src/a.rs", "fn eval(s: &str) {"), ("README.md", "curl https://evil.example"),
+                           ("Cargo.toml", 'repository = "https://github.com/a/b"'), ("src/a.rs", "// https://evil.example")):
+            self.assertEqual(audit.line_items(path, line), set(), line)
+        self.assertEqual(audit.line_items("src/a.rs", 'Command::new("sh")'), {("exec", "command::new")})
+        body = "".join(f"+line {n}\n" for n in range(60))
+        dependency = "diff --git a/dependency/crates/x-1.0/src/lib.rs b/dependency/crates/x-1.0/src/lib.rs\n" \
+                     "--- a/x\n+++ b/x\n@@ -0,0 +1,62 @@\n" + body + '+let u = "https://new.example/c";\n' + body
+        surface = audit.risk_surface(dependency, [])
+        self.assertIn("https://new.example/c", surface)
+        self.assertIn("+line 48\n", surface)
+        self.assertNotIn("+line 47\n", surface)
+        # The same capability already in the package's removed lines is not new.
+        known = dependency.replace("@@ -0,0", '-let u = "https://new.example/old";\n@@ -0,0')
+        self.assertEqual(audit.risk_surface(known, []), "")
+        source = "diff --git a/src/b.ts b/src/b.ts\n--- a/src/b.ts\n+++ b/src/b.ts\n@@ -1,1 +1,3 @@\n x\n+a\n+b\n"
+        self.assertEqual(audit.risk_surface(source, []), "")
+        self.assertIn("+b\n", audit.risk_surface(source, [{"item": "b", "sites": ["src/b.ts:3"]}]))
+        self.assertIn("+" + "A" * 200, audit.risk_surface(source.replace("+a\n", "+" + "A" * 200 + "\n"), []))
+        self.assertIn('+build = "build.rs"', audit.risk_surface(
+            dependency.replace("src/lib.rs", "Cargo.toml").replace('+let u = "https://new.example/c";', '+build = "build.rs"'), []))
+        self.assertEqual(audit.risk_surface("diff --git a/Cargo.lock b/Cargo.lock\n@@ -1 +1 @@\n+eval(x)\n", []), "")
+        with mock.patch.object(audit, "MAX_SURFACE", 100), self.assertRaisesRegex(audit.Hold, "exceeds review budget"):
+            audit.risk_surface(dependency, [])
 
 
 if __name__ == "__main__":

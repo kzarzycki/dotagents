@@ -91,7 +91,7 @@ omp update             # blocked: bypasses the gate
 Interactive launches never install; they print the notice and schedule the
 background lightweight check, which only signals that an update exists.
 `omp safe-update` synchronously runs the full deep review — source diff,
-dependency evidence, chunked and whole-release model review — and activates
+dependency evidence, risk-surface and whole-release model review — and activates
 only a candidate that review approves, printing the complete evidence rather
 than a one-line summary. `omp --upgrade-apply` activates an already
 fully-reviewed staged candidate without rechecking. Other non-interactive
@@ -123,8 +123,23 @@ digests are recorded with `audit.py record-evidence` (see `--help`). Records in
 They do not skip model review or attest the release binary. Ledger capacity
 errors preserve previous readable records.
 
-The model-review budget remains 1 MiB of shipped-runtime source, in at most
-16 chunks of 64 KiB. Raw Git output has a separate 64 MiB memory bound. Informational
+Releases wait out a cooldown before any review: `cooldown_days` in
+`~/.config/omp-upgrade/settings.json` (default 7, 0–90), so a hostile release has
+time to be reported and yanked. Without `--version`, the gate picks the newest stable
+release past its cooldown; if that is not newer than the installed one the result is
+CURRENT and the summary names the newest release still waiting. Dependencies need no
+separate cooldown: the lockfile pins them before the release is published. New crates
+and npm packages are looked up in OSV (`api.osv.dev`): a `MAL-` advisory HOLDs, any
+other advisory is a warning.
+
+The model reads only the risk surface, not the whole diff: ±12-line windows around
+new capability sites (process, network, filesystem, dynamic code), build-time code
+(`build.rs`, Cargo build/links/proc-macro, Bazel fetches and lockfile genrules/linker
+flags) and obfuscated text, capped at 352 KiB in 64 KiB chunks; the whole-release review
+input is capped at 256 KiB. Everything else is covered by the deterministic gates:
+pinned hashes, file-shape checks, vendored-crate diffs against their pinned crates.io
+packages and sandboxed grammar regeneration. `surface.diff` and `surface_sha256` are
+kept in the evidence and rechecked on acceptance. Raw Git output has a separate 64 MiB memory bound. Informational
 files are not parsed or counted against the review budget. Oversized gated JSON
 patches (up to a separate 12 MiB blob bound) become deterministic, exhaustive JSON-path
 records with before/after blob digests; keyed object arrays match unique `id`/`name` values to
@@ -157,12 +172,12 @@ the report. A release with no gated changes HOLDs rather than approving unreview
 
 Complete chunk reviews collect concerns without deciding activation. Missing,
 malformed, truncated or explicitly incomplete reviews still HOLD immediately.
-The final coherence review receives the full diff, all prior reviews and each
-identified concern. Approval requires a SAFE final verdict and an explicit,
+The final coherence review receives the capability ledger, the deterministic
+evidence, all prior reviews and each identified concern. Approval requires a SAFE final verdict and an explicit,
 evidence-grounded resolution for every concern. `chunk_findings` retains the
 original findings and resolutions; `risks` contains unresolved final findings.
-The composed final input retains its existing 1 MiB limit; overflow HOLDs without
-truncating the diff or discarding concerns.
+Overflow of either budget HOLDs, naming the largest contributors, without
+truncating the surface or discarding concerns.
 
 ### Repeatable per-release audit
 
