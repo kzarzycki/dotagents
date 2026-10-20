@@ -1,6 +1,11 @@
 import json
+import os
+import shutil
 import socket
+import subprocess
 import tomllib
+
+import pytest
 
 from test_install_subsets import make_checkout, run_install
 
@@ -40,12 +45,18 @@ def test_otel_settings_and_codex_block(tmp_path):
     assert run_install(repo, home, "--profile", "remote").returncode == 0
     assert codex.read_text() == EXISTING
 
-    user_otel = EXISTING + '\n[otel]\nexporter = "none"\n'
-    codex.write_text(user_otel)
-    result = run_install(repo, home, "--profile", "vps")
-    assert result.returncode == 0
-    assert "WARNING" in result.stderr and "[otel]" in result.stderr
-    assert codex.read_text() == user_otel
+    for header in ("[otel]", '["otel"]', "[ 'otel' ]", "[otel.exporter]"):
+        user_otel = EXISTING + f'\n{header}\nexporter = "none"\n'
+        codex.write_text(user_otel)
+        result = run_install(repo, home, "--profile", "vps")
+        assert result.returncode == 0
+        assert "WARNING" in result.stderr and "[otel]" in result.stderr, header
+        assert codex.read_text() == user_otel
+    for user_otel in ('otel.exporter = "none"\n' + EXISTING, '"otel" = {}\n' + EXISTING):
+        codex.write_text(user_otel)
+        assert "WARNING" in run_install(repo, home, "--profile", "vps").stderr
+        assert codex.read_text() == user_otel
+
 
 
 def test_codex_block_follows_codex_selection(tmp_path):

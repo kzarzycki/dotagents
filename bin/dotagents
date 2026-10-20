@@ -652,7 +652,7 @@ if [ -f "$SHARED_SETTINGS" ]; then
         END { if (hold) print "" }
       ' "$CODEX_CONFIG" > "$codex_tmp"
     fi
-    if grep -Eq '^[[:space:]]*(\[[[:space:]]*otel[[:space:]]*[].]|otel[[:space:]]*[.=])' "$codex_tmp"; then
+    if grep -Eq '^[[:space:]]*(\[+[[:space:]]*["'\'']?otel["'\'']?[[:space:]]*[].]|["'\'']?otel["'\'']?[[:space:]]*[.=])' "$codex_tmp"; then
       printf 'WARNING: %s has its own [otel]; dotagents otel block not managed\n' "$CODEX_CONFIG" >&2
       rm -f "$codex_tmp"
     else
