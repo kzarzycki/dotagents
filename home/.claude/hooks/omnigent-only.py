@@ -28,7 +28,7 @@ def agent_launch(name, args):
     if name == "claude":
         return bool({"-p", "--print"} & set(args))
     if name == "codex":
-        return bool({"exec", "e"} & set(args))
+        return bool({"exec", "e", "review"} & set(args))
     if name == "omp":
         return not args or args[0] not in OMP_TOOLS
     if name in ("gemini", "agy"):

@@ -11,7 +11,7 @@ RULES = ROOT / "home/.codex/rules/omnigent-only.rules"
 
 DENIED = [
     "claude -p hi", "claude --print hi", "claude --model haiku -p hi", "/home/x/.local/bin/claude -p hi",
-    "codex exec 'fix it'", "codex e hi", "omp", "omp 'do the thing'", "omp commit", "gemini -p hi",
+    "codex exec 'fix it'", "codex e hi", "codex review", "omp", "omp 'do the thing'", "omp commit", "gemini -p hi",
     "agy -p hi", "agy --prompt hi", "cd x && claude -p hi", "ls | claude -p hi", "FOO=1 claude -p hi",
     "env FOO=1 claude -p hi", "timeout 60 codex exec hi", "nohup omp hi &", "x=$(claude -p hi)",
     "bash -lc 'claude -p hi'", 'sh -c "codex exec hi"', "true\nclaude -p hi", "(claude -p hi)",
@@ -57,7 +57,7 @@ def test_hook_is_wired_for_bash():
 
 @pytest.mark.skipif(not shutil.which("codex"), reason="codex not installed")
 @pytest.mark.parametrize("argv,forbidden", [
-    (["claude", "-p", "hi"], True), (["codex", "exec", "hi"], True), (["codex", "e", "hi"], True),
+    (["claude", "-p", "hi"], True), (["codex", "exec", "hi"], True), (["codex", "e", "hi"], True), (["codex", "review"], True),
     (["omp", "hi"], True), (["gemini", "-p", "hi"], True), (["agy", "--prompt", "hi"], True),
     (["claude", "--version"], False), (["codex", "execpolicy", "check"], False), (["agy", "agents"], False),
 ])

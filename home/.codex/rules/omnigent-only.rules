@@ -15,10 +15,10 @@ prefix_rule(
 )
 
 prefix_rule(
-    pattern = ["codex", ["exec", "e"]],
+    pattern = ["codex", ["exec", "e", "review"]],
     decision = "forbidden",
-    justification = "Run agents as Omnigent sessions (omnigent_agent.py run|start), not codex exec.",
-    match = ["codex exec hi", "codex e hi"],
+    justification = "Run agents as Omnigent sessions (omnigent_agent.py run|start), not codex exec or review.",
+    match = ["codex exec hi", "codex e hi", "codex review"],
     not_match = ["codex --version", "codex execpolicy check"],
 )
 
