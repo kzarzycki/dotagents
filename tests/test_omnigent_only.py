@@ -29,6 +29,7 @@ ALLOWED = [
     "cat <<<claude", "", "omp --upgrade-status", "omp safe-update", "omp config path",
     "claude mcp add srv -- docker run -i -p 8080:8080 img", "codex mcp add x -- server --mode e",
     "command -v omp", "command -v omp >/dev/null && omp --version",
+    "if ! command -v omp >/dev/null 2>&1; then echo missing; fi", "! command -v omp",
 ]
 
 
