@@ -15,7 +15,8 @@ DENIED = [
     "agy -p hi", "agy --prompt hi", "cd x && claude -p hi", "ls | claude -p hi", "FOO=1 claude -p hi",
     "env FOO=1 claude -p hi", "timeout 60 codex exec hi", "nohup omp hi &", "x=$(claude -p hi)",
     "bash -lc 'claude -p hi'", 'sh -c "codex exec hi"', "true\nclaude -p hi", "(claude -p hi)",
-    "echo `claude -p hi`",
+    "echo `claude -p hi`", "# start the worker\nclaude -p go", "cd repo  # go\ncodex exec fix",
+    "curl -s http://h/#x; claude -p hi", "echo ${#a[@]}; claude -p hi",
 ]
 ALLOWED = [
     "grep claude file", "grep -r 'claude -p' docs", "claude --version", "claude mcp list", "omp --version",

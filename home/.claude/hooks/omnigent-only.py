@@ -49,6 +49,7 @@ def launches(cmd):
     """Return the first agent-launching command word in a shell string, or None."""
     lexer = shlex.shlex(drop_heredoc_bodies(cmd).replace("`", ";"), posix=True, punctuation_chars=True)
     lexer.whitespace_split = True
+    lexer.commenters = ""  # shlex would end the whole command at the first #; a comment is a harmless word here
     try:
         tokens = list(lexer)
     except ValueError:  # unbalanced quotes: let the shell report it
