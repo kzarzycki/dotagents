@@ -773,13 +773,15 @@ if is_selected ".codex" && (( ${#codex_configs[@]} )); then
     printf 'WARNING: %s is a frontier model; %s\n' "$hit" "$frontier_rule" >&2
     problems=$((problems + 1))
   done < <(awk '
-    FNR == 1 { t = "" }
-    /^[[:space:]]*\[/ { t = $0; gsub(/[][[:space:]"'\'']/, "", t); next }
+    FNR == 1 { tbl = "" }
+    /^[[:space:]]*\[/ { tbl = $0; sub(/^[[:space:]]*/, "", tbl); if (match(tbl, /^[^]]*\]+/)) tbl = substr(tbl, 1, RLENGTH); next }
     /^[[:space:]]*[^#=]+=/ {
       k = $0; sub(/=.*/, "", k); gsub(/[[:space:]"'\'']/, "", k)
-      if (t != "") k = t "." k
-      v = $0; sub(/^[^=]*=[[:space:]]*/, "", v); sub(/[[:space:]]+#.*/, "", v)
-      if ((k == "model" || k ~ /^profiles\.[^.]+\.model$/) && tolower(v) ~ /astra|fable/) print FILENAME ": " k " = " v
+      v = $0; sub(/^[^=]*=[[:space:]]*/, "", v)
+      if (!match(v, /^"[^"]*"|^'\''[^'\'']*'\''/)) next
+      v = substr(v, 1, RLENGTH); t = tbl; gsub(/[[:space:]"'\'']/, "", t)
+      if (((t == "" && (k == "model" || k ~ /^profiles\..+\.model$/)) || (t ~ /^\[profiles\./ && k == "model")) && tolower(v) ~ /astra|fable/)
+        print FILENAME ": " (tbl == "" ? "" : tbl " ") k " = " v
     }' "${codex_configs[@]}")
 fi
 if is_selected ".claude" && command -v jq >/dev/null 2>&1 \
