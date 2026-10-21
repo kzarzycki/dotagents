@@ -18,6 +18,7 @@ import sys
 WRAPPERS = {"env", "exec", "command", "nohup", "time", "sudo", "nice", "setsid", "timeout", "xargs", "stdbuf"}
 SHELLS = {"sh", "bash", "zsh", "dash"}
 SEPARATORS = set("();|&")
+KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "{", "!"}
 
 
 def agent_launch(name, args):
@@ -67,9 +68,9 @@ def launches(cmd):
 
 
 def check_segment(words):
-    # Skip assignments and wrappers with their flags (`env -i`, `timeout 60`).
+    # Skip assignments, shell keywords (`do`, `then`) and wrappers with their flags (`env -i`, `timeout 60`).
     # ponytail: a wrapper flag that takes a value (`sudo -u bob`) hides the command.
-    while words and (re.match(r"^\w+=", words[0]) or words[0] in WRAPPERS):
+    while words and (re.match(r"^\w+=", words[0]) or words[0] in WRAPPERS or words[0] in KEYWORDS):
         wrapper = words[0] in WRAPPERS
         words = words[1:]
         while wrapper and words and (words[0].startswith("-") or re.match(r"^\d+[smhd]?$", words[0])):

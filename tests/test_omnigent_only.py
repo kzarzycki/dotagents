@@ -16,7 +16,8 @@ DENIED = [
     "env FOO=1 claude -p hi", "timeout 60 codex exec hi", "nohup omp hi &", "x=$(claude -p hi)",
     "bash -lc 'claude -p hi'", 'sh -c "codex exec hi"', "true\nclaude -p hi", "(claude -p hi)",
     "echo `claude -p hi`", "# start the worker\nclaude -p go", "cd repo  # go\ncodex exec fix",
-    "curl -s http://h/#x; claude -p hi", "echo ${#a[@]}; claude -p hi",
+    "curl -s http://h/#x; claude -p hi", "echo ${#a[@]}; claude -p hi", "for i in 1; do claude -p hi; done",
+    "while true; do codex exec x; done", "if true; then claude -p hi; fi", "{ claude -p hi; }", "! claude -p hi",
 ]
 ALLOWED = [
     "grep claude file", "grep -r 'claude -p' docs", "claude --version", "claude mcp list", "omp --version",
