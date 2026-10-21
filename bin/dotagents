@@ -780,7 +780,7 @@ if is_selected ".codex" && (( ${#codex_configs[@]} )); then
       v = $0; sub(/^[^=]*=[[:space:]]*/, "", v)
       if (!match(v, /^"[^"]*"|^'\''[^'\'']*'\''/)) next
       v = substr(v, 1, RLENGTH); t = tbl; gsub(/[[:space:]"'\'']/, "", t)
-      if (((t == "" && (k == "model" || k ~ /^profiles\..+\.model$/)) || (t ~ /^\[profiles\./ && k == "model")) && tolower(v) ~ /astra|fable/)
+      if (((t == "" && (k == "model" || k ~ /^profiles\..+\.model$/)) || (t ~ /^\[profiles\./ && k == "model") || (t == "[profiles]" && k ~ /^.+\.model$/)) && tolower(v) ~ /astra|fable/)
         print FILENAME ": " (tbl == "" ? "" : tbl " ") k " = " v
     }' "${codex_configs[@]}")
 fi

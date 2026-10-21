@@ -10,7 +10,7 @@ def test_frontier_default_model_fails_install_and_is_kept(tmp_path):
     codex.write_text(
         'model = "gpt-6-Astra"\n\n[profiles.deep] # default for gpt-6.\nmodel = "gpt-6-astra"  # x\n\n'
         '[profiles."a.b"]\nmodel = \'gpt-6-astra\'\n\n'
-        '[profiles.fast]\nmodel = "gpt-6"# was gpt-6-astra\n\n[model_providers.astra]\nname = "astra"\n'
+        '[profiles]\nwide.model = "gpt-6-astra"\n\n[profiles.fast]\nmodel = "gpt-6"# was gpt-6-astra\n\n[model_providers.astra]\nname = "astra"\n'
     )
     # Omnigent copies config.toml into a session's home only when missing,
     # so an old session keeps a default fixed since in the shared file.
@@ -25,12 +25,13 @@ def test_frontier_default_model_fails_install_and_is_kept(tmp_path):
     result = run_install(repo, home, "--profile", "vps")
     assert result.returncode != 0, result.stdout + result.stderr
     lines = [l for l in result.stderr.splitlines() if "frontier" in l]
-    assert len(lines) == 5, result.stderr
+    assert len(lines) == 6, result.stderr
     assert f'{codex}: model = "gpt-6-Astra"' in lines[0]
     assert f'{codex}: [profiles.deep] model = "gpt-6-astra" is' in lines[1]
     assert f'{codex}: [profiles."a.b"] model = \'gpt-6-astra\' is' in lines[2]
-    assert f'{stale}: model = "gpt-6-astra"' in lines[3]
-    assert f'{settings}: model = "claude-fable-5-1"' in lines[4]
+    assert f'{codex}: [profiles] wide.model = "gpt-6-astra" is' in lines[3]
+    assert f'{stale}: model = "gpt-6-astra"' in lines[4]
+    assert f'{settings}: model = "claude-fable-5-1"' in lines[5]
     assert "gpt-6-astra" in codex.read_text()
     assert json.loads(settings.read_text())["model"] == "claude-fable-5-1"
 
