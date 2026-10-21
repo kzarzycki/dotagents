@@ -30,7 +30,11 @@ Pick the register by who reads it: a human or an agent.
 
 ## Browser
 
-- Drive websites only through **Agent Brave**: the dedicated Brave profile at `~/.browser-mcp/profiles/agent-brave`, CDP on `127.0.0.1:9333`. Start it with `~/life/shared/agent-brave/launch`; plain `agent-browser` commands attach to it. Never drive or read my personal Brave, and never create a new browser profile per task — logins live in Agent Brave and persist.
+- Drive websites only through **Agent Brave**, this macOS account's dedicated automation Brave. Each account has its own app, profile and CDP port, because loopback is shared between accounts and two browsers on one port means one agent drives the other account's browser:
+  - personal: `~/Applications/Agent Brave.app`, profile `~/.browser-mcp/profiles/agent-brave`, CDP `127.0.0.1:9333`
+  - work (`zarz`): `~/Applications/Hermeswork.app`, profile `~/.browser-mcp/profiles/hermeswork`, CDP `127.0.0.1:9334`
+
+  Start it with `open -a <app>`. `~/.agent-browser/config.json` sets this account's `cdp`, so plain `agent-browser` commands attach to the right browser. Never drive or read my personal Brave or another account's port, and never create a new browser profile per task — logins live in Agent Brave and persist.
 - A login, CAPTCHA or 2FA in the way: ask me to complete it in the Agent Brave window. Never type passwords or codes.
 
 ## Ponytail (lazy senior dev mode)
