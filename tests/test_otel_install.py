@@ -177,8 +177,9 @@ def test_host_name_is_the_omnigent_host_name(tmp_path):
 def test_unplain_omnigent_host_name_falls_back_to_hostname(tmp_path):
     repo, home = make_checkout(tmp_path)
     (home / ".omnigent").mkdir()
-    (home / ".omnigent/config.yaml").write_text('host:\n  name: "caf\\xE9"\n')
-    result = run_install(repo, home, "--profile", "vps")
-    assert result.returncode == 0 and "not plain" in result.stderr
-    env = json.loads((home / ".claude/settings.json").read_text())["env"]
-    assert env["OTEL_RESOURCE_ATTRIBUTES"] == f"service.namespace=agents,host.name={socket.gethostname()}"
+    for name in ('"caf\\xE9"', "'line\n\n    name'", "macbook'"):
+        (home / ".omnigent/config.yaml").write_text(f"host:\n  name: {name}\n")
+        result = run_install(repo, home, "--profile", "vps")
+        assert result.returncode == 0 and "not plain" in result.stderr, name
+        env = json.loads((home / ".claude/settings.json").read_text())["env"]
+        assert env["OTEL_RESOURCE_ATTRIBUTES"] == f"service.namespace=agents,host.name={socket.gethostname()}"
