@@ -32,6 +32,7 @@ def test_otel_settings_and_codex_block(tmp_path):
     assert config["otel"] == {
         "environment": socket.gethostname(),
         "log_user_prompt": True,  # follows OTEL_LOG_USER_PROMPTS
+        "log_agent_responses": True,  # as Claude Code, whose responses follow the same flag
         "exporter": {"otlp-http": {"endpoint": f"{EP}/v1/logs", "protocol": "binary"}},
         "metrics_exporter": {"otlp-http": {"endpoint": f"{EP}/v1/metrics", "protocol": "binary"}},
         "trace_exporter": "none",

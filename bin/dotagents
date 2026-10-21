@@ -691,7 +691,7 @@ if [ -f "$SHARED_SETTINGS" ]; then
           for (i = 1; i <= n; i++) if (i > 1 || pre || buf[i] != "") emit(buf[i])
         }
         st == 2 {
-          if (!n && $0 ~ /^(environment|log_user_prompt|exporter|metrics_exporter|trace_exporter)[[:space:]]*=/) next
+          if (!n && $0 ~ /^(environment|log_user_prompt|log_agent_responses|exporter|metrics_exporter|trace_exporter)[[:space:]]*=/) next
           if ($0 == "" || $0 ~ /^[[:space:]]*#/) { buf[++n] = $0; next }
           if ($0 !~ /^[[:space:]]*\[/) { bad = 1; exit }
           done()
@@ -715,7 +715,7 @@ if [ -f "$SHARED_SETTINGS" ]; then
     else
       if [ -n "$otel_ep" ]; then
         if [ -s "$codex_tmp" ]; then echo >> "$codex_tmp"; fi
-        printf '%s\n' '[otel]' "$otel_mark" "environment = \"$otel_host\"" "log_user_prompt = $otel_prompts" \
+        printf '%s\n' '[otel]' "$otel_mark" "environment = \"$otel_host\"" "log_user_prompt = $otel_prompts" "log_agent_responses = $otel_prompts" \
           "exporter = { otlp-http = { endpoint = \"$otel_ep/v1/logs\", protocol = \"binary\" } }" \
           "metrics_exporter = { otlp-http = { endpoint = \"$otel_ep/v1/metrics\", protocol = \"binary\" } }" \
           'trace_exporter = "none"' >> "$codex_tmp"
