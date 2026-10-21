@@ -88,6 +88,10 @@ omp --upgrade-apply    # activate a staged release; checksum, smoke and rollback
 omp update             # blocked: bypasses the gate
 ```
 
+Agents run these from Claude Code only: Codex sessions forbid every `omp` call
+(`~/.codex/rules/omnigent-only.rules`), since a prefix rule can't tell an
+upgrade command from an agent launch.
+
 Interactive launches never install; they print the notice and schedule the
 background lightweight check, which only signals that an update exists.
 `omp safe-update` synchronously runs the full deep review — source diff,

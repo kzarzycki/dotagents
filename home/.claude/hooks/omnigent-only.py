@@ -18,6 +18,9 @@ import sys
 WRAPPERS = {"env", "exec", "command", "nohup", "time", "sudo", "nice", "setsid", "timeout", "xargs", "stdbuf"}
 SHELLS = {"sh", "bash", "zsh", "dash"}
 SEPARATORS = set("();|&")
+# omp commands that start no agent: the audited-upgrade gate (docs/knowledge/omp.md) and housekeeping.
+OMP_TOOLS = {"--version", "-v", "--help", "-h", "--upgrade-status", "--upgrade-check", "--upgrade-apply",
+             "safe-update", "config", "plugin", "install", "models", "completions", "login", "gc"}
 KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "{", "!"}
 
 
@@ -27,7 +30,7 @@ def agent_launch(name, args):
     if name == "codex":
         return bool({"exec", "e"} & set(args))
     if name == "omp":
-        return not args or not set(args) <= {"--version", "-v", "--help", "-h"}
+        return not args or args[0] not in OMP_TOOLS
     if name in ("gemini", "agy"):
         return bool({"-p", "--print", "--prompt", "-i", "--prompt-interactive"} & set(args))
     return False

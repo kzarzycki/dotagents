@@ -25,7 +25,7 @@ ALLOWED = [
     "echo 'claude -p hi'", "git commit -m 'run codex exec'", "agy agents", "gemini --version",
     "python3 omnigent_agent.py run claude t b r", "python3 omnigent_agent.py status s1",
     "cat > f <<'EOF'\nclaude -p hi\ncodex exec x\nEOF\necho done", "cat <<EOF\nomp\nEOF", "echo 'unbalanced",
-    "cat <<<claude", "",
+    "cat <<<claude", "", "omp --upgrade-status", "omp safe-update", "omp config path",
 ]
 
 
