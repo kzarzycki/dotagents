@@ -166,9 +166,19 @@ def test_host_name_is_the_omnigent_host_name(tmp_path):
     (home / ".codex").mkdir()
     (home / ".omnigent").mkdir()
     (home / ".omnigent/config.yaml").write_text(
-        "host:\n  host_id: 4673a77ef6ad4a169d5e86c10bafc5ee\n  name: macbook-work\nproviders:\n  name: not-this\n"
+        "host:\n  host_id: 4673a77ef6ad4a169d5e86c10bafc5ee\n  name: 'macbook-work'\nproviders:\n  name: not-this\n"
     )
     assert run_install(repo, home, "--profile", "vps").returncode == 0
     env = json.loads((home / ".claude/settings.json").read_text())["env"]
     assert env["OTEL_RESOURCE_ATTRIBUTES"] == "service.namespace=agents,host.name=macbook-work"
     assert tomllib.loads((home / ".codex/config.toml").read_text())["otel"]["environment"] == "macbook-work"
+
+
+def test_unplain_omnigent_host_name_falls_back_to_hostname(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    (home / ".omnigent").mkdir()
+    (home / ".omnigent/config.yaml").write_text('host:\n  name: "caf\\xE9"\n')
+    result = run_install(repo, home, "--profile", "vps")
+    assert result.returncode == 0 and "not plain" in result.stderr
+    env = json.loads((home / ".claude/settings.json").read_text())["env"]
+    assert env["OTEL_RESOURCE_ATTRIBUTES"] == f"service.namespace=agents,host.name={socket.gethostname()}"

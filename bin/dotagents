@@ -606,8 +606,13 @@ if [ -f "$SHARED_SETTINGS" ]; then
   # Code sends none): the machine's Omnigent host name when it has one, so the
   # APM can join Omnigent's usage to the harnesses' telemetry, else `hostname`.
   otel_host=$(awk '/^host:/ { h = 1; next } /^[^ ]/ { h = 0 }
-    h && /^  name:/ { sub(/^  name:[ \t]*/, ""); gsub(/["\047]/, ""); print; exit }' \
+    h && /^  name:/ { sub(/^  name:[ \t]*/, ""); gsub(/^["\047]|["\047]$/, ""); print; exit }' \
     "$HOME/.omnigent/config.yaml" 2>/dev/null || true)
+  # ponytail: a plain host name only, since it is also written between TOML quotes; YAML escapes fall back.
+  if [ -n "$otel_host" ] && ! [[ "$otel_host" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    printf 'WARNING: Omnigent host name %s is not plain [A-Za-z0-9._-]; OTel uses hostname\n' "$otel_host" >&2
+    otel_host=
+  fi
   [ -n "$otel_host" ] || otel_host=$(hostname 2>/dev/null || uname -n)
   merged=$(jq -s --arg host "$otel_host" '
     reduce .[] as $overlay ({}; . * $overlay)
