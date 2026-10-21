@@ -26,11 +26,13 @@ def test_otel_settings_and_codex_block(tmp_path):
     env = json.loads(settings.read_text())["env"]
     # Codex reports gethostname(); Claude's host.name must match it.
     assert env["OTEL_RESOURCE_ATTRIBUTES"] == f"service.namespace=agents,host.name={socket.gethostname()}"
+    assert (env["OTEL_LOG_USER_PROMPTS"], env["OTEL_LOG_TOOL_DETAILS"]) == ("1", "1")
     config = tomllib.loads(codex.read_text())
     assert list(config["otel"])[0] == "environment"
     assert config["otel"] == {
         "environment": socket.gethostname(),
-        "log_user_prompt": False,
+        "log_user_prompt": True,  # follows OTEL_LOG_USER_PROMPTS
+        "log_agent_responses": True,  # as Claude Code, whose responses follow the same flag
         "exporter": {"otlp-http": {"endpoint": f"{EP}/v1/logs", "protocol": "binary"}},
         "metrics_exporter": {"otlp-http": {"endpoint": f"{EP}/v1/metrics", "protocol": "binary"}},
         "trace_exporter": "none",
