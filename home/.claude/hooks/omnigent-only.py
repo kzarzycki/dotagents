@@ -73,6 +73,8 @@ def launches(cmd):
 def check_segment(words):
     # Skip assignments, shell keywords (`do`, `then`) and wrappers with their flags (`env -i`, `timeout 60`).
     # ponytail: a wrapper flag that takes a value (`sudo -u bob`) hides the command.
+    if words[:1] == ["command"] and words[1:2] in (["-v"], ["-V"]):  # a lookup, not a run
+        return None
     while words and (re.match(r"^\w+=", words[0]) or words[0] in WRAPPERS or words[0] in KEYWORDS):
         wrapper = words[0] in WRAPPERS
         words = words[1:]
@@ -81,6 +83,8 @@ def check_segment(words):
     if not words:
         return None
     name, args = os.path.basename(words[0]), words[1:]
+    if "--" in args:  # what follows is another program's argv (`claude mcp add x -- cmd -p 1`)
+        args = args[:args.index("--")]
     if name in SHELLS:
         for flag, script in zip(args, args[1:]):
             if flag.startswith("-") and "c" in flag:
