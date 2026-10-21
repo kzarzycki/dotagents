@@ -46,17 +46,23 @@ def drop_heredoc_bodies(cmd):
             while i < len(lines) and lines[i].strip() != tag:
                 i += 1
             i += 1
-    return ";".join(out)
+    return out
 
 
 def launches(cmd):
     """Return the first agent-launching command word in a shell string, or None."""
-    lexer = shlex.shlex(drop_heredoc_bodies(cmd).replace("`", ";"), posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    lexer.commenters = ""  # shlex would end the whole command at the first #; a comment is a harmless word here
-    try:
-        tokens = list(lexer)
-    except ValueError:  # unbalanced quotes: let the shell report it
+    lines = drop_heredoc_bodies(cmd)
+    # A comment is read as harmless words (shlex would end the whole command at
+    # the first #). If one holds an apostrophe (`# don't`), retry without comments.
+    for text in (lines, [re.sub(r"(^|[\s;&|])#.*", r"\1", line) for line in lines]):
+        lexer = shlex.shlex(";".join(text).replace("`", ";"), posix=True, punctuation_chars=True)
+        lexer.whitespace_split, lexer.commenters = True, ""
+        try:
+            tokens = list(lexer)
+            break
+        except ValueError:
+            tokens = None
+    if tokens is None:  # unbalanced quotes: let the shell report it
         return None
     segment = []
     for tok in tokens + [";"]:

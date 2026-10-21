@@ -18,6 +18,7 @@ DENIED = [
     "echo `claude -p hi`", "# start the worker\nclaude -p go", "cd repo  # go\ncodex exec fix",
     "curl -s http://h/#x; claude -p hi", "echo ${#a[@]}; claude -p hi", "for i in 1; do claude -p hi; done",
     "while true; do codex exec x; done", "if true; then claude -p hi; fi", "{ claude -p hi; }", "! claude -p hi",
+    "# don't forget\nclaude -p hi", "claude -p hi  # it's the reviewer", "cd repo  # let's go\ncodex exec fix",
 ]
 ALLOWED = [
     "grep claude file", "grep -r 'claude -p' docs", "claude --version", "claude mcp list", "omp --version",
