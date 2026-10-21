@@ -602,9 +602,13 @@ if [ -f "$SHARED_SETTINGS" ]; then
       printf 'WARNING: profile "%s" declared but %s not found\n' "$resolved_profile" "$profile_src" >&2
     fi
   fi
-  # Settings env values are literal, so the installer fills host.name: Claude
-  # Code sends none, Codex sends gethostname(), and `hostname` matches it.
-  otel_host=$(hostname 2>/dev/null || uname -n)
+  # Settings env values are literal, so the installer fills host.name (Claude
+  # Code sends none): the machine's Omnigent host name when it has one, so the
+  # APM can join Omnigent's usage to the harnesses' telemetry, else `hostname`.
+  otel_host=$(awk '/^host:/ { h = 1; next } /^[^ ]/ { h = 0 }
+    h && /^  name:/ { sub(/^  name:[ \t]*/, ""); gsub(/["\047]/, ""); print; exit }' \
+    "$HOME/.omnigent/config.yaml" 2>/dev/null || true)
+  [ -n "$otel_host" ] || otel_host=$(hostname 2>/dev/null || uname -n)
   merged=$(jq -s --arg host "$otel_host" '
     reduce .[] as $overlay ({}; . * $overlay)
     | if (.env.OTEL_RESOURCE_ATTRIBUTES // "") != ""
