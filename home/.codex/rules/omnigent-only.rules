@@ -1,0 +1,38 @@
+# Separate agents (worker, reviewer, lead) run as Omnigent sessions, never as a
+# bare CLI call: Omnigent keeps them visible, resumable and on the owner's board.
+# Use the orchestrating-agents skill: python3 <skill>/scripts/omnigent_agent.py run|start.
+# Installed by dotagents (home/.codex/rules/); the Claude Code side is
+# home/.claude/hooks/omnigent-only.py.
+# ponytail: prefix rules see only leading words, so `claude --model x -p` passes
+# and every `omp` call is forbidden, `omp --version` included.
+
+prefix_rule(
+    pattern = ["claude", ["-p", "--print"]],
+    decision = "forbidden",
+    justification = "Run agents as Omnigent sessions (omnigent_agent.py run|start), not claude -p.",
+    match = ["claude -p hi", "claude --print hi"],
+    not_match = ["claude --version", "claude mcp list"],
+)
+
+prefix_rule(
+    pattern = ["codex", ["exec", "e"]],
+    decision = "forbidden",
+    justification = "Run agents as Omnigent sessions (omnigent_agent.py run|start), not codex exec.",
+    match = ["codex exec hi", "codex e hi"],
+    not_match = ["codex --version", "codex execpolicy check"],
+)
+
+prefix_rule(
+    pattern = ["omp"],
+    decision = "forbidden",
+    justification = "Run agents as Omnigent sessions (omnigent_agent.py run|start), never in omp.",
+    match = ["omp", "omp hi"],
+)
+
+prefix_rule(
+    pattern = [["gemini", "agy"], ["-p", "--print", "--prompt", "-i", "--prompt-interactive"]],
+    decision = "forbidden",
+    justification = "Run agents as Omnigent sessions (omnigent_agent.py run|start), not a bare agent CLI.",
+    match = ["gemini -p hi", "agy -p hi", "agy --prompt hi"],
+    not_match = ["gemini --version", "agy agents"],
+)
