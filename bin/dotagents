@@ -624,6 +624,10 @@ if [ -f "$SHARED_SETTINGS" ]; then
     | if (.env.OTEL_RESOURCE_ATTRIBUTES // "") != ""
       then .env.OTEL_RESOURCE_ATTRIBUTES += ",host.name=" + $host else . end
   ' "${merge_inputs[@]}")
+  # `dotagents` is install's own key, never Claude's: the work overlay's
+  # telemetryRepos becomes Omnigent's allowlist (4.6) and is dropped from settings.
+  telemetry_repos=$(jq -c '.dotagents.telemetryRepos // empty' <<<"$merged")
+  merged=$(jq 'del(.dotagents)' <<<"$merged")
   if ! is_selected ".claude"; then
     :
   elif (( DRY_RUN )); then
@@ -660,6 +664,37 @@ if [ -f "$SHARED_SETTINGS" ]; then
       chmod 644 "$tmp"
       mv "$tmp" "$USER_SETTINGS"
       linked=$((linked + 1))
+    fi
+  fi
+
+  # 4.6 A machine that keeps telemetry off lists the repos still allowed to
+  # export; Omnigent reads ~/.omnigent/telemetry.json at each session launch
+  # and turns Claude Code and Codex telemetry on for a listed checkout (matched
+  # by its origin, so every worktree counts). The file is ours only while it
+  # says so (managedBy); a hand-written one is left alone.
+  ALLOWLIST="$HOME/.omnigent/telemetry.json"
+  if is_selected ".claude" && [ -d "$HOME/.omnigent" ]; then
+    allow_ep=$(jq -r '.env.OTEL_EXPORTER_OTLP_ENDPOINT // ""' <<<"$merged")
+    ours=1
+    # An empty file is a write cut short (ours); anything else without the marker is the user's.
+    if [ -s "$ALLOWLIST" ] && ! jq -e '.managedBy == "dotagents"' "$ALLOWLIST" >/dev/null 2>&1; then
+      ours=0
+      printf 'WARNING: %s is not managed by dotagents; left alone\n' "$ALLOWLIST" >&2
+    fi
+    if (( ours )) && [ -n "$telemetry_repos" ] && [ -n "$allow_ep" ]; then
+      want=$(jq -n --arg ep "$allow_ep" --argjson repos "$telemetry_repos" \
+        '{managedBy: "dotagents", endpoint: $ep, repos: $repos}')
+      if [ "$(jq -c . "$ALLOWLIST" 2>/dev/null)" != "$(jq -c . <<<"$want")" ]; then
+        if (( DRY_RUN )); then
+          printf 'DRY: write telemetry allowlist %s\n' "$ALLOWLIST"
+        else
+          allow_tmp=$(mktemp "$ALLOWLIST.XXXXXX")
+          printf '%s\n' "$want" > "$allow_tmp" && mv "$allow_tmp" "$ALLOWLIST"
+          printf 'UPDATED: %s\n' "$ALLOWLIST"
+        fi
+      fi
+    elif (( ours )) && [ -f "$ALLOWLIST" ]; then
+      if (( DRY_RUN )); then printf 'DRY: remove %s\n' "$ALLOWLIST"; else rm -f "$ALLOWLIST"; printf 'REMOVED: %s\n' "$ALLOWLIST"; fi
     fi
   fi
 

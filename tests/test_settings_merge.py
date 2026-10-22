@@ -68,3 +68,26 @@ def test_a_stacked_work_profile_turns_telemetry_off_over_mac(tmp_path):
     assert got["theme"] == mac["theme"]  # the mac overlay still applies
     assert "[otel]" not in codex.read_text()
     assert (home / ".dotagents-profile").read_text() == "mac,work\n"
+
+
+def test_the_work_overlay_writes_omnigents_telemetry_allowlist_and_mac_removes_it(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    (home / ".omnigent").mkdir()
+    allow = home / ".omnigent/telemetry.json"
+
+    result = run_install(repo, home, "--profile", "mac,work")
+    assert result.returncode == 0, result.stdout + result.stderr
+    got = json.loads(allow.read_text())
+    shared = json.loads((repo / "home/.claude/settings.shared.json").read_text())
+    assert got["managedBy"] == "dotagents"
+    assert got["endpoint"] == shared["env"]["OTEL_EXPORTER_OTLP_ENDPOINT"]
+    assert "github.com/kzarzycki/agent-skills" in got["repos"]
+    assert "dotagents" not in json.loads((home / ".claude/settings.json").read_text())
+
+    assert run_install(repo, home, "--profile", "mac").returncode == 0
+    assert not allow.exists()  # a personal host: no allowlist, every project exports
+
+    allow.write_text('{"endpoint": "http://mine", "repos": []}')  # hand-written: not ours
+    result = run_install(repo, home, "--profile", "mac,work")
+    assert "not managed by dotagents" in result.stderr
+    assert json.loads(allow.read_text()) == {"endpoint": "http://mine", "repos": []}
