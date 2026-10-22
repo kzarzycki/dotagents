@@ -668,11 +668,11 @@ if [ -f "$SHARED_SETTINGS" ]; then
   fi
 
   # 4.6 A machine that keeps telemetry off lists the repos still allowed to
-  # export; Omnigent reads ~/.omnigent/telemetry.json at each session launch
+  # export; Omnigent reads ~/.omnigent/telemetry-allowlist.json at each session launch
   # and turns Claude Code and Codex telemetry on for a listed checkout (matched
   # by its origin, so every worktree counts). The file is ours only while it
   # says so (managedBy); a hand-written one is left alone.
-  ALLOWLIST="$HOME/.omnigent/telemetry.json"
+  ALLOWLIST="$HOME/.omnigent/telemetry-allowlist.json"
   if is_selected ".claude" && [ -d "$HOME/.omnigent" ]; then
     allow_ep=$(jq -r '.env.OTEL_EXPORTER_OTLP_ENDPOINT // ""' <<<"$merged")
     ours=1
