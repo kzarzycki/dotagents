@@ -20,6 +20,10 @@ fi
 case "$profile" in
   mac) url=https://cc-experiments.taile39822.ts.net:9077 ;;
   vps) url=http://127.0.0.1:9077 ;;
+  *work*)
+    echo "[hindsight-bootstrap] profile $profile is a company machine; its memory stays off the homelab" >&2
+    exit 1
+    ;;
   *)
     echo "[hindsight-bootstrap] install dotagents with --profile mac or vps first" >&2
     exit 1

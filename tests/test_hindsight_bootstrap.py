@@ -57,3 +57,16 @@ def test_bootstrap_preserves_private_settings_and_refuses_invalid_json(tmp_path,
     assert (home / "npx.log").read_text() == called
     assert config.read_text() == "{invalid"
     assert omp_env.read_text() == f"OTHER_KEY=untouched\nHINDSIGHT_API_URL={url}\n"
+
+
+def test_bootstrap_refuses_a_company_machine_profile(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".dotagents-profile").write_text("mac,work\n")
+    env = {**os.environ, "HOME": str(home)}
+    env.pop("CLAUDE_CODE_REMOTE", None)
+    result = subprocess.run(
+        ["/bin/bash", str(BOOTSTRAP)], env=env, capture_output=True, text=True, timeout=20, check=False
+    )
+    assert result.returncode == 1 and "stays off the homelab" in result.stderr
+    assert not (home / ".hindsight").exists()
