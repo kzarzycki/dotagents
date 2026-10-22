@@ -73,7 +73,7 @@ def test_a_stacked_work_profile_turns_telemetry_off_over_mac(tmp_path):
 def test_the_work_overlay_writes_omnigents_telemetry_allowlist_and_mac_removes_it(tmp_path):
     repo, home = make_checkout(tmp_path)
     (home / ".omnigent").mkdir()
-    allow = home / ".omnigent/telemetry.json"
+    allow = home / ".omnigent/telemetry-allowlist.json"
 
     result = run_install(repo, home, "--profile", "mac,work")
     assert result.returncode == 0, result.stdout + result.stderr
