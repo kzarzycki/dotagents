@@ -1,5 +1,15 @@
 {
   "env": {
     "CLAUDE_CODE_ENABLE_TELEMETRY": "0"
+  },
+  "dotagents": {
+    "telemetryRepos": [
+      "github.com/kzarzycki/agent-skills",
+      "github.com/kzarzycki/dotagents",
+      "github.com/kzarzycki/flowbench",
+      "github.com/kzarzycki/claude-mods",
+      "github.com/kzarzycki/project-templates",
+      "github.com/kzarzycki/omnigent"
+    ]
   }
 }
