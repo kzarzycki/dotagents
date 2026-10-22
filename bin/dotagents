@@ -676,7 +676,8 @@ if [ -f "$SHARED_SETTINGS" ]; then
   if is_selected ".claude" && [ -d "$HOME/.omnigent" ]; then
     allow_ep=$(jq -r '.env.OTEL_EXPORTER_OTLP_ENDPOINT // ""' <<<"$merged")
     ours=1
-    if [ -f "$ALLOWLIST" ] && ! jq -e '.managedBy == "dotagents"' "$ALLOWLIST" >/dev/null 2>&1; then
+    # An empty file is a write cut short (ours); anything else without the marker is the user's.
+    if [ -s "$ALLOWLIST" ] && ! jq -e '.managedBy == "dotagents"' "$ALLOWLIST" >/dev/null 2>&1; then
       ours=0
       printf 'WARNING: %s is not managed by dotagents; left alone\n' "$ALLOWLIST" >&2
     fi
@@ -687,7 +688,8 @@ if [ -f "$SHARED_SETTINGS" ]; then
         if (( DRY_RUN )); then
           printf 'DRY: write telemetry allowlist %s\n' "$ALLOWLIST"
         else
-          printf '%s\n' "$want" > "$ALLOWLIST"
+          allow_tmp=$(mktemp "$ALLOWLIST.XXXXXX")
+          printf '%s\n' "$want" > "$allow_tmp" && mv "$allow_tmp" "$ALLOWLIST"
           printf 'UPDATED: %s\n' "$ALLOWLIST"
         fi
       fi
