@@ -591,17 +591,19 @@ if [ -f "$SHARED_SETTINGS" ]; then
     exit 1
   fi
   merge_inputs=("$SHARED_SETTINGS")
-  if [ -n "$resolved_profile" ]; then
-    profile_src="$SRC/.claude/settings.$resolved_profile.json"
+  # A profile may stack overlays, comma-separated and merged in order (`mac,work`).
+  IFS=, read -ra profile_names <<<"$resolved_profile"
+  for profile_name in ${profile_names[@]+"${profile_names[@]}"}; do
+    profile_src="$SRC/.claude/settings.$profile_name.json"
     if [ -f "$profile_src" ]; then
       merge_inputs+=("$profile_src")
       if jq -e 'has("hooks")' "$profile_src" >/dev/null 2>&1; then
         printf 'WARNING: %s defines hooks — profile hook arrays replace shared ones per event\n' "$profile_src" >&2
       fi
     else
-      printf 'WARNING: profile "%s" declared but %s not found\n' "$resolved_profile" "$profile_src" >&2
+      printf 'WARNING: profile "%s" declared but %s not found\n' "$profile_name" "$profile_src" >&2
     fi
-  fi
+  done
   # Settings env values are literal, so the installer fills host.name (Claude
   # Code sends none): the machine's Omnigent host name when it has one, so the
   # APM can join Omnigent's usage to the harnesses' telemetry, else `hostname`.

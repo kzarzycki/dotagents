@@ -50,3 +50,21 @@ def test_unparsable_host_settings_are_left_alone(tmp_path):
     result = run_install(repo, home, "--profile", "vps")
     assert result.returncode == 1 and "left unchanged" in result.stderr
     assert settings.read_text() == "{ not json"
+
+
+def test_a_stacked_work_profile_turns_telemetry_off_over_mac(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    codex = home / ".codex/config.toml"
+    codex.parent.mkdir()
+    codex.write_text('model = "x"\n')
+    assert run_install(repo, home, "--profile", "mac").returncode == 0
+    assert "[otel]" in codex.read_text()
+
+    result = run_install(repo, home, "--profile", "mac,work")
+    assert result.returncode == 0, result.stdout + result.stderr
+    got = json.loads((home / ".claude/settings.json").read_text())
+    mac = json.loads((repo / "home/.claude/settings.mac.json").read_text())
+    assert got["env"]["CLAUDE_CODE_ENABLE_TELEMETRY"] == "0"
+    assert got["theme"] == mac["theme"]  # the mac overlay still applies
+    assert "[otel]" not in codex.read_text()
+    assert (home / ".dotagents-profile").read_text() == "mac,work\n"
