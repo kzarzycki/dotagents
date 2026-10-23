@@ -30,11 +30,15 @@ Pick the register by who reads it: a human or an agent.
 
 ## Browser
 
-- Drive websites only through **Agent Brave**, this macOS account's dedicated automation Brave. Each account has its own app, profile and CDP port, because loopback is shared between accounts and two browsers on one port means one agent drives the other account's browser:
+- Headless first: a browser window that appears on my screen takes focus from what I am doing. Take the first rung that works:
+  1. **A headless browser of your own** for anything that needs none of my logins: a local server, a test, a UI check, a public page. `agent-browser --config ~/.agent-browser/headless.json --session <task>` launches one, as does Playwright's `chromium.launch()`. A project's own browser e2e runs in its headless mode.
+  2. **Agent Brave** only when the page needs my logins. Open a tab in its existing window (`agent-browser` with the default config, or Playwright's `connect_over_cdp(...).contexts[0].new_page()`); never a new window or context (`browser.new_context()`), which brings Brave to the front. Not running? Start it in the background: `open -g -a <app>`.
+  3. **A headed browser of your own** only when a check cannot run headless: start it in the background (`open -g`, or a launch that does not activate the app) and say which check needed it and why.
+- Agent Brave is this macOS account's dedicated automation Brave. Each account has its own app, profile and CDP port, because loopback is shared between accounts and two browsers on one port means one agent drives the other account's browser:
   - personal: `~/Applications/Agent Brave.app`, profile `~/.browser-mcp/profiles/agent-brave`, CDP `127.0.0.1:9333`
   - work (`zarz`): `~/Applications/Hermeswork.app`, profile `~/.browser-mcp/profiles/hermeswork`, CDP `127.0.0.1:9334`
 
-  Start it with `open -a <app>`. `~/.agent-browser/config.json` sets this account's `cdp`, so plain `agent-browser` commands attach to the right browser. Never drive or read my personal Brave or another account's port, and never create a new browser profile per task — logins live in Agent Brave and persist.
+  `~/.agent-browser/config.json` sets this account's `cdp`, so plain `agent-browser` commands attach to Agent Brave; `headless.json` beside it sets none, so `--config` with it launches a fresh headless browser. Never drive or read my personal Brave or another account's port, and never create a new browser profile per task — logins live in Agent Brave and persist.
 - A login, CAPTCHA or 2FA in the way: ask me to complete it in the Agent Brave window. Never type passwords or codes.
 
 ## Ponytail (lazy senior dev mode)
