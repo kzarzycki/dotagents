@@ -1,0 +1,4 @@
+{
+  "$schema": "https://raw.githubusercontent.com/vercel-labs/agent-browser/main/agent-browser.schema.json",
+  "contentBoundaries": true
+}
