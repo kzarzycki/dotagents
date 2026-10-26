@@ -1,3 +1,4 @@
+import os
 import shutil
 import subprocess
 import tomllib
@@ -62,7 +63,7 @@ def test_a_hand_set_writable_roots_is_the_user_s(tmp_path, user):
     _, _, codex, result = install(tmp_path, user)
     text = codex.read_text()
     assert text.startswith(user) and MARK not in text  # [otel] may follow; the roots are not ours
-    assert "WARNING" in result.stderr and "writable_roots" in result.stderr
+    assert f"{codex} sets its own writable_roots; dotagents sandbox roots not managed" in result.stderr
 
 
 @pytest.mark.skipif(not shutil.which("codex"), reason="needs the codex CLI")
@@ -79,3 +80,25 @@ def test_the_rule_allows_ps_and_nothing_else():
     assert check("ps", "-axo", "pid,command")
     assert not check("psql", "-c", "select 1")
     assert not check("sh", "-c", "ps")
+
+
+@pytest.mark.skipif(not shutil.which("codex"), reason="needs the codex CLI")
+def test_codex_s_sandbox_lets_a_gate_write_an_installed_root_and_not_without_it(tmp_path):
+    """The round trip: Codex's own sandbox reads the installed config. `codex sandbox` takes the
+    mode only from -c, and the temp dirs it allows by default are excluded, since tmp_path is one."""
+    _, home, codex, _ = install(tmp_path.resolve())
+    workspace = tmp_path.resolve() / "ws"
+    workspace.mkdir()
+
+    def touch(name, *config):
+        overrides = ['sandbox_mode="workspace-write"', "sandbox_workspace_write.exclude_tmpdir_env_var=true",
+                     "sandbox_workspace_write.exclude_slash_tmp=true", *config]
+        return subprocess.run(
+            ["codex", "sandbox", *(arg for c in overrides for arg in ("-c", c)), "--", "touch", str(home / ".apm" / name)],
+            cwd=workspace, env={"PATH": os.environ["PATH"], "HOME": str(home), "CODEX_HOME": str(codex.parent)},
+            capture_output=True, text=True, timeout=60,
+        ).returncode
+
+    assert touch("x.lock") == 0
+    assert touch("y.lock", "sandbox_workspace_write.writable_roots=[]") != 0
+    assert sorted(p.name for p in (home / ".apm").iterdir()) == ["x.lock"]
