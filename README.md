@@ -261,8 +261,9 @@ bash "$(ls -d "$HOME"/*/dotagents/bin/remote-setup.sh /home/*/dotagents/bin/remo
 Machine-class config belongs in the committed profile overlay (`home/.claude/settings.<profile>.json`); `~/.claude/settings.json` is generated from the repo, not a free local file. Truly per-machine state, never committed:
 
 - `~/.dotagents-profile` — single line naming this machine's profile
-- Runtime prefs Claude writes into `~/.claude/settings.json` (`/model`, permission prompts, `/plugin`, `/config`) — kept by install under one rule: the repo owns each top-level key it sets, and every other key the host has is kept. Claude also writes into three repo keys, so inside those the repo owns only its own entries:
+- Runtime prefs Claude writes into `~/.claude/settings.json` (`/model`, permission prompts, `/plugin`, `/config`) — kept by install under one rule: the repo owns each top-level key it sets, and every other key the host has is kept. Inside four repo keys, which Claude or the host also writes, the repo owns only its own entries:
   - `permissions`: the `allow`, `deny`, `ask` and `additionalDirectories` lists are unions of the repo's and the host's. Dropping a rule from the repo therefore doesn't revoke it on hosts that already have it; revoke it with a `deny` rule, which wins over `allow`.
+  - `autoMode`: the `allow`, `soft_deny` and `environment` lists are unions the same way, so a host's own auto-mode rules (a work-only one, say) stay beside the repo's.
   - `enabledPlugins`: a host entry stays while it is `true`; disabled entries the repo doesn't set are dropped.
   - `extraKnownMarketplaces`: host marketplaces stay.
 

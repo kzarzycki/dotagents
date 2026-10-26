@@ -648,6 +648,10 @@ if [ -f "$SHARED_SETTINGS" ]; then
             | reduce ("allow", "deny", "ask", "additionalDirectories") as $k (.;
                 if .[$k] and $h.permissions[$k] then .[$k] = $h.permissions[$k] + (.[$k] - $h.permissions[$k]) else . end))
           else . end
+        | if .autoMode and $h.autoMode then .autoMode |= ($h.autoMode + .
+            | reduce ("allow", "soft_deny", "environment") as $k (.;
+                if .[$k] and $h.autoMode[$k] then .[$k] = $h.autoMode[$k] + (.[$k] - $h.autoMode[$k]) else . end))
+          else . end
         | if .enabledPlugins and $h.enabledPlugins then .enabledPlugins |= (. as $r
             | $h.enabledPlugins + $r | with_entries(select(.value == true or (.key as $k | $r | has($k)))))
           else . end
