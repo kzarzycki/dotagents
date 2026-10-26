@@ -1,0 +1,29 @@
+name: CI
+
+# Every PR, with no path filter: `check` is the merge proof, and a run a filter
+# skips never reports, so GitHub would never merge that PR.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # mise installs the pinned toolchain; the gate is the same task the loop runs before every push.
+      - uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+      # The codex-gated tests skip without it. Not a mise.toml tool, which would
+      # shadow each machine's own codex inside this repo.
+      - run: npm install -g @openai/codex@0.162.1
+      - run: mise run check
