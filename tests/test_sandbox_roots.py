@@ -47,6 +47,15 @@ def test_the_host_s_gate_caches_become_writable_roots_in_the_user_s_table(tmp_pa
     assert codex.read_text().count(MARK) == 1
 
 
+@pytest.mark.skipif(not shutil.which("uv"), reason="needs uv")
+def test_uv_s_own_cache_dir_is_a_root_when_it_is_elsewhere(tmp_path, monkeypatch):
+    cache = tmp_path.resolve() / "shared-uv-cache"
+    cache.mkdir()
+    monkeypatch.setenv("UV_CACHE_DIR", str(cache))
+    _, home, codex, _ = install(tmp_path)
+    assert roots(codex) == [str(home / root) for root in ROOTS] + [str(cache)]
+
+
 @pytest.mark.parametrize("config", [None, "", 'model = "m"\n'])
 def test_a_config_without_the_table_gets_one(tmp_path, config):
     _, home, codex, _ = install(tmp_path, config)

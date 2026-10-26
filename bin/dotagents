@@ -825,6 +825,11 @@ if is_selected ".codex" && [ -d "$HOME/.codex" ]; then
   for root in "${CODEX_WRITABLE_ROOTS[@]}"; do
     [ -d "$HOME/$root" ] && roots+=("\"$HOME/$root\"")
   done
+  # uv's cache can be set elsewhere (uv.toml cache-dir, UV_CACHE_DIR); ask uv.
+  uv_cache=$(uv cache dir 2>/dev/null) || uv_cache=
+  if [ -d "$uv_cache" ] && [ "$uv_cache" != "$HOME/.cache/uv" ]; then
+    roots+=("\"$uv_cache\"")
+  fi
   roots_line=
   if (( ${#roots[@]} )); then
     roots_line="writable_roots = [$(IFS=,; printf '%s' "${roots[*]}" | sed 's/,/, /g')]"
