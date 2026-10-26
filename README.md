@@ -29,7 +29,8 @@ dotagents/
     ├── .codex/
     │   └── AGENTS.md             ← in-repo symlink → ../.agents/AGENTS.md
     ├── .gemini/
-    │   └── GEMINI.md             ← in-repo symlink → ../.agents/AGENTS.md
+    │   ├── GEMINI.md             ← in-repo symlink → ../.agents/AGENTS.md
+    │   └── antigravity-cli/settings.shared.json ← keys install sets in agy's settings.json
 ```
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
@@ -266,6 +267,7 @@ Machine-class config belongs in the committed profile overlay (`home/.claude/set
   - `autoMode`: the `allow`, `soft_deny` and `environment` lists are unions the same way, so a host's own auto-mode rules (a work-only one, say) stay beside the repo's.
   - `enabledPlugins`: a host entry stays while it is `true`; disabled entries the repo doesn't set are dropped.
   - `extraKnownMarketplaces`: host marketplaces stay.
+- Antigravity's `~/.gemini/antigravity-cli/settings.json`: agy writes runtime state into it (`trustedWorkspaces`), so it is never linked. Install sets the keys of `home/.gemini/antigravity-cli/settings.shared.json` in it and keeps the rest, once agy has written the file. That sets the default model, whose name carries the effort (`Gemini 3.8 Flash (Low)`, low because agy's default effort spends its quota fast); `agy models` lists the names. Omnigent seeds each Antigravity session's private copy from this file when it creates the session, so sessions made before an install keep the old model.
 
   A repo-owned key is reset to the repo's value (a host `outputStyle` or `env` change included), and a top-level key the repo stops setting stays on hosts that have it, so set its default in the repo to change it everywhere. An unparsable `settings.json` is left unchanged with a warning. `~/.codex/config.toml` is the host's except the `[otel]` block install owns at its end.
 - Files matching `*.local.*`, `.env*` under managed dotdirs — left alone by install
