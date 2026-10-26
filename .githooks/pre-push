@@ -1,7 +1,7 @@
 #!/bin/sh
-# dotagents pre-push. Runs the test suite, and the APM frozen check when agent
-# paths change, before CI does: a push is the last point where breakage is
-# still cheap to fix. Enabled per-clone via core.hooksPath, which
+# dotagents pre-push. This repo has no CI, so this is the only place the test
+# suite and the APM frozen check actually run — a push is the last point where
+# breakage is still cheap to fix. Enabled per-clone via core.hooksPath, which
 # `bin/dotagents install` sets automatically.
 #   Bypass:  git push --no-verify
 set -eu
