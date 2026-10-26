@@ -132,12 +132,14 @@ def test_a_rules_file_dotagents_did_not_write_is_left_alone(tmp_path):
 
 def sandbox_failure():
     """Why `codex sandbox` can't start on this host, or None. A kernel that bars unprivileged user namespaces
-    (GitHub's Ubuntu runners) stops its bwrap before the command runs."""
+    (GitHub's Ubuntu runners) stops its bwrap before the command runs. No user config, so one Codex rejects can't
+    turn the round trip below into a skip."""
     if not shutil.which("codex") or "CODEX_SANDBOX" in os.environ:
         return None
     with tempfile.TemporaryDirectory() as ws:
         probe = subprocess.run(["codex", "sandbox", "-c", 'sandbox_mode="workspace-write"', "--", "true"],
-                               cwd=ws, capture_output=True, text=True, timeout=60)
+                               cwd=ws, env={"PATH": os.environ["PATH"], "HOME": ws, "CODEX_HOME": ws},
+                               capture_output=True, text=True, timeout=60)
     if probe.returncode:
         return f"codex sandbox can't start here (exit {probe.returncode}): {(probe.stderr.strip().splitlines() or [""])[0]}"
 
