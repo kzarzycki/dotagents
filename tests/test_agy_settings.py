@@ -1,3 +1,5 @@
+import os
+import subprocess
 import json
 
 from test_install_subsets import make_checkout, run_install
@@ -27,3 +29,23 @@ def test_install_writes_no_agy_settings_before_agy_has(tmp_path):
     repo, home = make_checkout(tmp_path)
     assert run_install(repo, home, "--only", "gemini").returncode == 0
     assert not (home / ".gemini/antigravity-cli/settings.json").exists()
+
+
+def test_a_failed_write_leaves_agy_settings_unchanged(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    settings = home / ".gemini/antigravity-cli/settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text('{"model": "old", "trustedWorkspaces": ["/w"]}')
+    before = settings.read_bytes()
+    # A printf that fails only on the settings write, as a full disk would.
+    fail = '() { if [[ "${2:-}" == *trustedWorkspaces* ]]; then return 1; fi; builtin printf "$@"; }'
+    result = subprocess.run(
+        ["/bin/bash", str(repo / "bin/dotagents"), "install", "--no-pull", "--only", "gemini"],
+        env={**os.environ, "HOME": str(home), "BASH_FUNC_printf%%": fail},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert "could not write" in result.stderr, result.stdout + result.stderr
+    assert settings.read_bytes() == before
+    assert list(settings.parent.iterdir()) == [settings]

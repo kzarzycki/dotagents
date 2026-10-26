@@ -796,10 +796,15 @@ if is_selected ".gemini" && [ -f "$AGY_SHARED" ] && [ -f "$AGY_SETTINGS" ]; then
       printf 'DRY: set %s keys in %s\n' "$AGY_SHARED" "$AGY_SETTINGS"
     else
       agy_tmp=$(mktemp "$AGY_SETTINGS.XXXXXX")
-      printf '%s\n' "$agy_want" > "$agy_tmp" && chmod 600 "$agy_tmp"
-      printf 'UPDATED %s:\n' "$AGY_SETTINGS"
-      diff -u "$AGY_SETTINGS" "$agy_tmp" || true
-      mv "$agy_tmp" "$AGY_SETTINGS"
+      # A write cut short (a full disk) must never replace the user's file.
+      if printf '%s\n' "$agy_want" > "$agy_tmp" && chmod 600 "$agy_tmp"; then
+        printf 'UPDATED %s:\n' "$AGY_SETTINGS"
+        diff -u "$AGY_SETTINGS" "$agy_tmp" || true
+        mv "$agy_tmp" "$AGY_SETTINGS"
+      else
+        rm -f "$agy_tmp"
+        printf 'WARNING: could not write %s; left unchanged\n' "$AGY_SETTINGS" >&2
+      fi
     fi
   fi
 fi
