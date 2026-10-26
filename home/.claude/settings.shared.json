@@ -9,7 +9,18 @@
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "330000",
     "CLAUDE_CODE_FORK_SUBAGENT": "1",
     "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
-    "CLAUDE_CODE_WORKFLOWS": "1"
+    "CLAUDE_CODE_WORKFLOWS": "1",
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://cc-experiments.taile39822.ts.net:4318",
+    "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "cumulative",
+    "OTEL_METRICS_INCLUDE_ACCOUNT_UUID": "false",
+    "OTEL_METRICS_INCLUDE_REPOSITORY": "true",
+    "OTEL_LOG_USER_PROMPTS": "1",
+    "OTEL_LOG_TOOL_DETAILS": "1",
+    "OTEL_RESOURCE_ATTRIBUTES": "service.namespace=agents"
   },
   "permissions": {
     "allow": [],
@@ -40,7 +51,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-sessionstart-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6-astra node \"$HOME/.hindsight/coding-agents/dist/claude-sessionstart-hook.js\"; fi",
+            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-sessionstart-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6.1-sol node \"$HOME/.hindsight/coding-agents/dist/claude-sessionstart-hook.js\"; fi",
             "timeout": 30
           }
         ]
@@ -59,7 +70,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6-astra node \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\"; fi",
+            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6.1-sol node \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\"; fi",
             "timeout": 30
           }
         ]
@@ -78,7 +89,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6-astra node \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\"; fi",
+            "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6.1-sol node \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\"; fi",
             "timeout": 60
           }
         ]
@@ -95,6 +106,15 @@
       }
     ],
     "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/omnigent-only.py\""
+          }
+        ]
+      },
       {
         "matcher": "*",
         "hooks": [
@@ -143,29 +163,7 @@
     "type": "command",
     "command": "bash $HOME/.claude/statusline.sh"
   },
-  "enabledPlugins": {
-    "claude-code-setup@claude-plugins-official": false,
-    "claude-md-management@claude-plugins-official": false,
-    "code-review@claude-plugins-official": false,
-    "document-skills@anthropic-agent-skills": false,
-    "cli-anything@cli-anything": false,
-    "skill-creator@claude-plugins-official": false,
-    "codex@openai-codex": false,
-    "powerpoint-mcp@powerpoint-mcp": false,
-    "superpowers@claude-plugins-official": false,
-    "google-workspace@kzarzycki-agent-skills": false,
-    "experimental@dev": false,
-    "research@kzarzycki-agent-skills": false,
-    "engineering@kzarzycki-agent-skills": false,
-    "content@kzarzycki-agent-skills": false,
-    "workflow@kzarzycki-agent-skills": false,
-    "playwright@kzarzycki-agent-skills": false,
-    "comms-personal@kzarzycki-agent-skills-private": false,
-    "voice-personal@kzarzycki-agent-skills-private": false,
-    "drawio@365-skills": false,
-    "pixelbrowse@pixelrag-plugins": false,
-    "goal-creator@kzarzycki-agent-skills": false
-  },
+  "enabledPlugins": {},
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {
       "source": {
@@ -236,5 +234,6 @@
   "verbose": false,
   "autoCompactEnabled": true,
   "skipAutoPermissionPrompt": true,
-  "outputStyle": "Concise"
+  "outputStyle": "Concise",
+  "syncClaudeAiSkills": false
 }

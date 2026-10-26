@@ -25,9 +25,20 @@ Pick the register by who reads it: a human or an agent.
 - Landing policy belongs to the project. Follow its instructions for merge criteria and authorization.
 - If a fix I asked for is in flight, wait for it and rebase; never route around another session's landing work.
 - Report the real exit code of every step; a chain's status is the last command's, not the one that mattered.
-- Subagents: scale effort, not model — strongest model at `low` for judgment work; Sonnet only for judgment-free mechanics. Projects own the specifics.
-- Separate agents (a Herdr pane, a worker, a reviewer) run in `omp` unless I name another harness.
+- Separate agents (a worker, a reviewer, a lead) run as Omnigent sessions, never in `omp` or as a bare CLI call (`claude -p`, `codex exec`): Omnigent keeps them visible, resumable and on the owner's board. An independent reviewer runs on the other model family from the author.
 - sudo needed and no TTY password? Use `osascript -e 'do shell script "CMD" with administrator privileges'` (macOS GUI auth prompt). Don't hand the command back to me.
+
+## Browser
+
+- Headless first: a browser window that appears on my screen takes focus from what I am doing. Take the first rung that works:
+  1. **A headless browser of your own** for anything that needs none of my logins: a local server, a test, a UI check, a public page. `agent-browser --config ~/.agent-browser/headless.json --session <task>` launches one, as does Playwright's `chromium.launch()`. A project's own browser e2e runs in its headless mode.
+  2. **Agent Brave** only when the page needs my logins. It stays a visible window behind mine, shared by agents working in parallel: each works in its own background tab, never relies on the focused tab, and leaves other agents' tabs alone. When a step cannot run in the background, or is delicate enough that I should watch it, tell me before bringing the window forward. Open your tab in the background: Playwright `b = connect_over_cdp(...)`, then `b.new_browser_cdp_session().send("Target.createTarget", {"url": url, "background": True})` inside `with b.contexts[0].expect_page() as p:`, and drive `p.value`. Any foreground tab or window raises Agent Brave above my windows without taking keyboard focus, so my next click lands in it: agent-browser `tab new`, Playwright `new_page()` and `new_context()`, `/json/new`, `window.open`. Not running? Start it with `open -g -a "Agent Brave"`; never restart it while another agent has a tab open.
+  3. **A headed browser of your own** only when a check cannot run headless: start it in the background (`open -g`, or a launch that does not activate the app) and say which check needed it and why.
+- Agent Brave is this macOS account's dedicated automation Brave. Each account has its own app, profile and CDP port, because loopback is shared between accounts and two browsers on one port means one agent drives the other account's browser:
+  `~/Applications/Agent Brave.app`, profile `~/.browser-mcp/profiles/agent-brave`, CDP `127.0.0.1:9333` on the personal account, `127.0.0.1:9334` on work (`zarz`).
+
+  `~/.agent-browser/config.json` sets this account's `cdp`, so plain `agent-browser` commands attach to Agent Brave; `headless.json` beside it sets none, so `--config` with it launches a fresh headless browser. Never drive or read my personal Brave or another account's port, and never create a new browser profile per task — logins live in Agent Brave and persist.
+- A login, CAPTCHA or 2FA in the way: ask me to complete it in the Agent Brave window. Never type passwords or codes.
 
 ## Ponytail (lazy senior dev mode)
 

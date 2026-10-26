@@ -1045,6 +1045,32 @@ class EvidenceGateTests(unittest.TestCase):
         self.assertIn('-deps = ["@crates__a-0.9.0//:a"]',
                       json.loads(audit.release_ledger("target", [], patch))["bazel_lock_evidence"][0])
 
+    def test_bazel_lock_accepts_workspace_inherited_cargo_toml(self):
+        def spec():
+            return {"repoRuleId": audit.HTTP_ARCHIVE, "attributes": {
+                "build_file_content": "# bazel mod show_repo 'omp'\n", "remote_patch_strip": 0, "sha256": "1" * 64,
+                "strip_prefix": "a-1.0.0", "type": "tar.gz", "urls": ["https://static.crates.io/crates/a/1.0.0/download"]}}
+        def lock(recorded_inputs):
+            return {"lockFileVersion": 1, "moduleExtensions": {audit.CRATE_EXTENSION: {"general": {
+                "bzlTransitiveDigest": "d", "usagesDigest": "u", "recordedInputs": recorded_inputs,
+                "generatedRepoSpecs": {"crates": {"repoRuleId": "hub", "attributes": {"contents": {}}},
+                                       "crates__a-1.0.0": spec()}}}}}
+        old_member = "FILE:@@//crates/member/Cargo.toml " + "1" * 64
+        new_member = "FILE:@@//crates/member/Cargo.toml " + "2" * 64
+        cargo = b'[[package]]\nname = "local"\nversion = "1.0.0"\n'
+        base_lock = json.dumps(lock([old_member])).encode()
+        target_lock = json.dumps(lock([new_member])).encode()
+        data = {("base", audit.BAZEL_LOCK): base_lock, ("target", audit.BAZEL_LOCK): target_lock,
+                ("target", "Cargo.lock"): cargo}
+        # The member's own Cargo.toml is unchanged, but the workspace root Cargo.toml it
+        # inherits fields from did change: accepted.
+        with mock.patch.object(audit, "manifest_blob", side_effect=lambda commit, path, limit=None: data[(commit, path)]):
+            audit.bazel_lock_evidence("base", "target", {audit.BAZEL_LOCK, "Cargo.toml"})
+        # Without the root Cargo.toml itself having changed, the same entry is unexplained.
+        with mock.patch.object(audit, "manifest_blob", side_effect=lambda commit, path, limit=None: data[(commit, path)]), \
+                self.assertRaises(audit.Hold):
+            audit.bazel_lock_evidence("base", "target", {audit.BAZEL_LOCK})
+
     def test_changed_manifests_require_matching_changed_lock_entries(self):
         cargo = (b'[[package]]\nname = "local"\nversion = "1.0.0"\n'
                  b'[[package]]\nname = "safe"\nversion = "1.2.3"\n'

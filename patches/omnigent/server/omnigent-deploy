@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Deploy the Omnigent server from the fork's signed `mine` head. Root-owned, and
+# run only by omnigent-deploy.service: an agent may start that unit (sudoers
+# omnigent-deploy) and nothing else, so it can deploy a signed head but never
+# reach docker, this script, the compose file or the checkout it builds from.
+set -euo pipefail
+ETC=/etc/omnigent
+SRC=/srv/omnigent/source
+BRANCH=mine
+compose() { docker compose -f "$ETC/compose.yaml" --env-file "$ETC/.env" --project-directory "$ETC" "$@"; }
+
+[ -d "$SRC/.git" ] || git clone -q https://github.com/kzarzycki/omnigent "$SRC"
+git -C "$SRC" fetch -q origin "$BRANCH"
+head=$(git -C "$SRC" rev-parse "origin/$BRANCH")
+git -C "$SRC" -c gpg.ssh.allowedSignersFile="$ETC/allowed_signers" verify-commit "$head" 2>/dev/null \
+  || { echo "$BRANCH head ${head:0:9} is not signed by a key in $ETC/allowed_signers" >&2; exit 1; }
+git -C "$SRC" checkout -q --force --detach "$head"
+git -C "$SRC" clean -q -fdx
+compose build -q omnigent
+compose up -d omnigent
+echo "$head" > /srv/omnigent/deployed
+echo "deployed ${head:0:9}"

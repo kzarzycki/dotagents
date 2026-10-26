@@ -10,7 +10,7 @@
 # destinations are left alone and reported as conflicts. Local-override
 # patterns are skipped.
 #
-# Profile: machine-class overlay name (mac, vps, xebia-remote, ...). If not
+# Profile: machine-class overlay name (mac, vps, remote, ...). If not
 # supplied via --profile and $HOME/.dotagents-profile is missing, prompts on
 # a TTY. Resolved value is written to $HOME/.dotagents-profile.
 
@@ -41,7 +41,8 @@ Usage:
 Options:
   --no-pull          Skip the git pull step.
   --dry-run          Print actions without making changes.
-  --profile <name>   Machine-class profile (mac, vps, xebia-remote, ...).
+  --profile <name>   Machine-class profile (mac, vps, remote, ...);
+                     comma-separated to stack overlays, e.g. mac,work.
                      Written to ~/.dotagents-profile. If omitted and the
                      file is missing, prompts on a TTY.
   --only <entry>     Install only this top-level home payload; repeatable.
@@ -249,7 +250,8 @@ if [ "$CMD" = "arm-hooks" ]; then
   exit 0
 fi
 
-if (( ! ONLY_MODE )) || is_selected ".claude"; then
+# The merged settings feed both ~/.claude/settings.json and Codex's [otel].
+if is_selected ".claude" || is_selected ".codex"; then
 # 0. Resolve profile. Precedence: --profile arg > existing ~/.dotagents-profile
 # > interactive prompt. Resolved value is persisted to ~/.dotagents-profile
 # so subsequent runs need no flag.
@@ -272,7 +274,7 @@ if [ -z "$resolved_profile" ]; then
     available+=("$n")
   done
   if [ -t 0 ]; then
-    printf 'Profile name (available: %s): ' "${available[*]:-mac vps}" >&2
+    printf 'Profile name, comma-separated to stack (available: %s): ' "${available[*]:-mac vps}" >&2
     read -r resolved_profile
     resolved_profile=$(printf '%s' "$resolved_profile" | tr -d '\n\r ')
   fi
@@ -535,20 +537,25 @@ if (( ! rc_found )); then
 fi
 fi
 
-if (( ! ONLY_MODE )) || is_selected ".claude"; then
+if is_selected ".claude" || is_selected ".codex"; then
 # 4. Settings assembly. Claude Code's only user-scope settings file is
 # $HOME/.claude/settings.json — user-level settings.local.json is NOT read
 # (only project-level .claude/settings.local.json exists). Install generates
 # settings.json by deep-merging settings.shared.json + settings.<profile>.json
 # (profile wins per key; nested objects merge, arrays replace). Claude writes
-# runtime prefs (/model, /effort, don't-ask-again flags) into the same file
-# between installs; each install resets it to repo state and prints the diff,
-# so session churn stays visible and machine-local instead of dirtying the
-# repo. Edit the repo files, never the generated one.
+# runtime prefs (/model, permission prompts, /plugin) into the same file
+# between installs. The repo owns each top-level key it sets; every other key
+# the host has is kept. Claude also writes into permissions, enabledPlugins
+# and extraKnownMarketplaces, so there the repo owns only its own entries:
+# permission lists are unions (revoke with a deny rule), and a host plugin
+# entry stays only while enabled. Keys keep the host's order, so the diff
+# printed shows only repo changes.
+# Edit the repo files, never the generated one.
 USER_SETTINGS="$HOME/.claude/settings.json"
 SHARED_SETTINGS="$SRC/.claude/settings.shared.json"
 LEGACY_LOCAL="$HOME/.claude/settings.local.json"
 
+if is_selected ".claude"; then
 # Migration from the symlink era: both files used to point into the repo.
 if [ -L "$USER_SETTINGS" ]; then
   case "$(readlink "$USER_SETTINGS")" in
@@ -581,6 +588,7 @@ elif [ -f "$LEGACY_LOCAL" ]; then
     printf 'NOTE: %s exists but Claude Code does not read user-level settings.local.json\n' "$LEGACY_LOCAL"
   fi
 fi
+fi
 
 if [ -f "$SHARED_SETTINGS" ]; then
   if ! command -v jq >/dev/null 2>&1; then
@@ -588,34 +596,192 @@ if [ -f "$SHARED_SETTINGS" ]; then
     exit 1
   fi
   merge_inputs=("$SHARED_SETTINGS")
-  if [ -n "$resolved_profile" ]; then
-    profile_src="$SRC/.claude/settings.$resolved_profile.json"
+  # A profile may stack overlays, comma-separated and merged in order (`mac,work`).
+  IFS=, read -ra profile_names <<<"$resolved_profile"
+  for profile_name in ${profile_names[@]+"${profile_names[@]}"}; do
+    profile_src="$SRC/.claude/settings.$profile_name.json"
     if [ -f "$profile_src" ]; then
       merge_inputs+=("$profile_src")
       if jq -e 'has("hooks")' "$profile_src" >/dev/null 2>&1; then
         printf 'WARNING: %s defines hooks — profile hook arrays replace shared ones per event\n' "$profile_src" >&2
       fi
     else
-      printf 'WARNING: profile "%s" declared but %s not found\n' "$resolved_profile" "$profile_src" >&2
+      printf 'WARNING: profile "%s" declared but %s not found\n' "$profile_name" "$profile_src" >&2
     fi
+  done
+  # Settings env values are literal, so the installer fills host.name (Claude
+  # Code sends none): the machine's Omnigent host name when it has one, so the
+  # APM can join Omnigent's usage to the harnesses' telemetry, else `hostname`.
+  otel_host=$(awk '/^host:/ { h = 1; next } /^[^ ]/ { h = 0 }
+    h && /^  name:/ { sub(/^  name:[ \t]*/, "")
+      if (/^\047[^\047]*\047$/ || /^"[^"]*"$/) $0 = substr($0, 2, length($0) - 2)
+      print; exit }' \
+    "$HOME/.omnigent/config.yaml" 2>/dev/null || true)
+  # ponytail: a plain host name only, since it is also written between TOML quotes; YAML escapes fall back.
+  if [ -n "$otel_host" ] && ! [[ "$otel_host" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    printf 'WARNING: Omnigent host name %s is not plain [A-Za-z0-9._-]; OTel uses hostname\n' "$otel_host" >&2
+    otel_host=
   fi
-  if (( DRY_RUN )); then
+  [ -n "$otel_host" ] || otel_host=$(hostname 2>/dev/null || uname -n)
+  merged=$(jq -s --arg host "$otel_host" '
+    reduce .[] as $overlay ({}; . * $overlay)
+    | if (.env.OTEL_RESOURCE_ATTRIBUTES // "") != ""
+      then .env.OTEL_RESOURCE_ATTRIBUTES += ",host.name=" + $host else . end
+  ' "${merge_inputs[@]}")
+  # `dotagents` is install's own key, never Claude's: the work overlay's
+  # telemetryRepos becomes Omnigent's allowlist (4.6) and is dropped from settings.
+  telemetry_repos=$(jq -c '.dotagents.telemetryRepos // empty' <<<"$merged")
+  merged=$(jq 'del(.dotagents)' <<<"$merged")
+  if ! is_selected ".claude"; then
+    :
+  elif (( DRY_RUN )); then
     printf 'DRY: generate %s from: %s\n' "$USER_SETTINGS" "${merge_inputs[*]}"
+    linked=$((linked + 1))
   else
+    host_settings=/dev/null
+    [ -f "$USER_SETTINGS" ] && host_settings=$USER_SETTINGS
     tmp=$(mktemp)
-    jq -s 'reduce .[] as $overlay ({}; . * $overlay)' "${merge_inputs[@]}" > "$tmp"
-    if [ -f "$USER_SETTINGS" ] && ! cmp -s "$tmp" "$USER_SETTINGS"; then
-      # one-time safety copy before the first overwrite of a real file
-      if [ ! -e "$USER_SETTINGS.pre-dotagents.bak" ]; then
-        cp "$USER_SETTINGS" "$USER_SETTINGS.pre-dotagents.bak"
+    if ! jq --slurpfile h "$host_settings" '
+        ($h[0] // {}) as $h
+        | $h + .
+        | if .permissions and $h.permissions then .permissions |= ($h.permissions + .
+            | reduce ("allow", "deny", "ask", "additionalDirectories") as $k (.;
+                if .[$k] and $h.permissions[$k] then .[$k] = $h.permissions[$k] + (.[$k] - $h.permissions[$k]) else . end))
+          else . end
+        | if .enabledPlugins and $h.enabledPlugins then .enabledPlugins |= (. as $r
+            | $h.enabledPlugins + $r | with_entries(select(.value == true or (.key as $k | $r | has($k)))))
+          else . end
+        | if .extraKnownMarketplaces and $h.extraKnownMarketplaces
+          then .extraKnownMarketplaces |= $h.extraKnownMarketplaces + . else . end
+      ' <<<"$merged" > "$tmp"; then
+      printf 'WARNING: %s is not a valid settings object; left unchanged\n' "$USER_SETTINGS" >&2
+      rm -f "$tmp"
+    else
+      if [ -f "$USER_SETTINGS" ] && ! cmp -s "$tmp" "$USER_SETTINGS"; then
+        # one-time safety copy before the first overwrite of a real file
+        if [ ! -e "$USER_SETTINGS.pre-dotagents.bak" ]; then
+          cp "$USER_SETTINGS" "$USER_SETTINGS.pre-dotagents.bak"
+        fi
+        printf 'UPDATED %s:\n' "$USER_SETTINGS"
+        diff -u "$USER_SETTINGS" "$tmp" || true
       fi
-      printf 'UPDATED %s:\n' "$USER_SETTINGS"
-      diff -u "$USER_SETTINGS" "$tmp" || true
+      chmod 644 "$tmp"
+      mv "$tmp" "$USER_SETTINGS"
+      linked=$((linked + 1))
     fi
-    chmod 644 "$tmp"
-    mv "$tmp" "$USER_SETTINGS"
   fi
-  linked=$((linked + 1))
+
+  # 4.6 A machine that keeps telemetry off lists the repos still allowed to
+  # export; Omnigent reads ~/.omnigent/telemetry-allowlist.json at each session launch
+  # and turns Claude Code and Codex telemetry on for a listed checkout (matched
+  # by its origin, so every worktree counts). The file is ours only while it
+  # says so (managedBy); a hand-written one is left alone.
+  ALLOWLIST="$HOME/.omnigent/telemetry-allowlist.json"
+  if is_selected ".claude" && [ -d "$HOME/.omnigent" ]; then
+    allow_ep=$(jq -r '.env.OTEL_EXPORTER_OTLP_ENDPOINT // ""' <<<"$merged")
+    ours=1
+    # An empty file is a write cut short (ours); anything else without the marker is the user's.
+    if [ -s "$ALLOWLIST" ] && ! jq -e '.managedBy == "dotagents"' "$ALLOWLIST" >/dev/null 2>&1; then
+      ours=0
+      printf 'WARNING: %s is not managed by dotagents; left alone\n' "$ALLOWLIST" >&2
+    fi
+    if (( ours )) && [ -n "$telemetry_repos" ] && [ -n "$allow_ep" ]; then
+      want=$(jq -n --arg ep "$allow_ep" --argjson repos "$telemetry_repos" \
+        '{managedBy: "dotagents", endpoint: $ep, repos: $repos}')
+      if [ "$(jq -c . "$ALLOWLIST" 2>/dev/null)" != "$(jq -c . <<<"$want")" ]; then
+        if (( DRY_RUN )); then
+          printf 'DRY: write telemetry allowlist %s\n' "$ALLOWLIST"
+        else
+          allow_tmp=$(mktemp "$ALLOWLIST.XXXXXX")
+          printf '%s\n' "$want" > "$allow_tmp" && mv "$allow_tmp" "$ALLOWLIST"
+          printf 'UPDATED: %s\n' "$ALLOWLIST"
+        fi
+      fi
+    elif (( ours )) && [ -f "$ALLOWLIST" ]; then
+      if (( DRY_RUN )); then printf 'DRY: remove %s\n' "$ALLOWLIST"; else rm -f "$ALLOWLIST"; printf 'REMOVED: %s\n' "$ALLOWLIST"; fi
+    fi
+  fi
+
+  # 4.5 Codex reads OTel only from ~/.codex/config.toml [otel]. Keep an owned
+  # [otel] at its end, derived from the merged settings so the endpoint has one
+  # source; telemetry off removes it. Owned = "[otel]", the marker line right
+  # after it, then the contiguous keys written here. Codex rewrites the file
+  # (`codex mcp add`) and inserts tables after that run, so nothing past it is
+  # ours. Only a table header or EOF ends [otel]: blank and comment lines past
+  # the run are kept for what follows, and a key after them (one the user added,
+  # or ours split off by a comment) would fall into the previous table once the
+  # header is gone, so it leaves the file alone. Any other otel table or key is
+  # the user's. Codex 0.163.0 puts host.name on logs but not metrics, and
+  # Omnigent filters its env, so `environment` carries the host; the Collector
+  # copies it into host.name.
+  CODEX_CONFIG="$HOME/.codex/config.toml"
+  if is_selected ".codex" && [ -d "$HOME/.codex" ]; then
+    otel_ep=$(jq -r 'if .env.CLAUDE_CODE_ENABLE_TELEMETRY == "1"
+      then .env.OTEL_EXPORTER_OTLP_ENDPOINT // "" else "" end' <<<"$merged")
+    otel_prompts=$(jq -r 'if .env.OTEL_LOG_USER_PROMPTS == "1" then "true" else "false" end' <<<"$merged")
+    otel_mark='# dotagents otel: generated by bin/dotagents install from settings.*.json; edit there'
+    codex_tmp=$(mktemp "$HOME/.codex/.config.toml.XXXXXX")
+    codex_ok=1
+    if [ -f "$CODEX_CONFIG" ]; then
+      cp -p "$CODEX_CONFIG" "$codex_tmp"
+      # Drop the owned block and one blank line around it.
+      awk -v m="$otel_mark" '
+        function flush() { if (hold) print ""; hold = 0 }
+        function emit(l) { flush(); if (l == "") hold = 1; else print l }
+        function done(  i) {
+          st = 3
+          for (i = 1; i <= n; i++) if (i > 1 || pre || buf[i] != "") emit(buf[i])
+        }
+        st == 2 {
+          if (!n && $0 ~ /^(environment|log_user_prompt|log_agent_responses|exporter|metrics_exporter|trace_exporter)[[:space:]]*=/) next
+          if ($0 == "" || $0 ~ /^[[:space:]]*#/) { buf[++n] = $0; next }
+          if ($0 !~ /^[[:space:]]*\[/) { bad = 1; exit }
+          done()
+        }
+        st == 1 {
+          if ($0 == m) { st = 2; pre = hold; hold = 0; next }
+          flush(); print "[otel]"; st = 0
+        }
+        st == 0 && $0 == "[otel]" { st = 1; next }
+        $0 == "" { flush(); hold = 1; next }
+        { flush(); print }
+        END { if (bad) exit 3; if (st == 1) { flush(); print "[otel]" } if (st == 2) done(); flush() }
+      ' "$CODEX_CONFIG" > "$codex_tmp" || codex_ok=0
+    fi
+    if (( ! codex_ok )); then
+      printf 'WARNING: %s has keys after the dotagents [otel] block; not managed\n' "$CODEX_CONFIG" >&2
+      rm -f "$codex_tmp"
+    elif grep -Eq '^[[:space:]]*(\[+[[:space:]]*["'\'']?otel["'\'']?[[:space:]]*[].]|["'\'']?otel["'\'']?[[:space:]]*[.=])' "$codex_tmp"; then
+      printf 'WARNING: %s has its own [otel]; dotagents otel block not managed\n' "$CODEX_CONFIG" >&2
+      rm -f "$codex_tmp"
+    else
+      if [ -n "$otel_ep" ]; then
+        if [ -s "$codex_tmp" ]; then echo >> "$codex_tmp"; fi
+        printf '%s\n' '[otel]' "$otel_mark" "environment = \"$otel_host\"" "log_user_prompt = $otel_prompts" "log_agent_responses = $otel_prompts" \
+          "exporter = { otlp-http = { endpoint = \"$otel_ep/v1/logs\", protocol = \"binary\" } }" \
+          "metrics_exporter = { otlp-http = { endpoint = \"$otel_ep/v1/metrics\", protocol = \"binary\" } }" \
+          'trace_exporter = "none"' >> "$codex_tmp"
+      fi
+      if { [ -f "$CODEX_CONFIG" ] || [ -s "$codex_tmp" ]; } && ! cmp -s "$codex_tmp" "$CODEX_CONFIG"; then
+        if (( DRY_RUN )); then
+          printf 'DRY: update otel block in %s\n' "$CODEX_CONFIG"
+          rm -f "$codex_tmp"
+        else
+          printf 'UPDATED %s:\n' "$CODEX_CONFIG"
+          if [ -f "$CODEX_CONFIG" ]; then
+            cp -p "$CODEX_CONFIG" "$CODEX_CONFIG.dotagents-bak"
+            codex_old="$CODEX_CONFIG"
+          else
+            codex_old=/dev/null
+          fi
+          diff -u "$codex_old" "$codex_tmp" || true
+          mv "$codex_tmp" "$CODEX_CONFIG"
+        fi
+      else
+        rm -f "$codex_tmp"
+      fi
+    fi
+  fi
 fi
 fi
 
@@ -629,6 +795,42 @@ if command -v jq >/dev/null 2>&1; then
       problems=$((problems + 1))
     fi
   done
+fi
+
+# A family's frontier model above `top` (Claude Fable, Codex Astra) never runs,
+# because it costs several times `top`. Install keeps host keys, so a default
+# set on the host would go unnoticed: report it and leave it, since which model
+# a host runs is the owner's call. Codex: top-level `model` and each
+# [profiles.*] `model`, in the shared config and in each Omnigent session's
+# private copy, which Omnigent makes only when it is missing, so a stale default
+# outlives a fix to the shared file. Claude Code: settings.json `model`.
+# ponytail: line-based TOML read, misses inline tables (profiles = { x = { model = .. } }).
+frontier_rule='frontier models above top (Claude Fable, Codex Astra) never run; set a top-tier model'
+codex_configs=()
+for f in "$HOME/.codex/config.toml" "$HOME"/.omnigent/codex-native/*/codex-home/config.toml; do
+  [ -f "$f" ] && codex_configs+=("$f")
+done
+if is_selected ".codex" && (( ${#codex_configs[@]} )); then
+  while IFS= read -r hit; do
+    printf 'WARNING: %s is a frontier model; %s\n' "$hit" "$frontier_rule" >&2
+    problems=$((problems + 1))
+  done < <(awk '
+    FNR == 1 { tbl = "" }
+    /^[[:space:]]*\[/ { tbl = $0; sub(/^[[:space:]]*/, "", tbl); if (match(tbl, /^[^]]*\]+/)) tbl = substr(tbl, 1, RLENGTH); next }
+    /^[[:space:]]*[^#=]+=/ {
+      k = $0; sub(/=.*/, "", k); gsub(/[[:space:]"'\'']/, "", k)
+      v = $0; sub(/^[^=]*=[[:space:]]*/, "", v)
+      if (!match(v, /^"[^"]*"|^'\''[^'\'']*'\''/)) next
+      v = substr(v, 1, RLENGTH); t = tbl; gsub(/[[:space:]"'\'']/, "", t)
+      if (((t == "" && (k == "model" || k ~ /^profiles\..+\.model$/)) || (t ~ /^\[profiles\./ && k == "model") || (t == "[profiles]" && k ~ /^.+\.model$/)) && tolower(v) ~ /astra|fable/)
+        print FILENAME ": " (tbl == "" ? "" : tbl " ") k " = " v
+    }' "${codex_configs[@]}")
+fi
+if is_selected ".claude" && command -v jq >/dev/null 2>&1 \
+  && claude_model=$(jq -r '.model | strings | select(ascii_downcase | test("astra|fable"))' "$HOME/.claude/settings.json" 2>/dev/null) \
+  && [ -n "$claude_model" ]; then
+  printf 'WARNING: %s: model = "%s" is a frontier model; %s\n' "$HOME/.claude/settings.json" "$claude_model" "$frontier_rule" >&2
+  problems=$((problems + 1))
 fi
 
 # Dangling-symlink check inside our managed dotdirs.

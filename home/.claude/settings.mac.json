@@ -2,39 +2,65 @@
   "env": {
     "BRANDFETCH_CLIENT_ID": "1idStnJHAEZskBpUdQN"
   },
-  "extraKnownMarketplaces": {
-    "xebia-ai-skills": {
-      "source": {
-        "source": "github",
-        "repo": "xebia/ai-skills"
-      }
-    },
-    "draftsmith-local": {
-      "source": {
-        "source": "directory",
-        "path": "/Users/zarz/draftsmith-marketplace"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "pdlc@xebia-ai-skills": false,
-    "experimental@xebia-ai-skills": false,
-    "xebia-personal@kzarzycki-agent-skills-private": false,
-    "experimental@dev": false,
-    "xebia-personal@dev": false,
-    "draftsmith@draftsmith-local": false,
-    "workflow@dev": false,
-    "research@dev": false,
-    "engineering@dev": false,
-    "content@dev": false,
-    "playwright@dev": false,
-    "workflow@kzarzycki-agent-skills": false,
-    "research@kzarzycki-agent-skills": false,
-    "engineering@kzarzycki-agent-skills": false,
-    "content@kzarzycki-agent-skills": false,
-    "playwright@kzarzycki-agent-skills": false
-  },
   "theme": "dark-daltonized",
   "voiceEnabled": true,
-  "effortLevel": "medium"
+  "effortLevel": "medium",
+  "permissions": {
+    "allow": [
+      "Read(//tmp/**)",
+      "Read(//private/tmp/**)",
+      "Read(~/dev/personal/**)",
+      "Read(//Users/Shared/dev/**)",
+      "Edit(//tmp/voice_note/**)",
+      "Edit(//private/tmp/claude-501/**)",
+      "Bash(kill:*)",
+      "Bash(pkill:*)",
+      "Bash(pgrep:*)",
+      "Bash(ps:*)",
+      "Bash(lsof:*)",
+      "Bash(nohup:*)",
+      "Bash(disown)",
+      "Bash(/usr/bin/lockf:*)",
+      "Bash(adb:*)",
+      "Bash(emulator:*)",
+      "Bash(xcrun simctl:*)",
+      "Bash(xcrun devicectl:*)",
+      "Bash(gh pr edit:*)",
+      "Bash(gh pr comment:*)",
+      "Bash(gh pr ready:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(git push --force-with-lease:*)",
+      "Bash(git push -u origin:*)",
+      "Bash(git push origin:*)",
+      "Bash(python3 .agents/skills/engineering-loop/scripts/*)",
+      "Bash(python3 /tmp/voice_note/bin/omnigent_agent.py:*)",
+      "Bash(grep:*)",
+      "Bash(tail:*)",
+      "Bash(head:*)",
+      "Bash(cut:*)",
+      "Bash(sed -n:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(git log:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git show:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git fetch:*)",
+      "Bash(uptime)",
+      "Bash(date)",
+      "Bash(stat:*)"
+    ],
+    "additionalDirectories": [
+      "/tmp",
+      "/private/tmp",
+      "~/dev/personal",
+      "/Users/Shared/dev"
+    ],
+    "defaultMode": "auto"
+  }
 }

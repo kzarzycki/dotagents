@@ -25,3 +25,7 @@ providers:
     kind: subscription
 tui:
   theme: dark
+# These machines run sessions unattended: when the Omnigent server can't give a
+# policy verdict (after its 30 s retry), deny the tool call with a "retry
+# shortly" reason instead of prompting. Upstream default is `ask`.
+policy_unavailable_fallback: deny

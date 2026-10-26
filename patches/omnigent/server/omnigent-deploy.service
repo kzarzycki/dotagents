@@ -1,0 +1,9 @@
+[Unit]
+Description=Deploy the Omnigent server from the signed mine head
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/omnigent-deploy
+TimeoutStartSec=1800
