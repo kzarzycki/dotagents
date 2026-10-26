@@ -1,0 +1,6 @@
+# Keys whose signature on the fork's `mine` head lets omnigent-update install it.
+# One line per signer that commits to `mine`: the work Mac, the VPS, and the Claude cloud
+# sessions running the fork-sync skill.
+k.zarzycki@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPKptPzJ8UTmPCFM8zvpNPvwcFFoxfxFgv1O3StbIrQW omnigent-signing@ZarzBook
+k.zarzycki@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFR0+R2MoxoyM4eIXT1UEGXbazwK7fcX8fyzhJ6cSicA omnigent-signing@cc-experiments
+k.zarzycki@gmail.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFEYQ3Too/YxcYO5celINMNAP7YTZ+Ey1NiBxpunInac omnigent-cloud-sync
