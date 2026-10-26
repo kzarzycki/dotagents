@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -68,13 +69,14 @@ def test_a_hand_set_writable_roots_is_the_user_s(tmp_path, user):
 
 ALLOWED = [
     "ps -axo pid,command", "pgrep -f pytest",
-    "agent-browser --config ~/.agent-browser/headless.json --session v open http://127.0.0.1:8000",
     "mise run check", "mise run check:all", "mise run test",
     "uv run pytest -q", ".venv/bin/pytest -q", ".venv/bin/python -m pytest -q",
 ]
 ASKED = [
     "psql -c x", "sh -c ps", "pkill -f pytest", "mise run deploy", "mise install",
-    "agent-browser open http://127.0.0.1:8000", "agent-browser --config ~/.agent-browser/config.json open x",
+    "mise run check ::: deploy", "mise run test ::: deploy",
+    "agent-browser --config ~/.agent-browser/headless.json open http://127.0.0.1:8000",
+    "agent-browser --config ~/.agent-browser/headless.json connect 9222",
     "uv run python x.py", ".venv/bin/python x.py",
 ]
 
@@ -87,7 +89,7 @@ def test_the_rules_allow_the_verifier_s_routine_commands_and_nothing_else(comman
         ["codex", "execpolicy", "check", "--rules", str(rules), "--", *command.split()],
         capture_output=True, text=True, check=True,
     ).stdout
-    assert ('"allow"' in out) == (command in ALLOWED)
+    assert (json.loads(out).get("decision") == "allow") == (command in ALLOWED)
 
 
 def test_the_rules_install_as_copies_since_codex_skips_a_linked_one(tmp_path):
@@ -104,6 +106,18 @@ def test_the_rules_install_as_copies_since_codex_skips_a_linked_one(tmp_path):
     assert run_install(repo, home).returncode == 0
     assert not (rules / names[0]).is_symlink()
     assert (rules / names[1]).read_text() == "# changed\n"
+
+
+def test_a_rules_file_dotagents_did_not_write_is_left_alone(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    mine = home / ".codex/rules/sandbox-reads.rules"
+    mine.parent.mkdir(parents=True)
+    mine.write_text('prefix_rule(pattern = ["mine"], decision = "allow")\n')
+    result = run_install(repo, home)
+    assert result.returncode == 1, result.stdout + result.stderr  # a conflict fails install, as for any real file
+    assert mine.read_text() == 'prefix_rule(pattern = ["mine"], decision = "allow")\n'
+    assert f"CONFLICT: {mine} exists and is not a dotagents copy" in result.stdout
+    assert not (home / ".codex/rules/omnigent-only.rules").is_symlink()
 
 
 @pytest.mark.skipif(not shutil.which("codex"), reason="needs the codex CLI")

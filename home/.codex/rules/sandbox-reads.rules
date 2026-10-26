@@ -3,6 +3,8 @@
 # for a session's own children, and an agent checking on its own long run asks
 # to leave it each time. A rule-allowed command runs outside the sandbox.
 # Installed by dotagents (home/.codex/rules/) as a copy: Codex skips a linked one.
+# The browser has no rule: its attach and login options (connect, --cdp,
+# --profile, --state, auth) can follow any prefix, so every call still asks.
 
 prefix_rule(
     pattern = ["ps"],
@@ -20,16 +22,6 @@ prefix_rule(
     not_match = ["pkill -f pytest"],
 )
 
-# The verifier's own headless browser, which attaches to no logged-in browser.
-# The literal ~ is what the verifier types; any other agent-browser call asks.
-prefix_rule(
-    pattern = ["agent-browser", "--config", "~/.agent-browser/headless.json"],
-    decision = "allow",
-    justification = "A fresh headless browser with no logins.",
-    match = ["agent-browser --config ~/.agent-browser/headless.json --session v open http://127.0.0.1:8000"],
-    not_match = ["agent-browser open http://127.0.0.1:8000", "agent-browser --config ~/.agent-browser/config.json open x"],
-)
-
 # The loop's gates and the test runners the recorded gates used. A rule matches
 # only the plain command, so the verifier runs a gate bare.
 prefix_rule(
@@ -38,6 +30,19 @@ prefix_rule(
     justification = "The project's own gate.",
     match = ["mise run check", "mise run check:all", "mise run test"],
     not_match = ["mise run deploy", "mise install"],
+)
+
+# `:::` starts another task in the same call, so `mise run check ::: deploy`
+# asks. A prompt rule wins over an allow rule.
+# ponytail: a prefix sees only leading words, so a flag before `:::`
+# (`mise run check -j2 ::: deploy`) still passes; past that, a wrapper that
+# checks every argument.
+prefix_rule(
+    pattern = ["mise", "run", ["check", "check:all", "test"], ":::"],
+    decision = "prompt",
+    justification = "A second task in the same call is not the gate.",
+    match = ["mise run check ::: deploy"],
+    not_match = ["mise run check"],
 )
 
 prefix_rule(
