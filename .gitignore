@@ -61,3 +61,6 @@ home/.omp/security/
 home/.omp/install-id
 home/.omp/*.json
 home/.omp/*.db*
+
+# Agent run reports and briefs (engineering-loop writes them under tmp/loop/)
+tmp/
