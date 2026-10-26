@@ -1,0 +1,13 @@
+# Reads the workspace-write sandbox refuses, allowed by rule so they need no
+# auto-review (agent-skills #475): the sandbox refuses /bin/ps and pgrep, even
+# for a session's own children, and an agent checking on its own long run asks
+# to leave it each time. A rule-allowed command runs outside the sandbox.
+# Installed by dotagents (home/.codex/rules/).
+
+prefix_rule(
+    pattern = ["ps"],
+    decision = "allow",
+    justification = "ps only reads the process table.",
+    match = ["ps -axo pid,ppid,etime,command", "ps"],
+    not_match = ["psql", "pstree"],
+)
