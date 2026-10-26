@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import subprocess
+import tempfile
 import tomllib
 from pathlib import Path
 
@@ -129,9 +130,25 @@ def test_a_rules_file_dotagents_did_not_write_is_left_alone(tmp_path):
     assert not (home / ".codex/rules/omnigent-only.rules").is_symlink()
 
 
+def sandbox_failure():
+    """Why `codex sandbox` can't start on this host, or None. A kernel that bars unprivileged user namespaces
+    (GitHub's Ubuntu runners) stops its bwrap before the command runs."""
+    if not shutil.which("codex") or "CODEX_SANDBOX" in os.environ:
+        return None
+    with tempfile.TemporaryDirectory() as ws:
+        probe = subprocess.run(["codex", "sandbox", "-c", 'sandbox_mode="workspace-write"', "--", "true"],
+                               cwd=ws, capture_output=True, text=True, timeout=60)
+    if probe.returncode:
+        return f"codex sandbox can't start here (exit {probe.returncode}): {(probe.stderr.strip().splitlines() or [""])[0]}"
+
+
+SANDBOX_FAILURE = sandbox_failure()
+
+
 @pytest.mark.skipif(not shutil.which("codex"), reason="needs the codex CLI")
 # `codex sandbox` can't start inside Codex's own sandbox (exit 71)
 @pytest.mark.skipif("CODEX_SANDBOX" in os.environ, reason="runs inside a Codex sandbox")
+@pytest.mark.skipif(SANDBOX_FAILURE is not None, reason=str(SANDBOX_FAILURE))
 def test_codex_s_sandbox_lets_a_gate_write_an_installed_root_and_not_without_it(tmp_path):
     """The round trip: Codex's own sandbox reads the installed config. `codex sandbox` takes the
     mode only from -c, and the temp dirs it allows by default are excluded, since tmp_path is one."""
