@@ -7,6 +7,8 @@ paths:
 
 This file is for you, the agent helping the user maintain dotagents itself. It is **not** the user's behavioral spec. The user's spec is at `home/.agents/AGENTS.md` (which installs to `~/.agents/AGENTS.md`).
 
+Every change that lands as a PR runs the `engineering-loop` skill. Its project facts are in `docs/agents/`.
+
 ## What this repo is
 
 A dotfiles-style repo whose `home/` directory mirrors what the user wants under `~/`. The install command (`bin/dotagents`) walks `home/` and creates symlinks at the matching `~/`-paths. Each agent's per-user instruction file (`home/.claude/CLAUDE.md`, future `home/.codex/AGENTS.md`) is an in-repo symlink to `home/.agents/AGENTS.md`, so a single edit propagates everywhere.
