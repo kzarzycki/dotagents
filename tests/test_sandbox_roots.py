@@ -66,23 +66,49 @@ def test_a_hand_set_writable_roots_is_the_user_s(tmp_path, user):
     assert f"{codex} sets its own writable_roots; dotagents sandbox roots not managed" in result.stderr
 
 
+ALLOWED = [
+    "ps -axo pid,command", "pgrep -f pytest",
+    "agent-browser --config ~/.agent-browser/headless.json --session v open http://127.0.0.1:8000",
+    "mise run check", "mise run check:all", "mise run test",
+    "uv run pytest -q", ".venv/bin/pytest -q", ".venv/bin/python -m pytest -q",
+]
+ASKED = [
+    "psql -c x", "sh -c ps", "pkill -f pytest", "mise run deploy", "mise install",
+    "agent-browser open http://127.0.0.1:8000", "agent-browser --config ~/.agent-browser/config.json open x",
+    "uv run python x.py", ".venv/bin/python x.py",
+]
+
+
 @pytest.mark.skipif(not shutil.which("codex"), reason="needs the codex CLI")
-def test_the_rule_allows_ps_and_nothing_else():
+@pytest.mark.parametrize("command", ALLOWED + ASKED)
+def test_the_rules_allow_the_verifier_s_routine_commands_and_nothing_else(command):
     rules = Path(__file__).parent.parent / "home/.codex/rules/sandbox-reads.rules"
+    out = subprocess.run(
+        ["codex", "execpolicy", "check", "--rules", str(rules), "--", *command.split()],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert ('"allow"' in out) == (command in ALLOWED)
 
-    def check(*command):
-        out = subprocess.run(
-            ["codex", "execpolicy", "check", "--rules", str(rules), "--", *command],
-            capture_output=True, text=True, check=True,
-        ).stdout
-        return '"allow"' in out
 
-    assert check("ps", "-axo", "pid,command")
-    assert not check("psql", "-c", "select 1")
-    assert not check("sh", "-c", "ps")
+def test_the_rules_install_as_copies_since_codex_skips_a_linked_one(tmp_path):
+    repo, home, _, _ = install(tmp_path)
+    rules = home / ".codex/rules"
+    names = sorted(p.name for p in (repo / "home/.codex/rules").iterdir())
+    for name in names:
+        assert not (rules / name).is_symlink()
+        assert (rules / name).read_bytes() == (repo / "home/.codex/rules" / name).read_bytes()
+    # an older install's link is replaced, and a repo change reaches the copy
+    (rules / names[0]).unlink()
+    (rules / names[0]).symlink_to(repo / "home/.codex/rules" / names[0])
+    (repo / "home/.codex/rules" / names[1]).write_text("# changed\n")
+    assert run_install(repo, home).returncode == 0
+    assert not (rules / names[0]).is_symlink()
+    assert (rules / names[1]).read_text() == "# changed\n"
 
 
 @pytest.mark.skipif(not shutil.which("codex"), reason="needs the codex CLI")
+# `codex sandbox` can't start inside Codex's own sandbox (exit 71)
+@pytest.mark.skipif("CODEX_SANDBOX" in os.environ, reason="runs inside a Codex sandbox")
 def test_codex_s_sandbox_lets_a_gate_write_an_installed_root_and_not_without_it(tmp_path):
     """The round trip: Codex's own sandbox reads the installed config. `codex sandbox` takes the
     mode only from -c, and the temp dirs it allows by default are excluded, since tmp_path is one."""

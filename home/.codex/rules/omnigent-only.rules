@@ -1,7 +1,8 @@
 # Separate agents (worker, reviewer, lead) run as Omnigent sessions, never as a
 # bare CLI call: Omnigent keeps them visible, resumable and on the owner's board.
 # Use the orchestrating-agents skill: python3 <skill>/scripts/omnigent_agent.py run|start.
-# Installed by dotagents (home/.codex/rules/); the Claude Code side is
+# Installed by dotagents (home/.codex/rules/) as a copy, since Codex skips a
+# linked rules file; the Claude Code side is
 # home/.claude/hooks/omnigent-only.py.
 # ponytail: prefix rules see only leading words, so `claude --model x -p` passes
 # and every `omp` call is forbidden, `omp --version` included.

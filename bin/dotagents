@@ -489,6 +489,19 @@ link_tree() {
       link_tree "$entry" "$target"
       continue
     fi
+    # Codex skips a symlinked rules file: with sandbox-reads.rules linked, an
+    # escalated `ps` still went to the auto-reviewer; copied, it did not. So the
+    # rules are copies, rewritten whenever the repo's version differs.
+    case "$target" in
+      "$HOME/.codex/rules/"*.rules)
+        if [ -L "$target" ] || ! cmp -s "$entry" "$target"; then
+          run rm -f "$target"
+          run cp "$entry" "$target"
+        fi
+        linked=$((linked + 1))
+        continue
+        ;;
+    esac
     if [ -e "$target" ] && [ ! -L "$target" ]; then
       printf 'CONFLICT: %s exists and is not a symlink — leaving alone\n' "$target"
       conflicts=$((conflicts + 1))
