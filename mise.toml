@@ -99,7 +99,7 @@ description = "The test suite and the frozen agent configuration check. The loop
 run = ["mise run test", "mise run agent-sync --frozen"]
 
 [tasks."loop:approvals"]
-description = "Checks the loop's proofs on GitHub: approved spec, verdict, Evidence, local check. merge exits 3 while it waits."
+description = "Checks the loop's proofs on GitHub: approved spec, verdict, Evidence, the CI check. merge exits 3 while it waits."
 usage = '''
 arg "<point>" help="build or merge"
 arg "[pr]" help="the PR number; default: this branch's PR"
