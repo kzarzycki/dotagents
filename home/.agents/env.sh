@@ -73,4 +73,5 @@ export AGENT_BROWSER_IDLE_TIMEOUT_MS=600000
 # agents write bash: under zsh an unquoted $var stays one word, so a loop over
 # "a b" runs once with both. Split like bash in agent shells only (Claude Code
 # sets CLAUDECODE=1); interactive zsh keeps its default.
-[ -n "${ZSH_VERSION:-}" ] && [ -n "${CLAUDECODE:-}" ] && setopt SH_WORD_SPLIT
+# An if, so sourcing this file still exits 0 where the test is false.
+if [ -n "${ZSH_VERSION:-}" ] && [ -n "${CLAUDECODE:-}" ]; then setopt SH_WORD_SPLIT; fi
