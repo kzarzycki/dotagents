@@ -5,6 +5,9 @@ The `engineering-loop` skill reads this file at every step but the gate.
 ## Settings
 
 ```yaml
+loop:
+  ci: false
+
 risk:
   verifier: true
 ```
@@ -19,7 +22,7 @@ Run from the branch, never against the real `$HOME`:
 
 - Install: `HOME=$(mktemp -d) bin/dotagents install --no-pull`, then check the expected files land at the right `~/`-paths.
 - Git hooks: `HOME=$(mktemp -d) bin/dotagents arm-hooks --root <dir>`, then clone or commit through the sandbox template.
-- Everything else: `mise run check`.
+- Everything else: `mise run check:all`.
 
 ## Acceptance references
 
@@ -28,10 +31,9 @@ Run from the branch, never against the real `$HOME`:
 
 ## Approvals
 
-Only people approve. There is no spec policy, so every spec waits for the owner. The
-merge proof is the `check` check that GitHub Actions (`.github/workflows/ci.yml`) runs on
-the PR head: `mise run check`, on every PR with no path filter, since a required check a
-filter skips never reports. `risk.verifier: true` lets the verifier decide what is
+Only people approve. There is no spec policy, so every spec waits for the owner. There
+is no CI, so the merge proof is `approvals.py local-ci`: a recorded run of
+`mise run check:all` on the PR head. `risk.verifier: true` lets the verifier decide what is
 high risk: a pass on the head whose `Risk:` line says anything but `low` holds the merge for
 the owner's `approved:merge`, and so does a `risk:high` label.
 
