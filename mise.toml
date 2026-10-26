@@ -88,3 +88,33 @@ fi
 [tasks.test]
 description = "Run the project test suite."
 run = "pytest -q"
+
+[tasks.check]
+description = "What pre-push runs: the test suite and the frozen agent configuration check. The loop runs it before every push."
+run = ["mise run test", "mise run agent-sync --frozen"]
+
+[tasks."check:all"]
+description = "Every check; with no CI, the merge proof that approvals.py local-ci records."
+depends = ["check"]
+
+[tasks."loop:approvals"]
+description = "Checks the loop's proofs on GitHub: approved spec, verdict, Evidence, local check. merge exits 3 while it waits."
+usage = '''
+arg "<point>" help="build or merge"
+arg "[pr]" help="the PR number; default: this branch's PR"
+'''
+run = [
+  'test -f .agents/skills/engineering-loop/scripts/approvals.py || { echo "loop:approvals: the engineering-loop skill is not installed; run mise run agent-sync" >&2; exit 1; }',
+  'uv run .agents/skills/engineering-loop/scripts/approvals.py check "${usage_point}" ${usage_pr:-}',
+]
+
+[tasks."loop:land"]
+description = "The one way an agent lands a PR: every merge proof, then ready and a squash merge pinned to the head. Exits 0 merged, 1 on a missing proof, 3 while it waits."
+usage = '''
+arg "<pr>" help="the PR number"
+flag "--wait" help="wait until the PR merges or needs someone"
+'''
+run = [
+  'test -f .agents/skills/engineering-loop/scripts/approvals.py || { echo "loop:land: the engineering-loop skill is not installed; run mise run agent-sync" >&2; exit 1; }',
+  'uv run .agents/skills/engineering-loop/scripts/approvals.py land "${usage_pr}" $([ "${usage_wait:-false}" = true ] && echo --wait)',
+]
