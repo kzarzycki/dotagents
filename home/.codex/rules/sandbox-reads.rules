@@ -1,8 +1,10 @@
-# Reads the workspace-write sandbox refuses, allowed by rule so they need no
+# Commands a verifier runs all the time, allowed by rule so they need no
 # auto-review (agent-skills #475): the sandbox refuses /bin/ps and pgrep, even
 # for a session's own children, and an agent checking on its own long run asks
 # to leave it each time. A rule-allowed command runs outside the sandbox.
-# Installed by dotagents (home/.codex/rules/).
+# Installed by dotagents (home/.codex/rules/) as a copy: Codex skips a linked one.
+# The browser has no rule: its attach and login options (connect, --cdp,
+# --profile, --state, auth) can follow any prefix, so every call still asks.
 
 prefix_rule(
     pattern = ["ps"],
@@ -10,4 +12,59 @@ prefix_rule(
     justification = "ps only reads the process table.",
     match = ["ps -axo pid,ppid,etime,command", "ps"],
     not_match = ["psql", "pstree"],
+)
+
+prefix_rule(
+    pattern = ["pgrep"],
+    decision = "allow",
+    justification = "pgrep only reads the process table.",
+    match = ["pgrep -f pytest", "pgrep"],
+    not_match = ["pkill -f pytest"],
+)
+
+# The loop's gates and the test runners the recorded gates used. A rule matches
+# only the plain command, so the verifier runs a gate bare.
+prefix_rule(
+    pattern = ["mise", "run", ["check", "check:all", "test"]],
+    decision = "allow",
+    justification = "The project's own gate.",
+    match = ["mise run check", "mise run check:all", "mise run test"],
+    not_match = ["mise run deploy", "mise install"],
+)
+
+# `:::` starts another task in the same call, so `mise run check ::: deploy`
+# asks. A prompt rule wins over an allow rule.
+# ponytail: a prefix sees only leading words, so a flag before `:::`
+# (`mise run check -j2 ::: deploy`) still passes; past that, a wrapper that
+# checks every argument.
+prefix_rule(
+    pattern = ["mise", "run", ["check", "check:all", "test"], ":::"],
+    decision = "prompt",
+    justification = "A second task in the same call is not the gate.",
+    match = ["mise run check ::: deploy"],
+    not_match = ["mise run check"],
+)
+
+prefix_rule(
+    pattern = ["uv", "run", "pytest"],
+    decision = "allow",
+    justification = "The project's test runner.",
+    match = ["uv run pytest -q tests"],
+    not_match = ["uv run python x.py"],
+)
+
+prefix_rule(
+    pattern = [".venv/bin/pytest"],
+    decision = "allow",
+    justification = "The project's test runner.",
+    match = [".venv/bin/pytest -q"],
+    not_match = [".venv/bin/python x.py"],
+)
+
+prefix_rule(
+    pattern = [".venv/bin/python", "-m", "pytest"],
+    decision = "allow",
+    justification = "The project's test runner.",
+    match = [".venv/bin/python -m pytest -q"],
+    not_match = [".venv/bin/python -m http.server"],
 )

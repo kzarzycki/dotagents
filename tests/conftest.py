@@ -19,3 +19,7 @@ _MISE_DIRS = {
 def _mise_outside_fake_home(monkeypatch):
     for name, path in _MISE_DIRS.items():
         monkeypatch.setenv(name, path)
+    # install asks uv for its cache dir; with no uv config that is the fake HOME's ~/.cache/uv
+    monkeypatch.delenv("UV_CACHE_DIR", raising=False)
+    monkeypatch.delenv("UV_CONFIG_FILE", raising=False)
+    monkeypatch.setenv("UV_NO_CONFIG", "1")

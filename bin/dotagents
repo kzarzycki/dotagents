@@ -457,9 +457,10 @@ is_skipped() {
 }
 
 linked=0; skipped=0; conflicts=0; agents_seen=0
+RULES_MARK='# Installed by dotagents (home/.codex/rules/)'
 
 # Mirror the repo tree: directories are recreated as real dirs at the
-# destination, only files are symlinked. Linking a whole directory would make
+# destination, only files are symlinked (Codex rules files are copied, below). Linking a whole directory would make
 # an agent's live state (~/.omp/agent holds sqlite dbs and sessions) land
 # inside the repo, so dirs are never links — nesting like
 # home/.omp/agent/config.yml installs to the matching ~/-path.
@@ -489,6 +490,25 @@ link_tree() {
       link_tree "$entry" "$target"
       continue
     fi
+    # Codex skips a symlinked rules file: with sandbox-reads.rules linked, an
+    # escalated `ps` still went to the auto-reviewer; copied, it did not. So the
+    # rules are copies, rewritten whenever the repo's version differs. A real
+    # file is ours only while it carries the header every repo rules file has.
+    case "$target" in
+      "$HOME/.codex/rules/"*.rules)
+        if [ -f "$target" ] && [ ! -L "$target" ] && ! grep -qF "$RULES_MARK" "$target"; then
+          printf 'CONFLICT: %s exists and is not a dotagents copy — leaving alone\n' "$target"
+          conflicts=$((conflicts + 1))
+          continue
+        fi
+        if [ -L "$target" ] || ! cmp -s "$entry" "$target"; then
+          run rm -f "$target"
+          run cp "$entry" "$target"
+        fi
+        linked=$((linked + 1))
+        continue
+        ;;
+    esac
     if [ -e "$target" ] && [ ! -L "$target" ]; then
       printf 'CONFLICT: %s exists and is not a symlink — leaving alone\n' "$target"
       conflicts=$((conflicts + 1))
@@ -805,6 +825,11 @@ if is_selected ".codex" && [ -d "$HOME/.codex" ]; then
   for root in "${CODEX_WRITABLE_ROOTS[@]}"; do
     [ -d "$HOME/$root" ] && roots+=("\"$HOME/$root\"")
   done
+  # uv's cache can be set elsewhere (uv.toml cache-dir, UV_CACHE_DIR); ask uv.
+  uv_cache=$(uv cache dir 2>/dev/null) || uv_cache=
+  if [ -d "$uv_cache" ] && [ "$uv_cache" != "$HOME/.cache/uv" ]; then
+    roots+=("\"$uv_cache\"")
+  fi
   roots_line=
   if (( ${#roots[@]} )); then
     roots_line="writable_roots = [$(IFS=,; printf '%s' "${roots[*]}" | sed 's/,/, /g')]"
