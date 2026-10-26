@@ -781,6 +781,29 @@ if [ -f "$SHARED_SETTINGS" ]; then
 fi
 fi
 
+# 4.7 Antigravity (agy) writes runtime state (trustedWorkspaces) into its own
+# settings.json, so that file is never linked: install sets the keys of
+# settings.shared.json in it and keeps the rest. Effort is part of agy's model
+# name ("... (Low)"). Omnigent seeds each agy session's private copy from it.
+AGY_SHARED="$SRC/.gemini/antigravity-cli/settings.shared.json"
+AGY_SETTINGS="$HOME/.gemini/antigravity-cli/settings.json"
+# agy writes the file on its first run; until then there is nothing to set.
+if is_selected ".gemini" && [ -f "$AGY_SHARED" ] && [ -f "$AGY_SETTINGS" ]; then
+  if ! agy_want=$(jq --slurpfile h "$AGY_SETTINGS" '($h[0] // {}) + .' "$AGY_SHARED" 2>/dev/null); then
+    printf 'WARNING: %s is not a valid settings object; left unchanged\n' "$AGY_SETTINGS" >&2
+  elif [ "$(jq -c . "$AGY_SETTINGS" 2>/dev/null)" != "$(jq -c . <<<"$agy_want")" ]; then
+    if (( DRY_RUN )); then
+      printf 'DRY: set %s keys in %s\n' "$AGY_SHARED" "$AGY_SETTINGS"
+    else
+      agy_tmp=$(mktemp "$AGY_SETTINGS.XXXXXX")
+      printf '%s\n' "$agy_want" > "$agy_tmp" && chmod 600 "$agy_tmp"
+      printf 'UPDATED %s:\n' "$AGY_SETTINGS"
+      diff -u "$AGY_SETTINGS" "$agy_tmp" || true
+      mv "$agy_tmp" "$AGY_SETTINGS"
+    fi
+  fi
+fi
+
 # 5. Validate
 problems=0
 if command -v jq >/dev/null 2>&1; then
