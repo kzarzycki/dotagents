@@ -239,7 +239,8 @@
   "autoMode": {
     "allow": [
       "$defaults",
-      "Resolving a review thread on a pull request in the session's own repository (gh api graphql resolveReviewThread, one thread per call), after the lead has replied on it or a verdict deferred it. Does not cover any other GraphQL mutation in the same call, nor adding labels."
+      "Resolving a review thread on a pull request in the session's own repository (gh api graphql resolveReviewThread, one thread per call), after the lead has replied on it or a verdict deferred it. Does not cover any other GraphQL mutation in the same call, nor adding labels.",
+      "Launching an Antigravity verifier through omnigent_agent.py `run antigravity-native-ui ... --role <...>/engineering-loop/verifier.md --permission-mode bypassPermissions --workspace <dir>`, where <dir> is a detached git worktree made for that review. The owner decided Antigravity may verify unattended with its approvals skipped, in its own throwaway worktree. Does not cover other agents, other roles, or a workspace that is a working checkout."
     ]
   }
 }
