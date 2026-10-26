@@ -17,6 +17,7 @@ def test_install_keeps_host_settings_the_repo_does_not_set(tmp_path):
     # Host key order differs from the repo's; it must not show up as a change.
     host = {"model": "opus", **dict(reversed(list(host.items())))}
     host["permissions"]["allow"].insert(0, "Bash(host-only:*)")
+    host["autoMode"]["allow"].insert(1, "A host-only auto-mode rule.")
     settings.write_text(json.dumps(host, indent=2) + "\n")
 
     result = run_install(repo, home, "--profile", "vps")
@@ -26,6 +27,7 @@ def test_install_keeps_host_settings_the_repo_does_not_set(tmp_path):
     assert got["env"] == fresh["env"] and got["hooks"] == fresh["hooks"]
     assert got["permissions"]["allow"] == ["Bash(host-only:*)"] + fresh["permissions"]["allow"]
     assert got["permissions"]["additionalDirectories"] == ["/srv/host"]
+    assert got["autoMode"]["allow"] == [fresh["autoMode"]["allow"][0], "A host-only auto-mode rule.", *fresh["autoMode"]["allow"][1:]]
     assert got["enabledPlugins"] == {"ponytail@host-market": True}
     assert got["extraKnownMarketplaces"] == {**fresh["extraKnownMarketplaces"], "host-market": host["extraKnownMarketplaces"]["host-market"]}
     # The printed diff carries only the repo's changes.

@@ -235,5 +235,11 @@
   "autoCompactEnabled": true,
   "skipAutoPermissionPrompt": true,
   "outputStyle": "Concise",
-  "syncClaudeAiSkills": false
+  "syncClaudeAiSkills": false,
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Resolving a review thread on a pull request in the session's own repository (gh api graphql resolveReviewThread, one thread per call), after the lead has replied on it or a verdict deferred it. Does not cover any other GraphQL mutation in the same call, nor adding labels."
+    ]
+  }
 }
