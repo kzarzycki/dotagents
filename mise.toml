@@ -95,15 +95,11 @@ description = "Set up a fresh checkout or worktree: install the gitignored agent
 run = "mise run agent-sync"
 
 [tasks.check]
-description = "What pre-push runs: the test suite and the frozen agent configuration check. The loop runs it before every push."
+description = "The test suite and the frozen agent configuration check. The loop runs it before every push, and CI runs it as the merge proof."
 run = ["mise run test", "mise run agent-sync --frozen"]
 
-[tasks."check:all"]
-description = "Every check; with no CI, the merge proof that approvals.py local-ci records."
-depends = ["check"]
-
 [tasks."loop:approvals"]
-description = "Checks the loop's proofs on GitHub: approved spec, verdict, Evidence, local check. merge exits 3 while it waits."
+description = "Checks the loop's proofs on GitHub: approved spec, verdict, Evidence, the CI check. merge exits 3 while it waits."
 usage = '''
 arg "<point>" help="build or merge"
 arg "[pr]" help="the PR number; default: this branch's PR"
