@@ -17,7 +17,7 @@ A dotfiles-style repo whose `home/` directory mirrors what the user wants under 
 
 - **Never edit `home/.claude/CLAUDE.md` (or any per-agent instruction file) directly.** They're symlinks. Edit `home/.agents/AGENTS.md` instead — every agent's instruction file resolves to it.
 - **The directory tree under `home/` IS the manifest.** There is no `manifest.toml`. To add an agent, create `home/<dotdir>/` and populate it. To remove one, delete the dir.
-- **Install mirrors directories, links files.** Any depth under `home/` works (`home/.omp/agent/config.yml` → `~/.omp/agent/config.yml`); directories are recreated as real dirs so an agent's live state next to a tracked file is never swallowed into the repo. A newly added file needs a `dotagents install` on each machine.
+- **Install mirrors directories, links files.** The exception is `home/.codex/rules/*.rules`, installed as copies because Codex skips a linked rules file; install rewrites a copy that carries the dotagents header and reports any other real file as a conflict. Any depth under `home/` works (`home/.omp/agent/config.yml` → `~/.omp/agent/config.yml`); directories are recreated as real dirs so an agent's live state next to a tracked file is never swallowed into the repo. A newly added file needs a `dotagents install` on each machine.
 - **Track config, never runtime state.** Sqlite dbs, sessions, logs, credentials, caches and anything holding absolute per-machine paths (omp's `marketplaces.json`) stay out. See `docs/knowledge/omp.md` for the omp split and the audited-upgrade gate in `lib/omp-upgrade/`.
 - **Machine-class config goes in profile overlays.** Shared config lives in `home/.claude/settings.shared.json`; machine-class config in `home/.claude/settings.<profile>.json`. Install deep-merges the two into `~/.claude/settings.json` — Claude Code's only user-scope settings file (user-level `settings.local.json` is not read). Regenerated every install: the repo owns the keys it sets, every other key the host has (runtime prefs Claude wrote) is kept, and the diff shown lists only repo changes (README: Local overrides). Edit the repo files, never the generated one — `home/.claude/settings.json` stays gitignored so the generated file can't be committed back.
 - **Local-overrides never enter the repo.** `*.local.*`, `.env*`, `settings.local.json`, and `projects/` are skipped by install and must not be committed. The `.gitignore` enforces this.
@@ -32,7 +32,7 @@ The install script lives at `bin/dotagents`. It must remain:
 
 - Idempotent — safe to run repeatedly.
 - Pure bash, no external deps beyond standard Linux/macOS tools (`git`, `ln`, `mkdir`; `jq` required for settings generation and validation).
-- Conservative — never overwrite a real file at a destination; only replace existing symlinks. Report conflicts and continue.
+- Conservative — never overwrite a real file at a destination; only replace existing symlinks (and the Codex rules copies, which carry the dotagents header). Report conflicts and continue.
 
 Before committing changes to the install script, sandbox-test it with a fake `$HOME`:
 
