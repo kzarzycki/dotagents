@@ -9,6 +9,11 @@ set -eu
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
+# git exports GIT_DIR to a hook on a push from a linked worktree, and a test's own
+# `git init <tmp>` would then reinitialize this repo. Drop git's per-repo variables so
+# everything below finds the repo from the working directory, as it would in a shell.
+unset $(git rev-parse --local-env-vars)
+
 # Git hooks run non-interactive, so a shell that activates mise per-session
 # leaves its shims off PATH and every tool check below skips. Prepend, so the
 # versions pinned in mise.toml win: appending lets any system install shadow
