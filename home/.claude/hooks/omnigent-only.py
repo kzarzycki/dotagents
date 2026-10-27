@@ -86,15 +86,20 @@ def drop_heredoc_bodies(cmd):
     return out
 
 
-def uncomment(line):
-    """The line cut at its first word-initial `#` outside quotes: the first one whose prefix lexes."""
-    for m in re.finditer(r"(?:^|(?<=[\s;&|]))#", line):
+def uncomment(text):
+    """The text with each comment cut: from a word-initial `#` outside quotes (the first whose prefix,
+    earlier comments cut, lexes) to the end of its line. Quotes may span lines."""
+    kept, start = "", 0
+    for m in re.finditer(r"(?:^|(?<=[\s;&|]))#", text, re.M):
+        if m.start() < start:
+            continue
         try:
-            shlex.split(line[:m.start()], comments=False)
-            return line[:m.start()]
+            shlex.split(kept + text[start:m.start()], comments=False)
         except ValueError:  # the `#` sits inside a quote
             continue
-    return line
+        kept += text[start:m.start()]
+        start = text.find("\n", m.start()) % (len(text) + 1)  # no newline: the end
+    return kept + text[start:]
 
 
 def launches(cmd):
@@ -102,7 +107,7 @@ def launches(cmd):
     lines = drop_heredoc_bodies(cmd)
     # A comment is read as harmless words (shlex would end the whole command at
     # the first #). If one holds an apostrophe (`# don't`), retry without comments.
-    for text in (lines, [uncomment(line) for line in lines]):
+    for text in (lines, uncomment("\n".join(lines)).split("\n")):
         lexer = shlex.shlex(";".join(text).replace("`", ";"), posix=True, punctuation_chars=True)
         lexer.whitespace_split, lexer.commenters = True, ""
         try:

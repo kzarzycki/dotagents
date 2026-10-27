@@ -20,7 +20,7 @@ DENIED = [
     "while true; do codex exec x; done", "if true; then claude -p hi; fi", "{ claude -p hi; }", "! claude -p hi",
     "# don't forget\nclaude -p hi", "claude -p hi  # it's the reviewer", "cd repo  # let's go\ncodex exec fix",
     "git commit -m 'fix #12'  # don't amend\nclaude -p hi", "grep -n ' #' f  # it's a probe\nclaude -p hi",
-    "command -p omp",
+    "command -p omp", 'echo "one #\ntwo" # don\'t amend\nclaude -p hi',
 ]
 ALLOWED = [
     "grep claude file", "grep -r 'claude -p' docs", "claude --version", "claude mcp list", "omp --version",
