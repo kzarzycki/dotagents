@@ -86,12 +86,23 @@ def drop_heredoc_bodies(cmd):
     return out
 
 
+def uncomment(line):
+    """The line cut at its first word-initial `#` outside quotes: the first one whose prefix lexes."""
+    for m in re.finditer(r"(?:^|(?<=[\s;&|]))#", line):
+        try:
+            shlex.split(line[:m.start()], comments=False)
+            return line[:m.start()]
+        except ValueError:  # the `#` sits inside a quote
+            continue
+    return line
+
+
 def launches(cmd):
     """Return the first agent-launching command word in a shell string, or None."""
     lines = drop_heredoc_bodies(cmd)
     # A comment is read as harmless words (shlex would end the whole command at
     # the first #). If one holds an apostrophe (`# don't`), retry without comments.
-    for text in (lines, [re.sub(r"(^|[\s;&|])#.*", r"\1", line) for line in lines]):
+    for text in (lines, [uncomment(line) for line in lines]):
         lexer = shlex.shlex(";".join(text).replace("`", ";"), posix=True, punctuation_chars=True)
         lexer.whitespace_split, lexer.commenters = True, ""
         try:
@@ -117,7 +128,7 @@ def check_segment(words):
     # Skip assignments, shell keywords (`do`, `then`) and wrappers with their flags (`env -i`, `timeout 60`).
     # ponytail: a wrapper flag that takes a value (`sudo -u bob`) hides the command.
     while words and (re.match(r"^\w+=", words[0]) or words[0] in WRAPPERS or words[0] in KEYWORDS):
-        if words[0] == "command" and words[1:2] in (["-v"], ["-V"]):  # a lookup, not a run
+        if words[0] == "command" and re.fullmatch(r"-p?[vV]", "".join(words[1:2])):  # a lookup, not a run
             return None
         wrapper = words[0] in WRAPPERS
         words = words[1:]
