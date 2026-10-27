@@ -11,8 +11,8 @@ Processes not started by a tool call (systemd units) never reach this hook.
 Agents on one machine share process names, so `pkill -f 'local-ci --record'` or
 `killall java` stops every other agent's matching run. `pkill` passes when it is
 scoped by `-P <ppid>` or `-g <pgid>`. Either passes when its pattern holds a `/`
-(a path the session owns, like a worktree's `run.sh`) or a token of 8+ letters
-and digits (a run id).
+(a path the session owns, like a worktree's `run.sh`) or a token of 8+ letters,
+digits and hyphens (a run id).
 
 Cases: tests/test_omnigent_only.py.
 """
@@ -50,12 +50,12 @@ def shared_kill(name, args):
     """True for a `pkill`/`killall` whose pattern is a bare name or a command line others share."""
     if name not in VALUE_FLAGS:
         return False
-    pattern, i = None, 0
+    patterns, i = [], 0
     while i < len(args):
         arg = args[i]
         i += 1
         if arg == "--":  # end of options: the next word is the pattern
-            pattern = pattern or (args[i] if i < len(args) else None)
+            patterns += args[i:]
             break
         if re.match(r"^-[A-Z0-9]{2,}$", arg):  # a signal: -9, -TERM, -SIGPIPE
             continue
@@ -67,10 +67,10 @@ def shared_kill(name, args):
             if name == "pkill" and re.search(r"[Pg]", arg[1:]):  # -P <ppid>, -g <pgid>, bundled or attached
                 return False
             i += arg[-1] in VALUE_FLAGS[name]
-        elif pattern is None:
-            pattern = arg
-    # A path, or a token of 8+ letters and digits (a run id), is the session's own.
-    return pattern is not None and "/" not in pattern and not re.search(r"(?=\w*\d)(?=\w*[A-Za-z])\w{8,}", pattern)
+        else:
+            patterns.append(arg)
+    # A path, or a token of 8+ letters, digits and hyphens holding both (a run id), is the session's own.
+    return any("/" not in p and not re.search(r"(?=[\w-]*\d)(?=[\w-]*[A-Za-z])[\w-]{8,}", p) for p in patterns)
 
 
 def drop_heredoc_bodies(cmd):

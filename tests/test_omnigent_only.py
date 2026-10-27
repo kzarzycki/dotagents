@@ -39,6 +39,7 @@ KILL_DENIED = [
     "pkill -u 1000 node", "pkill --signal TERM gate", "pkill -f gate-runner || true", "pkill -SIGKILL gate",
     "pkill -f -- 'local-ci --record'", "pkill -n gate", "pkill -fn gate", "pkill --newest gate", "killall -s TERM java",
     "pkill -f python3", "pkill -f node18", "killall -- java",
+    "killall /work/wt/run.sh java", "killall -- /work/wt/run.sh java",
 ]
 KILL_ALLOWED = [
     "kill 1234", "kill -TERM -1234", "kill -9 -- -1234", "pkill -P 1234", "pkill -g 1234", "pkill -9 -P 1234",
