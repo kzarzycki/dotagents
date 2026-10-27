@@ -19,6 +19,8 @@ DENIED = [
     "curl -s http://h/#x; claude -p hi", "echo ${#a[@]}; claude -p hi", "for i in 1; do claude -p hi; done",
     "while true; do codex exec x; done", "if true; then claude -p hi; fi", "{ claude -p hi; }", "! claude -p hi",
     "# don't forget\nclaude -p hi", "claude -p hi  # it's the reviewer", "cd repo  # let's go\ncodex exec fix",
+    "git commit -m 'fix #12'  # don't amend\nclaude -p hi", "grep -n ' #' f  # it's a probe\nclaude -p hi",
+    "command -p omp", 'echo "one #\ntwo" # don\'t amend\nclaude -p hi',
 ]
 ALLOWED = [
     "grep claude file", "grep -r 'claude -p' docs", "claude --version", "claude mcp list", "omp --version",
@@ -30,6 +32,7 @@ ALLOWED = [
     "claude mcp add srv -- docker run -i -p 8080:8080 img", "codex mcp add x -- server --mode e",
     "command -v omp", "command -v omp >/dev/null && omp --version",
     "if ! command -v omp >/dev/null 2>&1; then echo missing; fi", "! command -v omp",
+    "command -pv omp", "command -pV omp",
 ]
 
 KILL_DENIED = [

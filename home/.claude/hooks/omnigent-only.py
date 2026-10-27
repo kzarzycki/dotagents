@@ -86,12 +86,28 @@ def drop_heredoc_bodies(cmd):
     return out
 
 
+def uncomment(text):
+    """The text with each comment cut: from a word-initial `#` outside quotes (the first whose prefix,
+    earlier comments cut, lexes) to the end of its line. Quotes may span lines."""
+    kept, start = "", 0
+    for m in re.finditer(r"(?:^|(?<=[\s;&|]))#", text, re.M):
+        if m.start() < start:
+            continue
+        try:
+            shlex.split(kept + text[start:m.start()], comments=False)
+        except ValueError:  # the `#` sits inside a quote
+            continue
+        kept += text[start:m.start()]
+        start = text.find("\n", m.start()) % (len(text) + 1)  # no newline: the end
+    return kept + text[start:]
+
+
 def launches(cmd):
     """Return the first agent-launching command word in a shell string, or None."""
     lines = drop_heredoc_bodies(cmd)
     # A comment is read as harmless words (shlex would end the whole command at
     # the first #). If one holds an apostrophe (`# don't`), retry without comments.
-    for text in (lines, [re.sub(r"(^|[\s;&|])#.*", r"\1", line) for line in lines]):
+    for text in (lines, uncomment("\n".join(lines)).split("\n")):
         lexer = shlex.shlex(";".join(text).replace("`", ";"), posix=True, punctuation_chars=True)
         lexer.whitespace_split, lexer.commenters = True, ""
         try:
@@ -117,7 +133,7 @@ def check_segment(words):
     # Skip assignments, shell keywords (`do`, `then`) and wrappers with their flags (`env -i`, `timeout 60`).
     # ponytail: a wrapper flag that takes a value (`sudo -u bob`) hides the command.
     while words and (re.match(r"^\w+=", words[0]) or words[0] in WRAPPERS or words[0] in KEYWORDS):
-        if words[0] == "command" and words[1:2] in (["-v"], ["-V"]):  # a lookup, not a run
+        if words[0] == "command" and re.fullmatch(r"-p?[vV]", "".join(words[1:2])):  # a lookup, not a run
             return None
         wrapper = words[0] in WRAPPERS
         words = words[1:]
