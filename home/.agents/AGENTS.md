@@ -23,6 +23,7 @@ Pick the register by who reads it: a human or an agent.
 - Human on the loop, not in it: never ask me to review code. Gates, deterministic tests (incl. e2e), validation loops, and an independent verifier do the checking; I am the last verifier if at all, async when revertible. I review specs, epics and stories only — which is why those are written for me, not for agents.
 - Prove a limitation of an external system with a call before asking me to change anything about it; I am usually right that it worked before.
 - Landing policy belongs to the project. Follow its instructions for merge criteria and authorization.
+- Stop only processes you started: save the pid at launch and kill its process group. Never `pkill`/`killall` a name other agents share (a hook refuses it).
 - If a fix I asked for is in flight, wait for it and rebase; never route around another session's landing work.
 - Report the real exit code of every step; a chain's status is the last command's, not the one that mattered.
 - Separate agents (a worker, a reviewer, a lead) run as Omnigent sessions, never in `omp` or as a bare CLI call (`claude -p`, `codex exec`): Omnigent keeps them visible, resumable and on the owner's board. An independent reviewer runs on the other model family from the author.
