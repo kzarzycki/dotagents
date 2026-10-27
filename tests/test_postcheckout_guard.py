@@ -57,9 +57,8 @@ def test_parked_as_legacy_leaves_delegation_to_pre_commit(tmp_path):
 def test_lfs_repo_gets_the_slot_back_for_git_lfs(tmp_path):
     # git-lfs stops installing its hooks at a post-checkout it didn't write, so an LFS clone
     # through the template would have no lock hooks (post-checkout, post-commit, post-merge).
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # a git hook running pytest sets GIT_DIR
     repo = tmp_path / "repo"
-    subprocess.run(["git", "init", "-q", "--template=", str(repo)], check=True, env=env)
+    subprocess.run(["git", "init", "-q", "--template=", str(repo)], check=True)
     (repo / ".gitattributes").write_text("*.bin filter=lfs diff=lfs merge=lfs -text\n")
     hook = repo / ".git/hooks/post-checkout"
     hook.parent.mkdir()
@@ -74,7 +73,7 @@ def test_lfs_repo_gets_the_slot_back_for_git_lfs(tmp_path):
     result = subprocess.run(
         [str(hook), "0" * 40, "1" * 40, "1"],
         cwd=repo,
-        env={**env, "PATH": f"{fake_bin}:{env['PATH']}"},
+        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
         capture_output=True,
         text=True,
     )
