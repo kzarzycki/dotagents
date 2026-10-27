@@ -1,6 +1,7 @@
 {
   "attribution": {
-    "pr": ""
+    "pr": "",
+    "sessionUrl": false
   },
   "cleanupPeriodDays": 999999,
   "claudeInChromeDefaultEnabled": false,
