@@ -20,8 +20,20 @@
 [ -z "${PRE_COMMIT_RUNNING_LEGACY:-}" ] || exit 0
 
 cfg=.pre-commit-config.yaml
-[ -f "$cfg" ] || exit 0
-grep -Eq '(^|[^[:alnum:]_-])post-checkout([^[:alnum:]_-]|$)' "$cfg" || exit 0
+if ! grep -Eqs '(^|[^[:alnum:]_-])post-checkout([^[:alnum:]_-]|$)' "$cfg"; then
+  # Not opted in, so the slot is free. git-lfs installs its hooks on first use and
+  # stops at a post-checkout it didn't write, leaving an LFS clone without its lock
+  # hooks (post-checkout, post-commit, post-merge): drop this guard and let git-lfs
+  # install them. Not under core.hooksPath, whose hooks dir is someone else's.
+  # ponytail: an LFS repo that opts in keeps the guard and lacks the lock hooks.
+  if command -v git-lfs >/dev/null 2>&1 && grep -qs 'filter=lfs' .gitattributes &&
+    [ -z "$(git config core.hooksPath)" ]; then
+    rm -f "$0"
+    { git lfs update >/dev/null && git lfs post-checkout "$@"; } ||
+      echo "WARN: git-lfs hooks not installed (exit $?); run \`git lfs update\`" >&2
+  fi
+  exit 0
+fi
 command -v pre-commit >/dev/null 2>&1 || {
   echo "WARN: $cfg wants post-checkout hooks but pre-commit is not on PATH; skipped" >&2
   exit 0

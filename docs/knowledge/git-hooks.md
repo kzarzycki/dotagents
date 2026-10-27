@@ -67,3 +67,7 @@ status into the checkout's, so one failed env install fails the tool's
 checkout: `mlx-swift` (stage-less `cmake-format`) broke SwiftPM resolution.
 The template ships `lib/postcheckout-guard.sh` instead. It delegates only when
 the repo's config names `post-checkout`, and it always exits 0.
+In an LFS repo that doesn't opt in, it deletes itself and runs `git lfs update`:
+git-lfs installs its hooks on first use and stops at a `post-checkout` it didn't
+write, so without that the clone has no lock hooks (`post-checkout`,
+`post-commit`, `post-merge`) and `git lfs update` exits 2 (git-lfs 3.8.1).
