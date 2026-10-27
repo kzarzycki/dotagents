@@ -52,3 +52,32 @@ def test_parked_as_legacy_leaves_delegation_to_pre_commit(tmp_path):
     config = "default_install_hook_types: [pre-commit, post-checkout]\n" + STAGELESS
     result, calls = run_guard(tmp_path, config, 0, {"PRE_COMMIT_RUNNING_LEGACY": "1"})
     assert result.returncode == 0 and calls == ""
+
+
+def test_lfs_repo_gets_the_slot_back_for_git_lfs(tmp_path):
+    # git-lfs stops installing its hooks at a post-checkout it didn't write, so an LFS clone
+    # through the template would have no lock hooks (post-checkout, post-commit, post-merge).
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # a git hook running pytest sets GIT_DIR
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", "--template=", str(repo)], check=True, env=env)
+    (repo / ".gitattributes").write_text("*.bin filter=lfs diff=lfs merge=lfs -text\n")
+    hook = repo / ".git/hooks/post-checkout"
+    hook.parent.mkdir()
+    hook.write_bytes(GUARD.read_bytes())
+    hook.chmod(0o755)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    log = tmp_path / "calls"
+    fake = fake_bin / "git-lfs"
+    fake.write_text(f'#!/bin/sh\necho "$@" >> {log}\n')
+    fake.chmod(0o755)
+    result = subprocess.run(
+        [str(hook), "0" * 40, "1" * 40, "1"],
+        cwd=repo,
+        env={**env, "PATH": f"{fake_bin}:{env['PATH']}"},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert not hook.exists()
+    assert log.read_text().splitlines() == ["update", f"post-checkout {'0' * 40} {'1' * 40} 1"]
