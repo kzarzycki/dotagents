@@ -32,6 +32,19 @@ ALLOWED = [
     "if ! command -v omp >/dev/null 2>&1; then echo missing; fi", "! command -v omp",
 ]
 
+KILL_DENIED = [
+    "pkill -f 'local-ci --record'", "killall java", "pkill node", "pkill -9 node", "pkill -TERM -f gate-runner",
+    "pkill -x java", "killall -9 java", "sudo pkill -f build", "cd x && pkill -f 'mise run'", "echo $(pkill -f gate)",
+    "echo `pkill gate`", "true; pkill gate", "bash -c 'pkill -f gate'", "for p in a; do pkill $p; done",
+    "pkill -u 1000 node", "pkill --signal TERM gate", "pkill -f gate-runner || true", "pkill -SIGKILL gate",
+]
+KILL_ALLOWED = [
+    "kill 1234", "kill -TERM -1234", "kill -9 -- -1234", "pkill -P 1234", "pkill -g 1234", "pkill -9 -P 1234",
+    "pkill -fP 1234 run", "pkill -P1234", "pkill --parent 1234", "pkill --pgroup=1234 gate", "pkill -SIGPIPE -g 7",
+    "pkill -f /work/wt/run.sh", "pkill -f '/work/wt/run.sh --record'", "pkill -f \"$PWD/run.sh\"", "pkill",
+    "grep -r pkill docs", "echo 'killall java'", "git commit -m 'pkill -f x'", "which pkill", "cat <<EOF\nkillall java\nEOF",
+]
+
 
 def hook(command):
     return subprocess.run(
@@ -67,3 +80,15 @@ def test_codex_rules(argv, forbidden):
     out = subprocess.run(["codex", "execpolicy", "check", "--rules", str(RULES), "--", *argv],
                          capture_output=True, text=True, timeout=30, check=True).stdout
     assert ('"decision":"forbidden"' in out) == forbidden, out
+
+
+@pytest.mark.parametrize("command", KILL_DENIED)
+def test_hook_denies_kill_by_shared_name(command):
+    result = hook(command)
+    assert result.returncode == 2 and "process group" in result.stderr, command
+
+
+@pytest.mark.parametrize("command", KILL_ALLOWED)
+def test_hook_allows_scoped_kill(command):
+    result = hook(command)
+    assert (result.returncode, result.stderr) == (0, ""), command
