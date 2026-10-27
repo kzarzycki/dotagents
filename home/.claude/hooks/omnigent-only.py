@@ -9,10 +9,10 @@ Only command words count: `grep claude`, paths and `claude --version` pass.
 Processes not started by a tool call (systemd units) never reach this hook.
 
 Agents on one machine share process names, so `pkill -f 'local-ci --record'` or
-`killall java` stops every other agent's matching run. `killall` is always
-denied. `pkill` passes when it is scoped by `-P <ppid>` or `-g <pgid>`, or when
-its pattern contains a `/`, which only a path the session owns (a worktree's
-`run.sh`) matches.
+`killall java` stops every other agent's matching run. `pkill` passes when it is
+scoped by `-P <ppid>` or `-g <pgid>`. Either passes when its pattern holds a `/`
+(a path the session owns, like a worktree's `run.sh`) or a token of 8+ letters
+and digits (a run id).
 
 Cases: tests/test_omnigent_only.py.
 """
@@ -28,8 +28,8 @@ SEPARATORS = set("();|&")
 # omp commands that start no agent: the audited-upgrade gate (docs/knowledge/omp.md) and housekeeping.
 OMP_TOOLS = {"--version", "-v", "--help", "-h", "--upgrade-status", "--upgrade-check", "--upgrade-apply",
              "safe-update", "config", "plugin", "install", "models", "completions", "login", "gc"}
-# pkill options that take a value in the next word.
-PKILL_VALUE = set("PgsStuUGn")
+# Short options that take a value in the next word, per command.
+VALUE_FLAGS = {"pkill": set("PgsStuUG"), "killall": set("sutyoNZ")}
 KILL = "kill by name"
 KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "{", "!"}
 
@@ -47,28 +47,30 @@ def agent_launch(name, args):
 
 
 def shared_kill(name, args):
-    """True for `killall`, and for a `pkill` whose pattern is a bare name or command line."""
-    if name == "killall":
-        return True
-    if name != "pkill":
+    """True for a `pkill`/`killall` whose pattern is a bare name or a command line others share."""
+    if name not in VALUE_FLAGS:
         return False
     pattern, i = None, 0
     while i < len(args):
         arg = args[i]
         i += 1
+        if arg == "--":  # end of options: the next word is the pattern
+            pattern = pattern or (args[i] if i < len(args) else None)
+            break
         if re.match(r"^-[A-Z0-9]{2,}$", arg):  # a signal: -9, -TERM, -SIGPIPE
             continue
         if arg.startswith("--"):
-            if arg.split("=")[0] in ("--parent", "--pgroup"):
+            if name == "pkill" and arg.split("=")[0] in ("--parent", "--pgroup"):
                 return False
-            i += arg in ("--session", "--terminal", "--euid", "--uid", "--group", "--signal", "--newest")
+            i += arg in ("--session", "--terminal", "--euid", "--uid", "--group", "--signal")
         elif arg.startswith("-") and len(arg) > 1:
-            if re.search(r"[Pg]", arg[1:]):  # -P <ppid>, -g <pgid>, also bundled (-fP 12) or attached (-P12)
+            if name == "pkill" and re.search(r"[Pg]", arg[1:]):  # -P <ppid>, -g <pgid>, bundled or attached
                 return False
-            i += arg[-1] in PKILL_VALUE
+            i += arg[-1] in VALUE_FLAGS[name]
         elif pattern is None:
             pattern = arg
-    return pattern is not None and "/" not in pattern
+    # A path, or a token of 8+ letters and digits (a run id), is the session's own.
+    return pattern is not None and "/" not in pattern and not re.search(r"(?=\w*\d)(?=\w*[A-Za-z])\w{8,}", pattern)
 
 
 def drop_heredoc_bodies(cmd):
@@ -124,6 +126,8 @@ def check_segment(words):
     if not words:
         return None
     name, args = os.path.basename(words[0]), words[1:]
+    if shared_kill(name, args):
+        return KILL
     if "--" in args:  # what follows is another program's argv (`claude mcp add x -- cmd -p 1`)
         args = args[:args.index("--")]
     if name in SHELLS:
@@ -131,8 +135,6 @@ def check_segment(words):
             if flag.startswith("-") and "c" in flag:
                 return launches(script)
         return None
-    if shared_kill(name, args):
-        return KILL
     return " ".join(words[:2]) if agent_launch(name, args) else None
 
 
