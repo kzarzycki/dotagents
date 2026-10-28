@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import http.server
 import importlib.machinery
 import importlib.util
@@ -15,32 +16,62 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / 'home/.local/bin/disk-hygiene'
 
-# The repo is public: none of these may appear in the script or its docs.
-PRIVATE_NAMES = ('xmac', 'kris', 'zarz', 'cc-experiments', 'homelab', 'taile39822', '/Users/', '/home/agent')
+# The repo is public, so the names that must not appear in the script or its docs are kept as hashes.
+PRIVATE_HASHES = {
+    '59ce113c13ade62d5645165fee8b1a5ab8ec124a9a735033f2d4b255b95c9015',
+    'd999056550fd648de6de0537f389c3da467f846a4fd6117a62cb54ba1c23cf3c',
+    '4046498b2dc5b9e89212ab8c64a866a8720ee806fdd7ada31dcba89f1422fb1e',
+    '8be0b5445fca6eb16d14c6f4eaff1cf1d1a3362ef660bfb2b66e74bf309b7e61',
+    'baa30c0f11fd0cf29d3eac75986fbe7803b0458e96676945920c2fe7fb84d59f',
+    '0dac47612d8c0bd98d536e3c69d8b87071986524f4b4e17fa44cf680bdf1ef67',
+}
 
 
-def load(name):
+def load(name, path=SCRIPT):
     """The extensionless script as a module, with HOME as the test set it."""
-    loader = importlib.machinery.SourceFileLoader(name, str(SCRIPT))
+    loader = importlib.machinery.SourceFileLoader(name, str(path))
     module = importlib.util.module_from_spec(importlib.util.spec_from_loader(name, loader))
-    loader.exec_module(module)
+    sys.dont_write_bytecode, saved = True, sys.dont_write_bytecode  # a cache in home/ would be linked by install
+    try:
+        loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = saved
     return module
+
+
+def private_words(text):
+    """The hashed names in text: any word, or run of words joined by hyphens."""
+    runs = re.findall(r'[a-z0-9]+(?:-[a-z0-9]+)*', text.lower())
+    words = {w for r in runs for w in (r, *r.split('-'))}
+    return sorted(w for w in words if hashlib.sha256(w.encode()).hexdigest() in PRIVATE_HASHES)
 
 
 def test_names_no_host_or_user():
     for path in (SCRIPT, ROOT / 'README.md'):
-        text = path.read_text().lower()
-        # the README's OTLP endpoint predates this script and names a host; only the hygiene text is checked there
-        if path.name == 'README.md':
-            start = text.index('### disk hygiene')
+        text = path.read_text()
+        if path.name == 'README.md':  # only the hygiene section is this script's
+            start = text.index('### Disk hygiene')
             text = text[start:text.find('\n#', start + 5)]
-        assert not [n for n in PRIVATE_NAMES if n.lower() in text], (path, [n for n in PRIVATE_NAMES if n.lower() in text])
+        assert not private_words(text), (path, private_words(text))
+        assert not re.search(r'/Users/\w|/home/\w', text), path
+    assert private_words('ssh to ' + 'x' + 'mac-work and cc-' + 'experiments') == ['cc-experiments', 'xmac']
+
+
+def test_paths_derive_from_the_linked_checkout(tmp_path):
+    link = tmp_path / 'disk-hygiene'
+    link.symlink_to(SCRIPT)
+    hygiene = load('disk_hygiene_link', link)
+    assert hygiene.REPO == ROOT and (ROOT / hygiene.SELF).samefile(SCRIPT)
+    assert hygiene.DOTAGENTS == ROOT / 'bin/dotagents'
 
 
 def test_install_links_script(tmp_path):
     from test_install_subsets import make_checkout, run_install
     repo, home = make_checkout(tmp_path)
+    (repo / 'home/.local/bin/__pycache__').mkdir(exist_ok=True)
+    (repo / 'home/.local/bin/__pycache__/x.pyc').touch()
     assert run_install(repo, home).returncode == 0
+    assert not (home / '.local/bin/__pycache__').exists()
     link = home / '.local/bin/disk-hygiene'
     assert link.is_symlink() and os.access(link, os.X_OK)
     assert subprocess.run([str(link), '--help'], capture_output=True, env={**os.environ, 'HOME': str(home)}).returncode == 0
