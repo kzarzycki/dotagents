@@ -86,6 +86,7 @@ def test_doctor_reports_a_skill_script_the_pinned_pack_does_not_have(tmp_path):
     skill(home / "dev/new/.claude/skills", "demo", scripts=["demo.sh"])
     skill(home / "dev/src/engineering/skills", "demo", scripts=["post_demo.sh"])
     skill(home / ".cache/apm/x/.claude/skills", "demo", scripts=["post_demo.sh"])
+    skill(home / "dev/x/.cache/y/.claude/skills", "demo", scripts=["post_demo.sh"])
     skill(home / "dev/new/apm_modules/x/.claude/skills", "demo", scripts=["post_demo.sh"])
     # Codex clones its marketplaces under .tmp in each Codex home; agents load no skill there.
     skill(home / ".codex/.tmp/marketplaces/x/.agents/skills", "demo", scripts=["post_demo.sh"])
@@ -195,17 +196,27 @@ def test_install_refreshes_a_global_skill_install_from_the_pinned_pack(tmp_path)
     repo, home = make_checkout(tmp_path)
     skill(repo / ".agents/skills", "orchestrating-agents", scripts=["omnigent_agent.py"])
     skill(home / ".agents/skills", "orchestrating-agents", scripts=["herdr_watch.sh"])
+    (home / ".agents/skills/orchestrating-agents/NOTES.md").write_text("mine\n")
     (home / ".claude/skills").mkdir(parents=True)
     (home / ".claude/skills/orchestrating-agents").symlink_to("../../.agents/skills/orchestrating-agents")
     skill(home / ".agents/skills", "find-skills", scripts=["own.sh"])  # not the pack's: left alone
 
+    assert "REFRESHED" not in run_install(repo, home, "--profile", "vps", "--only", "claude").stdout
     result = run_install(repo, home, "--profile", "vps")
-    assert f"REFRESHED: {home}/.agents/skills/orchestrating-agents from the pinned pack" in result.stdout
-    assert "REFRESHED" not in result.stdout.replace(f"REFRESHED: {home}/.agents/skills/orchestrating-agents", "")
+    bak = home / ".dotagents-bak/.agents_skills_orchestrating-agents"
+    assert result.stdout.count("REFRESHED:") == 1, result.stdout
+    assert (
+        f"REFRESHED: {home}/.agents/skills/orchestrating-agents from the pinned pack; the old copy is in {bak}"
+        in result.stdout
+    )
     scripts = home / ".agents/skills/orchestrating-agents/scripts"
     assert sorted(p.name for p in scripts.iterdir()) == ["omnigent_agent.py"]
+    assert (bak / "NOTES.md").read_text() == "mine\n" and (bak / "scripts/herdr_watch.sh").exists()
     assert (home / ".claude/skills/orchestrating-agents").is_symlink()
     assert (home / ".agents/skills/find-skills/scripts/own.sh").exists()
+    # A run of the skill leaves bytecode behind; that is no reason to refresh it again.
+    (scripts / "__pycache__").mkdir()
+    (scripts / "__pycache__/omnigent_agent.cpython-312.pyc").write_bytes(b"x")
     assert "REFRESHED" not in run_install(repo, home, "--profile", "vps").stdout
     assert doctor(repo, home, tmp_path / "bin").stdout == ""
 

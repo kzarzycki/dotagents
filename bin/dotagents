@@ -17,7 +17,8 @@
 set -euo pipefail
 
 # Locate the repo root: dir containing this script's parent. Install links
-# ~/.local/bin/dotagents to it, so follow links to the script itself first.
+# ~/.local/bin/dotagents to it, so follow links to the script itself first
+# (by hand: older macOS readlink has no -f).
 self="${BASH_SOURCE[0]}"
 while [ -L "$self" ]; do
   self_link=$(readlink "$self")
@@ -1056,26 +1057,33 @@ if is_selected ".gemini" && [ -f "$AGY_SHARED" ] && [ -f "$AGY_SETTINGS" ]; then
   fi
 fi
 
-# 5. Validate
-problems=0
-
-# Refresh each global skill install the pinned pack also has, so agents load
+# 4.8 Refresh each global skill install the pinned pack also has, so agents load
 # the pinned version: a copy left by an older install keeps scripts the pack has
-# dropped. A link (~/.claude/skills/<n> -> ~/.agents/skills/<n>) follows its target.
+# dropped. Another installer or an agent may have put files there, so the copy
+# replaced is moved to ~/.dotagents-bak/, its path flattened so no skill path
+# matches it, replacing the previous backup of that skill. A link
+# (~/.claude/skills/<n> -> ~/.agents/skills/<n>) follows its target.
 if (( ! ONLY_MODE )) || is_selected ".agents"; then
   for skill_dir in "${SKILL_DIRS[@]:1}"; do
     for global in "$skill_dir"/*/; do
       global=${global%/}
-      { [ -L "$global" ] || [ ! -d "$PINNED_SKILLS/${global##*/}" ]; } && continue
-      diff -rq -x __pycache__ "$PINNED_SKILLS/${global##*/}" "$global" >/dev/null 2>&1 && continue
-      run rm -rf "$global"
-      run cp -R "$PINNED_SKILLS/${global##*/}" "$global"
-      (( DRY_RUN )) || printf 'REFRESHED: %s from the pinned pack\n' "$global"
+      pack_skill="$PINNED_SKILLS/${global##*/}"
+      { [ -L "$global" ] || [ ! -d "$pack_skill" ]; } && continue
+      diff -rq -x __pycache__ "$pack_skill" "$global" >/dev/null 2>&1 && continue
+      bak="$HOME/.dotagents-bak/$(printf '%s' "${global#"$HOME"/}" | tr / _)"
+      run mkdir -p "$HOME/.dotagents-bak"
+      run rm -rf "$bak"
+      run mv "$global" "$bak"
+      run cp -R "$pack_skill" "$global"
+      (( DRY_RUN )) || printf 'REFRESHED: %s from the pinned pack; the old copy is in %s\n' "$global" "$bak"
     done
   done
 fi
 
-# 4.8 Provide each tool a skill declares (skill_requirements), through the
+# 5. Validate
+problems=0
+
+# 4.9 Provide each tool a skill declares (skill_requirements), through the
 # installer that already owns it, so a tool keeps one installation owner: a
 # Homebrew copy is upgraded with brew; a missing tool, or one mise provides, with
 # `mise use -g <tool>@latest`, linked into ~/.local/bin since env.sh puts mise's
@@ -1107,8 +1115,9 @@ if (( ! ONLY_MODE )) || is_selected ".agents"; then
         problems=$((problems + 1))
         continue
       fi
-      # mise fails, writing no config, on a platform its backend lacks (ttyd's
-      # aqua package has no darwin build); Homebrew provides the tool there.
+      # mise fails, writing no config, when it can't provide the tool: a platform
+      # its backend has no build for (ttyd's aqua package has none for macOS), or
+      # an unreachable registry. Homebrew provides it then, where the host has it.
       if ! run mise use -g "$tool@latest" && [ -n "$brew_prefix" ]; then
         via=brew
         run brew install "$tool" || true
