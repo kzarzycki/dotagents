@@ -219,6 +219,13 @@ def test_install_refreshes_a_global_skill_install_from_the_pinned_pack(tmp_path)
     (scripts / "__pycache__/omnigent_agent.cpython-312.pyc").write_bytes(b"x")
     assert "REFRESHED" not in run_install(repo, home, "--profile", "vps").stdout
     assert doctor(repo, home, tmp_path / "bin").stdout == ""
+    # Drifted again: the new copy replaces the previous backup, twice over.
+    for n in (2, 3):
+        (home / f".agents/skills/orchestrating-agents/NOTES{n}.md").write_text("mine\n")
+        result = run_install(repo, home, "--profile", "vps")
+        assert result.returncode == 0 and result.stdout.count("REFRESHED:") == 1, result.stdout + result.stderr
+        assert sorted(p.name for p in bak.glob("NOTES*")) == [f"NOTES{n}.md"]
+        assert not (bak / "orchestrating-agents").exists()
 
 
 def test_install_puts_dotagents_on_path(tmp_path):

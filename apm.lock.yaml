@@ -1,5 +1,5 @@
 lockfile_version: '2'
-generated_at: '2026-10-28T12:33:15.844596+00:00'
+generated_at: '2026-10-28T13:05:24.034600+00:00'
 apm_version: 0.30.0
 dependencies:
 - repo_url: kzarzycki/agent-skills
@@ -524,7 +524,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:6b31f92ae4cde885640d06e02e32d943837e89302de5d2e7483113cbbd70d7ba
+  content_hash: sha256:9cc704950897f44f2bfa6081cd6d28d11eecf5d7fd18c79e96018e25832c4e01
 - kind: project-relative
   target: claude
   value: .claude/skills/ask-matt
@@ -3066,4 +3066,4 @@ deployments:
 local_deployed_files:
 - .claude/rules/project.md
 local_deployed_file_hashes:
-  .claude/rules/project.md: sha256:6b31f92ae4cde885640d06e02e32d943837e89302de5d2e7483113cbbd70d7ba
+  .claude/rules/project.md: sha256:9cc704950897f44f2bfa6081cd6d28d11eecf5d7fd18c79e96018e25832c4e01
