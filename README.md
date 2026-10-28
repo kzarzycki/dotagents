@@ -71,7 +71,7 @@ After pulling updates:
 dotagents install
 ```
 
-The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions); `~/.codex/rules/*.rules` are copies instead, since Codex skips a linked rules file, so a repo change to one reaches Codex at the next install, (5) appends a one-time source line for `~/.agents/env.sh` to existing `~/.bashrc`/`~/.zshrc` — the rc files stay machine-owned, only the snippet is managed; `env.sh` carries shell extensions the managed tools need (PATH and tool-specific environment), not general shell config, (6) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, keeping the host's own settings (see Local overrides), (7) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts; the one exception is a Codex rules copy, which install recognizes by its dotagents header and rewrites. `--dry-run` prints actions without changing anything. Requires `jq`.
+The install command is idempotent. It (1) resolves the machine profile (see Profiles), (2) runs `git pull --ff-only` (skip with `--no-pull`), (3) ensures `~/.dotagents` resolves to the repo, (4) for each top-level entry under `home/`, creates symlinks at `~/<entry>/<item>` pointing back into the repo (also removing skill symlinks left by older dotagents versions); `~/.codex/rules/*.rules` are copies instead, since Codex skips a linked rules file, so a repo change to one reaches Codex at the next install, (5) appends a one-time source line for `~/.agents/env.sh` to existing `~/.bashrc`/`~/.zshrc` — the rc files stay machine-owned, only the snippet is managed; `env.sh` carries shell extensions the managed tools need (PATH and tool-specific environment), not general shell config, (6) generates `~/.claude/settings.json` by deep-merging `settings.shared.json` + the profile overlay, keeping the host's own settings (see Local overrides), (7) provides each tool a skill declares (see Skill requirements and doctor), (8) validates: settings must parse as JSON, no dangling symlinks in managed dotdirs. Existing real files at destinations are left alone and reported as conflicts; the one exception is a Codex rules copy, which install recognizes by its dotagents header and rewrites. `--dry-run` prints actions without changing anything. Requires `jq`.
 
 To install only selected top-level payloads, pass `--only` once per entry:
 
@@ -97,6 +97,18 @@ patches/omp/bootstrap.sh
 This checks for the pinned `kzarzycki/pi-automode` commit and replaces a
 different installed source before installing it. OMP owns the generated
 package and lock files; they are not symlinked into dotagents.
+
+### Skill requirements and doctor
+
+A skill declares the tools its scripts need in its `SKILL.md` frontmatter, `metadata.requires: "gh>=2.99.0"` (agent-skills' conventions). The skills read are this checkout's pinned pack (`.agents/skills`, installed by `mise run setup:dev`) and the global `~/.claude/skills`, `~/.agents/skills` and `~/.codex/skills`. Install reports the version of each declared tool it finds. A tool that is missing or too old is installed with `mise use -g <tool>@latest` and linked into `~/.local/bin`, because `env.sh` puts mise's shims after the system dirs, so an older system copy would still win there.
+
+`dotagents doctor` makes no changes. It prints one line per finding and exits 1, or prints nothing and exits 0:
+
+- `missing:` or `too old:` for a declared tool, naming the skill that needs it;
+- `stale skill copy:` for a skill script, in a skill path an agent loads (any `.claude/skills`, `.agents/skills` or `.codex/skills` under `~`), that the pinned pack's skill of that name doesn't have: a project on an old pin, an old clone's install, a second copy of a skill. Source trees, `apm_modules` and the apm cache are no skill path and are not scanned. A project on an old pin clears with its normal pack update;
+- `no pinned pack:` when the checkout has no `.agents/skills`.
+
+The host's scheduled hygiene job runs it and passes any finding on.
 
 ### `~/.dotagents` symlink
 

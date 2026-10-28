@@ -30,6 +30,8 @@ case "$CMD" in
     ;;
   arm-hooks)
     ;;
+  doctor)
+    ;;
   ""|-h|--help|help)
     cat <<EOF
 dotagents — install ~/ symlinks from this repo
@@ -37,6 +39,9 @@ dotagents — install ~/ symlinks from this repo
 Usage:
   dotagents install [--no-pull] [--dry-run] [--profile <name>] [--only <entry>]
   dotagents arm-hooks [--root <path>]... [--install-hooks] [--dry-run]
+  dotagents doctor   Report each tool a skill declares that the host lacks or
+                     has too old, and each copy of a skill script the pinned
+                     pack doesn't have. Silent and 0 when clean, else 1.
 
 Options:
   --no-pull          Skip the git pull step.
@@ -248,6 +253,122 @@ if [ "$CMD" = "arm-hooks" ]; then
   if (( ${#ROOTS[@]} == 0 )); then ROOTS=("$HOME/dev"); fi
   arm_precommit_hooks "${ROOTS[@]}"
   exit 0
+fi
+
+# Skill requirements. A skill declares the tools its scripts need in its SKILL.md
+# frontmatter, `metadata.requires: "gh>=2.99.0 vhs"` (agent-skills' conventions),
+# where each name is both the command and its mise tool. The skills a host's
+# agents load are this checkout's pinned pack (installed by `mise run setup:dev`)
+# and the global skill dirs; the pinned pack is the reference for which scripts
+# a skill has.
+PINNED_SKILLS="$REPO_ROOT/.agents/skills"
+SKILL_DIRS=("$PINNED_SKILLS" "$HOME/.claude/skills" "$HOME/.agents/skills" "$HOME/.codex/skills")
+MISE_SHIMS="${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims"
+# What an agent shell resolves: env.sh puts ~/.local/bin first and mise's shims last.
+AGENT_PATH="$HOME/.local/bin:$PATH:$MISE_SHIMS"
+
+# One line per declared entry: tool|minimum version (empty for a bare tool)|skill.
+skill_requirements() {
+  local files=() d
+  for d in "${SKILL_DIRS[@]}"; do
+    [ -d "$d" ] && for f in "$d"/*/SKILL.md; do [ -f "$f" ] && files+=("$f"); done
+  done
+  (( ${#files[@]} )) || return 0
+  # ponytail: line-based frontmatter read, expects `requires:` indented under a
+  # top-level `metadata:`; a flow mapping (metadata: {requires: ..}) is missed.
+  awk '
+    FNR == 1 { fm = ($0 == "---"); parent = ""; next }
+    !fm { next }
+    $0 == "---" { fm = 0; next }
+    /^[^[:space:]#][^:]*:/ { parent = $0; sub(/:.*/, "", parent); next }
+    parent == "metadata" && /^[[:space:]]+requires:/ {
+      v = $0; sub(/^[^:]*:[[:space:]]*/, "", v); gsub(/["'\'']/, "", v)
+      skill = FILENAME; sub(/\/SKILL\.md$/, "", skill); sub(/.*\//, "", skill)
+      n = split(v, entries, /[[:space:]]+/)
+      for (i = 1; i <= n; i++) {
+        if (entries[i] == "") continue
+        tool = entries[i]; min = ""
+        if (index(tool, ">=")) { min = substr(tool, index(tool, ">=") + 2); tool = substr(tool, 1, index(tool, ">=") - 1) }
+        print tool "|" min "|" skill
+      }
+    }' "${files[@]}"
+}
+
+# The first dotted number a tool's --version prints, from an agent shell's PATH.
+tool_version() {
+  PATH="$AGENT_PATH" "$1" --version 2>/dev/null | grep -Eom1 '[0-9]+(\.[0-9]+)+' || true
+}
+
+version_ge() {
+  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$2" ]
+}
+
+# 0 when an agent shell's tool meets the minimum; REQ_HAVE is the version it found.
+requirement_met() {
+  REQ_HAVE=$(tool_version "$1")
+  PATH="$AGENT_PATH" command -v "$1" >/dev/null 2>&1 || return 1
+  [ -z "$2" ] || { [ -n "$REQ_HAVE" ] && version_ge "$REQ_HAVE" "$2"; }
+}
+
+# Prints one finding per unmet requirement; returns 1 if there is any.
+check_requirements() {
+  local tool min skill found=0
+  while IFS='|' read -r tool min skill; do
+    requirement_met "$tool" "$min" && continue
+    found=1
+    if PATH="$AGENT_PATH" command -v "$tool" >/dev/null 2>&1; then
+      printf 'too old: %s %s, skill %s needs >= %s\n' "$tool" "${REQ_HAVE:-(no version)}" "$skill" "$min"
+    else
+      printf 'missing: %s%s, needed by skill %s\n' "$tool" "${min:+ >= $min}" "$skill"
+    fi
+  done < <(skill_requirements)
+  return "$found"
+}
+
+# A skill script, in a skill path an agent loads (a project's or the global
+# .claude, .agents or .codex skills), that the pinned pack's skill of that name
+# doesn't have: an old pin, an old clone's install, a second copy of the skill.
+# Source trees, package stores and the apm cache are no skill path. One line per
+# skill directory holding such scripts.
+check_stale_skill_copies() {
+  [ -d "$PINNED_SKILLS" ] || {
+    printf 'no pinned pack: run `mise run setup:dev` in %s\n' "$REPO_ROOT"
+    return 1
+  }
+  local pinned_real
+  pinned_real=$(cd "$PINNED_SKILLS" && pwd -P)
+  find "$HOME" \( -name .git -o -name node_modules -o -name apm_modules -o -name __pycache__ \
+      -o -name Library -o -name .Trash -o -path "$HOME/.cache" \) -prune \
+      -o \( -path '*/.claude/skills/*/scripts/*' -o -path '*/.agents/skills/*/scripts/*' \
+      -o -path '*/.codex/skills/*/scripts/*' \) -type f -print 2>/dev/null \
+    | awk -v pinned="$PINNED_SKILLS" -v pinned_real="$pinned_real" '
+      BEGIN {
+        cmd = "cd \"" pinned "\" && find . -path \"./*/scripts/*\" -type f"
+        while ((cmd | getline f) > 0) { sub(/^\.\//, "", f); ref[f] = 1; split(f, p, "/"); skill[p[1]] = 1 }
+        close(cmd)
+      }
+      index($0, pinned "/") == 1 || index($0, pinned_real "/") == 1 { next }
+      {
+        i = match($0, /\/\.(claude|agents|codex)\/skills\/[^\/]+\/scripts\//); if (!i) next
+        i = i + index(substr($0, i + 1), "/")
+        rel = substr($0, i + 8); split(rel, p, "/")
+        if ((p[1] in skill) && !(rel in ref)) {
+          dir = substr($0, 1, i + 7) p[1]
+          if (!(dir in seen)) { seen[dir] = 1; order[++n] = dir }
+          files[dir] = files[dir] " " substr(rel, length(p[1]) + 10)
+        }
+      }
+      END {
+        for (k = 1; k <= n; k++) printf "stale skill copy: %s:%s\n", order[k], files[order[k]]
+        exit n > 0
+      }'
+}
+
+if [ "$CMD" = "doctor" ]; then
+  doctor_status=0
+  check_requirements || doctor_status=1
+  check_stale_skill_copies || doctor_status=1
+  exit "$doctor_status"
 fi
 
 # The merged settings feed both ~/.claude/settings.json and Codex's [otel].
@@ -904,6 +1025,42 @@ fi
 
 # 5. Validate
 problems=0
+
+# 4.8 Provide each tool a skill declares (skill_requirements). One that is missing
+# or too old is installed with `mise use -g <tool>@latest` and linked into
+# ~/.local/bin, since env.sh puts mise's shims after the system dirs, where an
+# older system copy would still win.
+if (( ! ONLY_MODE )) || is_selected ".agents"; then
+  while IFS='|' read -r tool min skill; do
+    if ! requirement_met "$tool" "$min"; then
+      link="$HOME/.local/bin/$tool"
+      if [ -e "$link" ] && [ ! -L "$link" ]; then
+        printf 'CONFLICT: %s is a real file; skill %s needs %s >= %s\n' "$link" "$skill" "$tool" "${min:-any}"
+        conflicts=$((conflicts + 1))
+        continue
+      fi
+      if ! command -v mise >/dev/null 2>&1; then
+        printf 'WARNING: %s %s found, skill %s needs >= %s, and mise is not installed to provide it\n' \
+          "$tool" "${REQ_HAVE:-not}" "$skill" "${min:-any}" >&2
+        problems=$((problems + 1))
+        continue
+      fi
+      run mise use -g "$tool@latest" >/dev/null || true
+      run mkdir -p "$HOME/.local/bin"
+      run ln -sfn "$MISE_SHIMS/$tool" "$link"
+      (( DRY_RUN )) && continue
+      if ! requirement_met "$tool" "$min"; then
+        printf 'WARNING: mise did not provide %s >= %s for skill %s\n' "$tool" "${min:-any}" "$skill" >&2
+        problems=$((problems + 1))
+        continue
+      fi
+      printf 'PROVIDED: %s %s via mise, for skill %s\n' "$tool" "$REQ_HAVE" "$skill"
+    else
+      printf 'TOOL: %s %s at %s, for skill %s%s\n' "$tool" "${REQ_HAVE:-(no version)}" \
+        "$(PATH="$AGENT_PATH" command -v "$tool")" "$skill" "${min:+ (needs >= $min)}"
+    fi
+  done < <(skill_requirements)
+fi
 if command -v jq >/dev/null 2>&1; then
   for f in "$HOME"/.claude/settings.json; do
     [ -e "$f" ] || continue
