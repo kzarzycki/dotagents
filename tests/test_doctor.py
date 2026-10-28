@@ -87,6 +87,9 @@ def test_doctor_reports_a_skill_script_the_pinned_pack_does_not_have(tmp_path):
     skill(home / "dev/src/engineering/skills", "demo", scripts=["post_demo.sh"])
     skill(home / ".cache/apm/x/.claude/skills", "demo", scripts=["post_demo.sh"])
     skill(home / "dev/new/apm_modules/x/.claude/skills", "demo", scripts=["post_demo.sh"])
+    # Codex clones its marketplaces under .tmp in each Codex home; agents load no skill there.
+    skill(home / ".codex/.tmp/marketplaces/x/.agents/skills", "demo", scripts=["post_demo.sh"])
+    skill(home / ".omnigent/codex-native/abc/codex-home/.tmp/marketplaces/x/.claude/skills", "demo", scripts=["post_demo.sh"])
     skill(home / ".agents/skills", "other", scripts=["any.sh"])
 
     stale = (".claude-knowledge/skills", "dev/old/.agents/skills", "dev/old/.claude/skills")
@@ -115,11 +118,11 @@ def install_env(tmp_path, monkeypatch):
     bindir.mkdir()
     current = "printf '#!/bin/sh\\necho %s version 2.103.1\\n' > {d}/$t; chmod +x {d}/$t"
     (bindir / "mise").write_text(
-        f'#!/bin/sh\ncase "$*" in "use -g nosuch@latest") exit 1;; "use -g "*@latest) t=${{3%@latest}};; *) exit 9;; esac\n'
+        f'#!/bin/sh\ncase "$*" in "use -g nosuch@latest") exit 1;; "use -g xttyd@latest") echo "unsupported env: darwin/arm64" >&2; exit 1;; "use -g "*@latest) t=${{3%@latest}};; *) exit 9;; esac\n'
         f"mkdir -p {shims}\n{current.replace('{d}', str(shims))}\n"
     )
     (bindir / "brew").write_text(
-        f'#!/bin/sh\ncase "$1" in --prefix) echo {brew};; upgrade) t=$2; {current.replace("{d}", str(brew / "bin"))};; *) exit 9;; esac\n'
+        f'#!/bin/sh\ncase "$1" in --prefix) echo {brew};; upgrade|install) t=$2; [ "$t" = nosuch ] && exit 1; mkdir -p {brew / "bin"}; {current.replace("{d}", str(brew / "bin"))};; *) exit 9;; esac\n'
     )
     for f in ("mise", "brew"):
         (bindir / f).chmod(0o755)
@@ -170,6 +173,49 @@ def test_install_leaves_a_system_package_to_its_package_manager(tmp_path, monkey
         "upgrade it with the package manager that installed it" in result.stderr
     )
     assert not (home / ".local/bin/stool").exists()
-    # A tool mise can't provide leaves no link to a shim that isn't there.
-    assert "WARNING: mise did not provide nosuch >= any for skill demo" in result.stderr
+    # A tool neither mise nor Homebrew provides leaves no link to a shim that isn't there.
+    assert "WARNING: brew did not provide nosuch >= any for skill demo" in result.stderr
     assert not (home / ".local/bin/nosuch").is_symlink()
+
+
+def test_install_provides_through_brew_a_tool_mise_lacks_for_the_platform(tmp_path, monkeypatch):
+    repo, home = make_checkout(tmp_path)
+    skill(repo / ".agents/skills", "demo", requires="xttyd", scripts=["demo.sh"])
+    bindir, _, brew = install_env(tmp_path, monkeypatch)  # its mise has no darwin build of xttyd, like ttyd
+
+    result = run_install(repo, home, "--profile", "vps")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "PROVIDED: xttyd 2.103.1 via brew, for skill demo" in result.stdout
+    assert (brew / "bin/xttyd").exists() and not (home / ".local/bin/xttyd").exists()
+    check = doctor(repo, home, bindir)
+    assert (check.returncode, check.stdout) == (0, ""), check.stdout + check.stderr
+
+
+def test_install_refreshes_a_global_skill_install_from_the_pinned_pack(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    skill(repo / ".agents/skills", "orchestrating-agents", scripts=["omnigent_agent.py"])
+    skill(home / ".agents/skills", "orchestrating-agents", scripts=["herdr_watch.sh"])
+    (home / ".claude/skills").mkdir(parents=True)
+    (home / ".claude/skills/orchestrating-agents").symlink_to("../../.agents/skills/orchestrating-agents")
+    skill(home / ".agents/skills", "find-skills", scripts=["own.sh"])  # not the pack's: left alone
+
+    result = run_install(repo, home, "--profile", "vps")
+    assert f"REFRESHED: {home}/.agents/skills/orchestrating-agents from the pinned pack" in result.stdout
+    assert "REFRESHED" not in result.stdout.replace(f"REFRESHED: {home}/.agents/skills/orchestrating-agents", "")
+    scripts = home / ".agents/skills/orchestrating-agents/scripts"
+    assert sorted(p.name for p in scripts.iterdir()) == ["omnigent_agent.py"]
+    assert (home / ".claude/skills/orchestrating-agents").is_symlink()
+    assert (home / ".agents/skills/find-skills/scripts/own.sh").exists()
+    assert "REFRESHED" not in run_install(repo, home, "--profile", "vps").stdout
+    assert doctor(repo, home, tmp_path / "bin").stdout == ""
+
+
+def test_install_puts_dotagents_on_path(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    run_install(repo, home, "--profile", "vps")
+    # Run through the link, from elsewhere: it still finds its checkout.
+    result = subprocess.run(
+        [str(home / ".local/bin/dotagents"), "doctor"], env={**os.environ, "HOME": str(home)},
+        cwd=tmp_path, capture_output=True, text=True, timeout=30,
+    )
+    assert f"no pinned pack: run `mise run setup:dev` in {repo}" in result.stdout, result.stdout + result.stderr

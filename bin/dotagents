@@ -16,8 +16,14 @@
 
 set -euo pipefail
 
-# Locate the repo root: dir containing this script's parent.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Locate the repo root: dir containing this script's parent. Install links
+# ~/.local/bin/dotagents to it, so follow links to the script itself first.
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+  self_link=$(readlink "$self")
+  case "$self_link" in /*) self=$self_link ;; *) self="$(dirname "$self")/$self_link" ;; esac
+done
+SCRIPT_DIR="$(cd "$(dirname "$self")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOTAGENTS_LINK="$HOME/.dotagents"
 SRC="$REPO_ROOT/home"
@@ -333,7 +339,8 @@ check_requirements() {
 # A project whose apm.lock.yaml deploys that skill at a newer version than this
 # checkout's lock is skipped: its copy is ahead, not stale. Source trees, package
 # stores and the apm cache are no skill path. One line per skill directory
-# holding such scripts.
+# holding such scripts. Caches (.cache, and .tmp, where Codex clones its
+# marketplaces) are no skill path either.
 check_stale_skill_copies() {
   [ -d "$PINNED_SKILLS" ] || {
     printf 'no pinned pack: run `mise run setup:dev` in %s\n' "$REPO_ROOT"
@@ -344,7 +351,7 @@ check_stale_skill_copies() {
   # ponytail: a directory the account can't read (macOS TCC folders without Full
   # Disk Access) is skipped silently; report it if a skill path ever lives there.
   { find "$HOME" \( -name .git -o -name node_modules -o -name apm_modules -o -name __pycache__ \
-      -o -name Library -o -name .Trash -o -path "$HOME/.cache" \) -prune \
+      -o -name Library -o -name .Trash -o -name .cache -o -name .tmp \) -prune \
       -o \( -path '*/.claude/skills/*/scripts/*' -o -path '*/.agents/skills/*/scripts/*' \
       -o -path '*/.claude-knowledge/skills/*/scripts/*' -o -path '*/.codex/skills/*/scripts/*' \) \
       -type f -print 2>/dev/null || true; } \
@@ -1052,6 +1059,22 @@ fi
 # 5. Validate
 problems=0
 
+# Refresh each global skill install the pinned pack also has, so agents load
+# the pinned version: a copy left by an older install keeps scripts the pack has
+# dropped. A link (~/.claude/skills/<n> -> ~/.agents/skills/<n>) follows its target.
+if (( ! ONLY_MODE )) || is_selected ".agents"; then
+  for skill_dir in "${SKILL_DIRS[@]:1}"; do
+    for global in "$skill_dir"/*/; do
+      global=${global%/}
+      { [ -L "$global" ] || [ ! -d "$PINNED_SKILLS/${global##*/}" ]; } && continue
+      diff -rq -x __pycache__ "$PINNED_SKILLS/${global##*/}" "$global" >/dev/null 2>&1 && continue
+      run rm -rf "$global"
+      run cp -R "$PINNED_SKILLS/${global##*/}" "$global"
+      (( DRY_RUN )) || printf 'REFRESHED: %s from the pinned pack\n' "$global"
+    done
+  done
+fi
+
 # 4.8 Provide each tool a skill declares (skill_requirements), through the
 # installer that already owns it, so a tool keeps one installation owner: a
 # Homebrew copy is upgraded with brew; a missing tool, or one mise provides, with
@@ -1084,7 +1107,12 @@ if (( ! ONLY_MODE )) || is_selected ".agents"; then
         problems=$((problems + 1))
         continue
       fi
-      run mise use -g "$tool@latest" || true
+      # mise fails, writing no config, on a platform its backend lacks (ttyd's
+      # aqua package has no darwin build); Homebrew provides the tool there.
+      if ! run mise use -g "$tool@latest" && [ -n "$brew_prefix" ]; then
+        via=brew
+        run brew install "$tool" || true
+      fi
     else
       printf 'WARNING: %s %s at %s is too old for skill %s (needs >= %s); upgrade it with the package manager that installed it\n' \
         "$tool" "${REQ_HAVE:-(no version)}" "$found" "$skill" "$min" >&2
