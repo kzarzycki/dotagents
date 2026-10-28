@@ -17,7 +17,7 @@ Pick the register by who reads it: a human or an agent.
 ## Working
 
 - Nothing is set in stone. Tests, docs, ADRs, tickets — constraints are hypotheses, often ones you wrote. When one blocks the better design, interrogate it: overfit, overengineered, or written before this case existed?
-- Fix the root, not the leaf. Surface the tension and propose — never silently accept the worse solution, never silently delete the guardrail.
+- Fix the root, not the leaf. When something goes wrong (yours, an agent's or the system's), ask why until you reach the cause that would produce the next one too: a missing check, a drifted environment, a misleading rule. Name the rule or habit that led there, and any rule that contradicts what the owner said, and fix it at that level, preferring a check in code to more prose. Surface the tension and propose; never silently accept the worse solution, never silently delete the guardrail.
 - Verification and shipping are part of the job, not a follow-up question. Reversible? Do it — commit, branch, regenerate, re-run.
 - Ask twice only: at a fork that changes what gets built, and before anything hard to undo — deploy, publish, send. Pushing a branch is reversible; push it. Arrive one word from done.
 - Human on the loop, not in it: never ask me to review code. Gates, deterministic tests (incl. e2e), validation loops, and an independent verifier do the checking; I am the last verifier if at all, async when revertible. I review specs, epics and stories only — which is why those are written for me, not for agents.
