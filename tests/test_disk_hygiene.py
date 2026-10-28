@@ -99,7 +99,11 @@ def test_disk_hygiene(tmp_path, monkeypatch):
         (bin_ / name).write_text(f'#!/bin/sh\n{body}\n')
         (bin_ / name).chmod(0o755)
     merged = {}  # branch -> the merged PR's head commit
-    (home / 'gh.py').write_text('import json, sys\nhead = sys.argv[sys.argv.index("--head") + 1]\n'
+    (home / 'gh.py').write_text('import json, sys\n'
+        f'if sys.argv[1] == "api":  # repos/o/r/commits/<sha>/pulls\n'
+        f'    print(json.dumps(json.load(open("{home}/gh-pulls.json")).get(sys.argv[2].split("/")[4], [])))\n'
+        '    sys.exit()\n'
+        'head = sys.argv[sys.argv.index("--head") + 1]\n'
         f'heads = json.load(open("{home}/gh.json"))\n'
         'print(json.dumps([{"number": 7, "headRefOid": heads[head]}] if head in heads else []))\n')
     old = time.time() - 30 * 86400
@@ -267,6 +271,16 @@ def test_disk_hygiene(tmp_path, monkeypatch):
     merged['squashed'] = git(repo, 'commit-tree', 'squashed^{tree}', '-p', 'main', '-m', 'squash')
     del merged['open']
     (home / 'gh.json').write_text(json.dumps(merged))
+    pulls = {}  # commit -> the PRs GitHub lists for it, as `gh api repos/o/r/commits/<sha>/pulls` returns them
+    for name, state in (('prmerged', 'closed'), ('propen', 'open'), ('prnone', None)):  # detached at a PR's head, or at no PR's
+        git(repo, 'worktree', 'add', '-q', '--detach', str(dev / f'wt-{name}'), 'main')
+        (dev / f'wt-{name}' / f'{name}.txt').write_text(name)
+        git(dev / f'wt-{name}', 'add', '.')
+        git(dev / f'wt-{name}', 'commit', '-q', '-m', name)  # on no remote branch, as a squash-merged PR's head is
+        sha = git(dev / f'wt-{name}', 'rev-parse', 'HEAD')
+        if state:
+            pulls[sha] = [{'number': 9, 'state': state, 'head': {'sha': sha}}]
+    (home / 'gh-pulls.json').write_text(json.dumps(pulls))
     (home / 'shared-venv/lib').mkdir(parents=True)
     for name, idle in (('idle', True), ('recent', False), ('busy-env', True), ('linked', True)):
         checkout = dev / name
@@ -323,9 +337,9 @@ def disk_hygiene_runs(home, dev, repo, git, monkeypatch):
     kept = [dev / p for p in ('wt-swift-build', 'wt-swift-dotbuild', 'wt-swift-foo', 'wt-fresh/tmp/loop/report.md', 'wt-apm-mine/.claude/skills/mine/SKILL.md', 'wt-held/held.lock',
                               'wt-apm-bad/.claude/skills/mine/SKILL.md', 'wt-deep-tmp/build/tmp/loop/report.md',
                               'wt-xcode/App.xcodeproj', 'wt-xcode/fake/CACHEDIR.TAG', 'wt-bootstrap/.bootstrap-state',
-                              'wt-many/private/diary.md', 'wt-webuisrc/web-ui/notes.local', 'wt-mystatic', 'wt-copydiff/.env', 'wt-lockmix/locks/notes.txt', 'wt-notgen/gen_later.py', 'wt-merged/build/deep/untracked', 'wt-hold/.worktrees/wip/untracked', 'wt-grants/.claude/settings.local.json', 'wt-locked/.worktrees/session', 'wt-secret/.env', 'wt-private/tmp', 'wt-secret/.worktrees/inner/untracked', 'wt-dirty', 'wt-unpushed', 'wt-busy', 'wt-open', 'recent/.venv', 'busy-env/.venv',
+                              'wt-many/private/diary.md', 'wt-webuisrc/web-ui/notes.local', 'wt-mystatic', 'wt-copydiff/.env', 'wt-lockmix/locks/notes.txt', 'wt-notgen/gen_later.py', 'wt-merged/build/deep/untracked', 'wt-hold/.worktrees/wip/untracked', 'wt-grants/.claude/settings.local.json', 'wt-locked/.worktrees/session', 'wt-secret/.env', 'wt-private/tmp', 'wt-secret/.worktrees/inner/untracked', 'wt-dirty', 'wt-unpushed', 'wt-busy', 'wt-open', 'wt-propen', 'wt-prnone', 'recent/.venv', 'busy-env/.venv',
                               'idle/node_modules', 'not-a-checkout/.venv', 'linked/.venv', '../shared-venv/lib')]
-    removed = [dev / p for p in ('wt-pin', 'wt-nest/.worktrees/agent', 'wt-nest', 'wt-squashed', 'wt-apm', 'wt-locks', 'wt-lockdir', 'wt-generated', 'wt-rebuilds', 'wt-testout', 'wt-webui', 'wt-copy', 'wt-copydir', 'idle/.venv')]
+    removed = [dev / p for p in ('wt-prmerged', 'wt-pin', 'wt-nest/.worktrees/agent', 'wt-nest', 'wt-squashed', 'wt-apm', 'wt-locks', 'wt-lockdir', 'wt-generated', 'wt-rebuilds', 'wt-testout', 'wt-webui', 'wt-copy', 'wt-copydir', 'idle/.venv')]
     code, out = run('--dry-run', '--floor-gb', '0')
     assert code == 0 and all(p.exists() for p in kept + removed), out
     assert f'would remove worktree {dev}/wt-squashed' in out and f'would remove env {dev}/idle/.venv' in out, out
@@ -376,7 +390,8 @@ def disk_hygiene_runs(home, dev, repo, git, monkeypatch):
                  f'skip env {dev}/busy-env/.venv: a process names it',
                  f'skip env {dev}/linked/.venv: a symlink to elsewhere'):
         assert line in out, (line, out)
-    assert 'wt-open' not in out and 'delete' not in (home / 'xcrun.calls').read_text()
+    assert f'removed worktree {dev}/wt-prmerged (o/r#9 closed)' in out, out
+    assert 'wt-open' not in out and 'wt-propen' not in out and 'wt-prnone' not in out and 'delete' not in (home / 'xcrun.calls').read_text()
     # One question per kept merged worktree that may hold something wanted, asked once.
     assert len(told) == 2 and 'Which may go?' in told[1] and 'simulator' not in told[1], told
     for path in ('wt-dirty', 'wt-unpushed', 'wt-private', 'wt-secret/.worktrees/inner', 'wt-apm-mine', 'wt-many'):
@@ -384,7 +399,7 @@ def disk_hygiene_runs(home, dev, repo, git, monkeypatch):
     for outer, inner in (('hold', 'wip'), ('locked', 'session')):
         assert f'- worktree {dev}/wt-{outer}/.worktrees/{inner} (in {dev}/wt-{outer}, o/r#7 merged)' in told[1], told[1]
     # In use or holding another checkout settles by itself: kept, no question.
-    assert not any(f'{dev}/{path} ' in told[1] for path in ('wt-busy', 'wt-merged', 'wt-secret', 'wt-squashed', 'wt-fresh',
+    assert not any(f'{dev}/{path} ' in told[1] for path in ('wt-busy', 'wt-merged', 'wt-secret', 'wt-squashed', 'wt-fresh', 'wt-prmerged', 'wt-prnone',
                                                             'wt-held')), told[1]
     code, out = run('--floor-gb', '0')
     assert code == 0 and len(told) == 2, told

@@ -5,7 +5,7 @@
     disk-hygiene --dry-run   report what would go, remove nothing
 
 Installed by `dotagents install`; run by an Omnigent scheduled task on each dev account. Steps, each skipped when in use:
-  worktrees     linked worktrees under ~/dev whose branch has a merged PR, and those with no PR of their own
+  worktrees     linked worktrees under ~/dev whose branch has a merged PR (or, detached, whose HEAD is the head of a merged or closed PR), and those with no PR of their own
                 inside one, judged with its PR, innermost first: removed with
                 `git worktree remove` when clean (untracked *.lock files aside, also in an untracked dir), pushed (or in the PR head), unlocked, no process is in
                 them, their tmp/ and .bootstrap-state/ (run reports) are a day old and every ignored file in them
@@ -191,6 +191,10 @@ def worktrees(run, found, dev, procs, asks):
                                 '--json', 'number,headRefOid', '--limit', '1']) or '[]')
             if pr:
                 prs[Path(w['worktree'])] = f'{repo}#{pr[0]["number"]} merged', pr[0]
+        elif 'detached' in w and Path(w['worktree']).is_dir():  # a verifier's checkout at a PR's head: a squash leaves it on no branch
+            pulls = json.loads(sh(['gh', 'api', f'repos/{repo}/commits/{w["HEAD"]}/pulls']) or '[]')
+            if pr := next((p for p in pulls if p['state'] == 'closed' and p['head']['sha'] == w['HEAD']), None):
+                prs[Path(w['worktree'])] = f'{repo}#{pr["number"]} closed', {'number': pr['number'], 'headRefOid': w['HEAD']}
     for root, repo, w in candidates:
         path = Path(w['worktree'])
         if not path.is_dir():
