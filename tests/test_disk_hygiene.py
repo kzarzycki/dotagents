@@ -17,6 +17,8 @@ ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / 'home/.local/bin/disk-hygiene'
 
 # The repo is public, so the names that must not appear in the script or its docs are kept as hashes.
+# ponytail: a hash only hides a short name from text search, a guess recovers it; a list kept outside the repo
+# would hide it fully but CI could not run the check.
 PRIVATE_HASHES = {
     '59ce113c13ade62d5645165fee8b1a5ab8ec124a9a735033f2d4b255b95c9015',
     'd999056550fd648de6de0537f389c3da467f846a4fd6117a62cb54ba1c23cf3c',
@@ -46,6 +48,12 @@ def private_words(text):
     return sorted(w for w in words if hashlib.sha256(w.encode()).hexdigest() in PRIVATE_HASHES)
 
 
+def test_private_words_finds_a_hashed_word(monkeypatch):
+    monkeypatch.setattr(sys.modules[__name__], 'PRIVATE_HASHES', {hashlib.sha256(b'example').hexdigest()})
+    assert private_words('ssh to Example-host.local and example') == ['example']
+    assert private_words('nothing here') == []
+
+
 def test_names_no_host_or_user():
     for path in (SCRIPT, ROOT / 'README.md'):
         text = path.read_text()
@@ -54,7 +62,6 @@ def test_names_no_host_or_user():
             text = text[start:text.find('\n#', start + 5)]
         assert not private_words(text), (path, private_words(text))
         assert not re.search(r'/Users/\w|/home/\w', text), path
-    assert private_words('ssh to ' + 'x' + 'mac-work and cc-' + 'experiments') == ['cc-experiments', 'xmac']
 
 
 def test_paths_derive_from_the_linked_checkout(tmp_path):
