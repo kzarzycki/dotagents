@@ -180,8 +180,9 @@ def test_home_configuration_does_not_enable_direct_matt_plugin():
 
 
 # Machine-wide plugins are opt-in per project; persistent memory is provided
-# by the Hindsight integration rather than a Claude-only plugin.
-USER_SCOPED_PLUGINS = set()
+# by the Hindsight integration rather than a Claude-only plugin. The claude-mods
+# three change the harness itself, so they are on everywhere (#108).
+USER_SCOPED_PLUGINS = {"decision-model@claude-mods", "eval-kernel@claude-mods", "self-compact@claude-mods"}
 
 
 def test_home_claude_global_plugins_are_user_scoped_only():
