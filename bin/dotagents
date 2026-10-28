@@ -722,10 +722,12 @@ if is_selected ".claude" || is_selected ".codex"; then
 # (profile wins per key; nested objects merge, arrays replace). Claude writes
 # runtime prefs (/model, permission prompts, /plugin) into the same file
 # between installs. The repo owns each top-level key it sets; every other key
-# the host has is kept. Claude also writes into permissions, enabledPlugins
-# and extraKnownMarketplaces, so there the repo owns only its own entries:
-# permission lists are unions (revoke with a deny rule), and a host plugin
-# entry stays only while enabled. Keys keep the host's order, so the diff
+# the host has is kept. Claude also writes into permissions, enabledPlugins,
+# extraKnownMarketplaces and pluginConfigs, so there the repo owns only its own
+# entries: permission lists are unions (revoke with a deny rule), a host plugin
+# entry stays only while enabled, plugin options merge per option, and a host
+# marketplace with a directory source wins over the repo's of the same name
+# (a mod developed from its checkout). Keys keep the host's order, so the diff
 # printed shows only repo changes.
 # Edit the repo files, never the generated one.
 USER_SETTINGS="$HOME/.claude/settings.json"
@@ -809,6 +811,13 @@ if [ -f "$SHARED_SETTINGS" ]; then
   # telemetryRepos becomes Omnigent's allowlist (4.6) and is dropped from settings.
   telemetry_repos=$(jq -c '.dotagents.telemetryRepos // empty' <<<"$merged")
   merged=$(jq 'del(.dotagents)' <<<"$merged")
+  if is_selected ".claude" && [ -f "$USER_SETTINGS" ]; then
+    jq -r --slurpfile h "$USER_SETTINGS" '($h[0].extraKnownMarketplaces // {}) as $hm
+      | (.extraKnownMarketplaces // {}) | to_entries[]
+      | select($hm[.key].source.source? == "directory" and $hm[.key] != .value)
+      | "NOTE: marketplace \(.key) keeps this host'\''s directory source \($hm[.key].source.path) over the repo'\''s (README: Local overrides)"' \
+      <<<"$merged" 2>/dev/null || true
+  fi
   if ! is_selected ".claude"; then
     :
   elif (( DRY_RUN )); then
@@ -833,7 +842,9 @@ if [ -f "$SHARED_SETTINGS" ]; then
             | $h.enabledPlugins + $r | with_entries(select(.value == true or (.key as $k | $r | has($k)))))
           else . end
         | if .extraKnownMarketplaces and $h.extraKnownMarketplaces
-          then .extraKnownMarketplaces |= $h.extraKnownMarketplaces + . else . end
+          then .extraKnownMarketplaces |= $h.extraKnownMarketplaces + . + ($h.extraKnownMarketplaces
+            | with_entries(select(.value.source.source? == "directory"))) else . end
+        | if .pluginConfigs and $h.pluginConfigs then .pluginConfigs |= $h.pluginConfigs * . else . end
       ' <<<"$merged" > "$tmp"; then
       printf 'WARNING: %s is not a valid settings object; left unchanged\n' "$USER_SETTINGS" >&2
       rm -f "$tmp"

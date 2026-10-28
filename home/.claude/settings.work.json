@@ -11,5 +11,12 @@
       "github.com/kzarzycki/project-templates",
       "github.com/kzarzycki/omnigent"
     ]
+  },
+  "pluginConfigs": {
+    "decision-model@claude-mods": {
+      "options": {
+        "backend": "claude"
+      }
+    }
   }
 }
