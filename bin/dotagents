@@ -600,7 +600,7 @@ shopt -s nullglob dotglob
 is_skipped() {
   local name="$1"
   case "$name" in
-    *.local.*|.env*|settings.local.json|projects|.skill-lock.json|skills|*.lock) return 0 ;;
+    *.local.*|.env*|settings.local.json|projects|__pycache__|.skill-lock.json|skills|*.lock) return 0 ;;
     # Per-profile settings files — picked up via $HOME/.dotagents-profile,
     # never linked as ~/.<dotdir>/settings.<profile>.json directly.
     settings.*.json) return 0 ;;
