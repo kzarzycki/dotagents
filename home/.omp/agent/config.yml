@@ -13,9 +13,9 @@ enabledProviders:
   - claude
 modelRoles:
   task: anthropic/claude-opus-5:auto
-  advisor: anthropic/claude-fable-5-1:auto
-  slow: anthropic/claude-fable-5-1:auto
-  default: anthropic/claude-fable-5-1
+  advisor: anthropic/claude-opus-5-5:auto
+  slow: anthropic/claude-opus-5-5:auto
+  default: anthropic/claude-opus-5-5
   smol: openai-codex/gpt-5.6-luna:auto
   tiny: openai-codex/gpt-5.6-luna:auto
 defaultThinkingLevel: auto
