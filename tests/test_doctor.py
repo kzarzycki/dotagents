@@ -41,6 +41,7 @@ def test_doctor_reports_a_declared_tool_the_host_lacks_or_has_too_old(tmp_path):
     repo, home = make_checkout(tmp_path)
     pack = repo / ".agents/skills"
     skill(pack, "demo", requires="dtool>=2.99.0 dother", scripts=["demo.sh"])
+    skill(home / ".claude-knowledge/skills", "kskill", requires="ktool")
     bindir = tmp_path / "bin"
     fake_tool(bindir, "dtool", "2.87.0")
 
@@ -49,10 +50,12 @@ def test_doctor_reports_a_declared_tool_the_host_lacks_or_has_too_old(tmp_path):
     assert result.stdout.splitlines() == [
         "too old: dtool 2.87.0, skill demo needs >= 2.99.0",
         "missing: dother, needed by skill demo",
+        "missing: ktool, needed by skill kskill",
     ]
 
     fake_tool(bindir, "dtool", "2.103.1")
     fake_tool(bindir, "dother", "1")
+    fake_tool(bindir, "ktool", "1")
     result = doctor(repo, home, bindir)
     assert (result.returncode, result.stdout) == (0, ""), result.stdout + result.stderr
 
@@ -82,7 +85,8 @@ def test_doctor_reports_a_skill_script_the_pinned_pack_does_not_have(tmp_path):
     # Current copies, a pack source tree and the apm cache are not reported.
     skill(home / "dev/new/.claude/skills", "demo", scripts=["demo.sh"])
     skill(home / "dev/src/engineering/skills", "demo", scripts=["post_demo.sh"])
-    skill(home / ".cache/apm/x/engineering/skills", "demo", scripts=["post_demo.sh"])
+    skill(home / ".cache/apm/x/.claude/skills", "demo", scripts=["post_demo.sh"])
+    skill(home / "dev/new/apm_modules/x/.claude/skills", "demo", scripts=["post_demo.sh"])
     skill(home / ".agents/skills", "other", scripts=["any.sh"])
 
     stale = (".claude-knowledge/skills", "dev/old/.agents/skills", "dev/old/.claude/skills")
@@ -133,7 +137,11 @@ def test_install_provides_a_declared_tool_through_its_installer_and_doctor_passe
     result = run_install(repo, home, "--profile", "vps", "--dry-run")
     assert "DRY: mise use -g mtool@latest" in result.stdout
     assert "DRY: brew upgrade btool" in result.stdout
+    assert f"DRY: ln -sfn {shims}/mtool {home}/.local/bin/mtool" in result.stdout
     assert not (home / ".local/bin/mtool").is_symlink()
+
+    result = run_install(repo, home, "--profile", "vps", "--only", ".claude")
+    assert "PROVIDED:" not in result.stdout and "TOOL:" not in result.stdout
 
     result = run_install(repo, home, "--profile", "vps")
     assert result.returncode == 0, result.stdout + result.stderr
