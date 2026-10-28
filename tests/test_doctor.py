@@ -13,6 +13,13 @@ def skill(root, name, requires=None, scripts=()):
         (d / "scripts" / s).write_text("#!/bin/sh\n")
 
 
+def lock(root, version, skill_dir):
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "apm.lock.yaml").write_text(
+        f"dependencies:\n- repo_url: x/pack\n  version: {version}\n  deployed_files:\n  - {skill_dir}\n"
+    )
+
+
 def fake_tool(bindir, name, version):
     bindir.mkdir(parents=True, exist_ok=True)
     tool = bindir / name
@@ -60,9 +67,18 @@ def test_doctor_reports_a_declared_tool_the_host_lacks_or_has_too_old(tmp_path):
 def test_doctor_reports_a_skill_script_the_pinned_pack_does_not_have(tmp_path):
     repo, home = make_checkout(tmp_path)
     skill(repo / ".agents/skills", "demo", scripts=["demo.sh"])
+    lock(repo, "0.25.0", ".agents/skills/demo")
     # An old pin in a project, and the same in its .claude copy.
     for d in (".agents/skills", ".claude/skills"):
         skill(home / "dev/old" / d, "demo", scripts=["demo.sh", "post_demo.sh"])
+    lock(home / "dev/old", "0.24.4", ".claude/skills/demo")
+    skill(home / ".claude-knowledge/skills", "demo", scripts=["post_demo.sh"])
+    # A project on a newer pin is ahead, not stale.
+    skill(home / "dev/ahead/.claude/skills", "demo", scripts=["demo.sh", "new_helper.sh"])
+    lock(home / "dev/ahead", "0.26.0", ".claude/skills/demo")
+    # A directory the account can't read is skipped, not a failed run.
+    (home / "private").mkdir()
+    (home / "private").chmod(0)
     # Current copies, a pack source tree and the apm cache are not reported.
     skill(home / "dev/new/.claude/skills", "demo", scripts=["demo.sh"])
     skill(home / "dev/src/engineering/skills", "demo", scripts=["post_demo.sh"])
@@ -72,8 +88,15 @@ def test_doctor_reports_a_skill_script_the_pinned_pack_does_not_have(tmp_path):
     result = doctor(repo, home, tmp_path / "bin")
     assert result.returncode == 1, result.stdout + result.stderr
     assert sorted(result.stdout.splitlines()) == [
-        f"stale skill copy: {home}/dev/old/{d}/demo: post_demo.sh" for d in (".agents/skills", ".claude/skills")
+        f"stale skill copy: {home}/{d}/demo: post_demo.sh"
+        for d in (".claude-knowledge/skills", "dev/old/.agents/skills", "dev/old/.claude/skills")
     ]
+
+    for d in (".claude-knowledge/skills", "dev/old/.agents/skills", "dev/old/.claude/skills"):
+        (home / d / "demo/scripts/post_demo.sh").unlink()
+    result = doctor(repo, home, tmp_path / "bin")
+    (home / "private").chmod(0o755)
+    assert (result.returncode, result.stdout) == (0, ""), result.stdout + result.stderr
 
 
 def test_doctor_asks_for_the_pinned_pack_when_it_is_not_installed(tmp_path):
@@ -89,7 +112,7 @@ def install_env(tmp_path, monkeypatch):
     bindir.mkdir()
     current = "printf '#!/bin/sh\\necho %s version 2.103.1\\n' > {d}/$t; chmod +x {d}/$t"
     (bindir / "mise").write_text(
-        f'#!/bin/sh\ncase "$*" in "use -g "*@latest) t=${{3%@latest}};; *) exit 9;; esac\n'
+        f'#!/bin/sh\ncase "$*" in "use -g nosuch@latest") exit 1;; "use -g "*@latest) t=${{3%@latest}};; *) exit 9;; esac\n'
         f"mkdir -p {shims}\n{current.replace('{d}', str(shims))}\n"
     )
     (bindir / "brew").write_text(
@@ -108,6 +131,11 @@ def test_install_provides_a_declared_tool_through_its_installer_and_doctor_passe
     bindir, shims, brew = install_env(tmp_path, monkeypatch)
     fake_tool(brew / "bin", "btool", "2.87.0")  # Homebrew's copy, too old; mtool is missing
 
+    result = run_install(repo, home, "--profile", "vps", "--dry-run")
+    assert "DRY: mise use -g mtool@latest" in result.stdout
+    assert "DRY: brew upgrade btool" in result.stdout
+    assert not (home / ".local/bin/mtool").is_symlink()
+
     result = run_install(repo, home, "--profile", "vps")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "PROVIDED: mtool 2.103.1 via mise, for skill demo" in result.stdout
@@ -124,7 +152,7 @@ def test_install_provides_a_declared_tool_through_its_installer_and_doctor_passe
 
 def test_install_leaves_a_system_package_to_its_package_manager(tmp_path, monkeypatch):
     repo, home = make_checkout(tmp_path)
-    skill(repo / ".agents/skills", "demo", requires="stool>=2.99.0", scripts=["demo.sh"])
+    skill(repo / ".agents/skills", "demo", requires="stool>=2.99.0 nosuch", scripts=["demo.sh"])
     install_env(tmp_path, monkeypatch)
     fake_tool(tmp_path / "system", "stool", "2.87.0")
 
@@ -135,3 +163,6 @@ def test_install_leaves_a_system_package_to_its_package_manager(tmp_path, monkey
         "upgrade it with the package manager that installed it" in result.stderr
     )
     assert not (home / ".local/bin/stool").exists()
+    # A tool mise can't provide leaves no link to a shim that isn't there.
+    assert "WARNING: mise did not provide nosuch >= any for skill demo" in result.stderr
+    assert not (home / ".local/bin/nosuch").is_symlink()

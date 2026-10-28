@@ -262,10 +262,12 @@ fi
 # and the global skill dirs; the pinned pack is the reference for which scripts
 # a skill has.
 PINNED_SKILLS="$REPO_ROOT/.agents/skills"
-SKILL_DIRS=("$PINNED_SKILLS" "$HOME/.claude/skills" "$HOME/.agents/skills" "$HOME/.codex/skills")
+SKILL_DIRS=("$PINNED_SKILLS" "$HOME/.claude/skills" "$HOME/.claude-knowledge/skills" "$HOME/.agents/skills" "$HOME/.codex/skills")
 MISE_SHIMS="${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims"
 # What an agent shell resolves: env.sh puts ~/.local/bin first and mise's shims last.
-AGENT_PATH="$HOME/.local/bin:$PATH:$MISE_SHIMS"
+# Homebrew's bin dirs are added for a scheduler's minimal PATH, which a login
+# shell's brew shellenv never set.
+AGENT_PATH="$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin:$MISE_SHIMS"
 
 # One line per declared entry: tool|minimum version (empty for a bare tool)|skill.
 skill_requirements() {
@@ -328,8 +330,10 @@ check_requirements() {
 # A skill script, in a skill path an agent loads (a project's or the global
 # .claude, .agents or .codex skills), that the pinned pack's skill of that name
 # doesn't have: an old pin, an old clone's install, a second copy of the skill.
-# Source trees, package stores and the apm cache are no skill path. One line per
-# skill directory holding such scripts.
+# A project whose apm.lock.yaml deploys that skill at a newer version than this
+# checkout's lock is skipped: its copy is ahead, not stale. Source trees, package
+# stores and the apm cache are no skill path. One line per skill directory
+# holding such scripts.
 check_stale_skill_copies() {
   [ -d "$PINNED_SKILLS" ] || {
     printf 'no pinned pack: run `mise run setup:dev` in %s\n' "$REPO_ROOT"
@@ -337,11 +341,28 @@ check_stale_skill_copies() {
   }
   local pinned_real
   pinned_real=$(cd "$PINNED_SKILLS" && pwd -P)
-  find "$HOME" \( -name .git -o -name node_modules -o -name apm_modules -o -name __pycache__ \
+  # ponytail: a directory the account can't read (macOS TCC folders without Full
+  # Disk Access) is skipped silently; report it if a skill path ever lives there.
+  { find "$HOME" \( -name .git -o -name node_modules -o -name apm_modules -o -name __pycache__ \
       -o -name Library -o -name .Trash -o -path "$HOME/.cache" \) -prune \
       -o \( -path '*/.claude/skills/*/scripts/*' -o -path '*/.agents/skills/*/scripts/*' \
-      -o -path '*/.codex/skills/*/scripts/*' \) -type f -print 2>/dev/null \
-    | awk -v pinned="$PINNED_SKILLS" -v pinned_real="$pinned_real" '
+      -o -path '*/.claude-knowledge/skills/*/scripts/*' -o -path '*/.codex/skills/*/scripts/*' \) \
+      -type f -print 2>/dev/null || true; } \
+    | awk -v pinned="$PINNED_SKILLS" -v pinned_real="$pinned_real" -v pinned_lock="$REPO_ROOT/apm.lock.yaml" '
+      # The version of the apm.lock.yaml dependency that deploys skill `name`, or "".
+      function lockver(file, name,   line, ver, v) {
+        while ((getline line < file) > 0) {
+          if (line ~ /^- /) ver = ""
+          if (line ~ /^  version: /) { ver = line; sub(/^  version: /, "", ver); gsub(/["'\'']/, "", ver) }
+          if (line ~ ("^  - [.][a-z-]+/skills/" name "$")) v = ver
+        }
+        close(file); return v
+      }
+      function newer(a, b,   x, y, k, n) {
+        n = split(a, x, "."); split(b, y, ".")
+        for (k = 1; k <= n || k in y; k++) if (x[k] + 0 != y[k] + 0) return x[k] + 0 > y[k] + 0
+        return 0
+      }
       BEGIN {
         cmd = "cd \"" pinned "\" && find . -path \"./*/scripts/*\" -type f"
         while ((cmd | getline f) > 0) { sub(/^\.\//, "", f); ref[f] = 1; split(f, p, "/"); skill[p[1]] = 1 }
@@ -349,18 +370,23 @@ check_stale_skill_copies() {
       }
       index($0, pinned "/") == 1 || index($0, pinned_real "/") == 1 { next }
       {
-        i = match($0, /\/\.(claude|agents|codex)\/skills\/[^\/]+\/scripts\//); if (!i) next
+        i = match($0, /\/\.(claude|claude-knowledge|agents|codex)\/skills\/[^\/]+\/scripts\//); if (!i) next
+        root = substr($0, 1, i - 1)
         i = i + index(substr($0, i + 1), "/")
         rel = substr($0, i + 8); split(rel, p, "/")
         if ((p[1] in skill) && !(rel in ref)) {
           dir = substr($0, 1, i + 7) p[1]
-          if (!(dir in seen)) { seen[dir] = 1; order[++n] = dir }
+          if (!(dir in seen)) { seen[dir] = 1; order[++n] = dir; sk[dir] = p[1]; top[dir] = root }
           files[dir] = files[dir] " " substr(rel, length(p[1]) + 10)
         }
       }
       END {
-        for (k = 1; k <= n; k++) printf "stale skill copy: %s:%s\n", order[k], files[order[k]]
-        exit n > 0
+        for (k = 1; k <= n; k++) {
+          d = order[k]; have = lockver(top[d] "/apm.lock.yaml", sk[d]); pin = lockver(pinned_lock, sk[d])
+          if (have != "" && pin != "" && newer(have, pin)) continue
+          printf "stale skill copy: %s:%s\n", d, files[d]; found = 1
+        }
+        exit found
       }'
 }
 
@@ -1044,7 +1070,7 @@ if (( ! ONLY_MODE )) || is_selected ".agents"; then
     link="$HOME/.local/bin/$tool"
     if [ -n "$found" ] && [ -n "$brew_prefix" ] && [ "${found#"$brew_prefix"/}" != "$found" ]; then
       via=brew
-      run brew upgrade "$tool" >/dev/null || true
+      run brew upgrade "$tool" || true
     elif [ -z "$found" ] || [ "$found" = "$MISE_SHIMS/$tool" ] \
       || { [ "$found" = "$link" ] && [ "$(readlink "$link")" = "$MISE_SHIMS/$tool" ]; }; then
       via=mise
@@ -1058,21 +1084,23 @@ if (( ! ONLY_MODE )) || is_selected ".agents"; then
         problems=$((problems + 1))
         continue
       fi
-      run mise use -g "$tool@latest" >/dev/null || true
-      run mkdir -p "$HOME/.local/bin"
-      run ln -sfn "$MISE_SHIMS/$tool" "$link"
+      run mise use -g "$tool@latest" || true
     else
       printf 'WARNING: %s %s at %s is too old for skill %s (needs >= %s); upgrade it with the package manager that installed it\n' \
         "$tool" "${REQ_HAVE:-(no version)}" "$found" "$skill" "$min" >&2
       problems=$((problems + 1))
       continue
     fi
-    (( DRY_RUN )) && continue
-    if ! requirement_met "$tool" "$min"; then
+    if (( ! DRY_RUN )) && ! requirement_met "$tool" "$min"; then
       printf 'WARNING: %s did not provide %s >= %s for skill %s\n' "$via" "$tool" "${min:-any}" "$skill" >&2
       problems=$((problems + 1))
       continue
     fi
+    if [ "$via" = mise ]; then
+      run mkdir -p "$HOME/.local/bin"
+      run ln -sfn "$MISE_SHIMS/$tool" "$link"
+    fi
+    (( DRY_RUN )) && continue
     printf 'PROVIDED: %s %s via %s, for skill %s\n' "$tool" "$REQ_HAVE" "$via" "$skill"
   done < <(skill_requirements)
 fi
