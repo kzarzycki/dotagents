@@ -85,18 +85,17 @@ def test_doctor_reports_a_skill_script_the_pinned_pack_does_not_have(tmp_path):
     skill(home / ".cache/apm/x/engineering/skills", "demo", scripts=["post_demo.sh"])
     skill(home / ".agents/skills", "other", scripts=["any.sh"])
 
-    result = doctor(repo, home, tmp_path / "bin")
+    stale = (".claude-knowledge/skills", "dev/old/.agents/skills", "dev/old/.claude/skills")
+    try:
+        result = doctor(repo, home, tmp_path / "bin")
+        for d in stale:
+            (home / d / "demo/scripts/post_demo.sh").unlink()
+        clean = doctor(repo, home, tmp_path / "bin")
+    finally:
+        (home / "private").chmod(0o755)
     assert result.returncode == 1, result.stdout + result.stderr
-    assert sorted(result.stdout.splitlines()) == [
-        f"stale skill copy: {home}/{d}/demo: post_demo.sh"
-        for d in (".claude-knowledge/skills", "dev/old/.agents/skills", "dev/old/.claude/skills")
-    ]
-
-    for d in (".claude-knowledge/skills", "dev/old/.agents/skills", "dev/old/.claude/skills"):
-        (home / d / "demo/scripts/post_demo.sh").unlink()
-    result = doctor(repo, home, tmp_path / "bin")
-    (home / "private").chmod(0o755)
-    assert (result.returncode, result.stdout) == (0, ""), result.stdout + result.stderr
+    assert sorted(result.stdout.splitlines()) == [f"stale skill copy: {home}/{d}/demo: post_demo.sh" for d in stale]
+    assert (clean.returncode, clean.stdout) == (0, ""), clean.stdout + clean.stderr
 
 
 def test_doctor_asks_for_the_pinned_pack_when_it_is_not_installed(tmp_path):
