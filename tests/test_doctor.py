@@ -87,6 +87,8 @@ def test_doctor_reports_a_skill_script_the_pinned_pack_does_not_have(tmp_path):
     skill(home / "dev/src/engineering/skills", "demo", scripts=["post_demo.sh"])
     skill(home / ".cache/apm/x/.claude/skills", "demo", scripts=["post_demo.sh"])
     skill(home / "dev/x/.cache/y/.claude/skills", "demo", scripts=["post_demo.sh"])
+    # A loop's evidence copy of another repo is no skill path either.
+    skill(home / "dev/old/tmp/loop/pr1-evidence/upstream/.agents/skills", "demo", scripts=["post_demo.sh"])
     skill(home / "dev/new/apm_modules/x/.claude/skills", "demo", scripts=["post_demo.sh"])
     # Codex clones its marketplaces under .tmp in each Codex home; agents load no skill there.
     skill(home / ".codex/.tmp/marketplaces/x/.agents/skills", "demo", scripts=["post_demo.sh"])

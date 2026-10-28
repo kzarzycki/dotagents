@@ -341,7 +341,9 @@ check_requirements() {
 # checkout's lock is skipped: its copy is ahead, not stale. Source trees, package
 # stores and the apm cache are no skill path. One line per skill directory
 # holding such scripts. Caches (.cache, and .tmp, where Codex clones its
-# marketplaces) are no skill path either.
+# marketplaces) and tmp dirs (a loop's evidence copies of other repos) are no
+# skill path either. Gitignored paths are scanned: a project's installed skill
+# dirs are gitignored.
 check_stale_skill_copies() {
   [ -d "$PINNED_SKILLS" ] || {
     printf 'no pinned pack: run `mise run setup:dev` in %s\n' "$REPO_ROOT"
@@ -352,7 +354,7 @@ check_stale_skill_copies() {
   # ponytail: a directory the account can't read (macOS TCC folders without Full
   # Disk Access) is skipped silently; report it if a skill path ever lives there.
   { find "$HOME" \( -name .git -o -name node_modules -o -name apm_modules -o -name __pycache__ \
-      -o -name Library -o -name .Trash -o -name .cache -o -name .tmp \) -prune \
+      -o -name Library -o -name .Trash -o -name .cache -o -name .tmp -o -name tmp \) -prune \
       -o \( -path '*/.claude/skills/*/scripts/*' -o -path '*/.agents/skills/*/scripts/*' \
       -o -path '*/.claude-knowledge/skills/*/scripts/*' -o -path '*/.codex/skills/*/scripts/*' \) \
       -type f -print 2>/dev/null || true; } \
