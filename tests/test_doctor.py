@@ -83,25 +83,55 @@ def test_doctor_asks_for_the_pinned_pack_when_it_is_not_installed(tmp_path):
     assert "no pinned pack: run `mise run setup:dev`" in result.stdout
 
 
-def test_install_provides_a_declared_tool_through_mise_and_doctor_passes(tmp_path, monkeypatch):
-    repo, home = make_checkout(tmp_path)
-    skill(repo / ".agents/skills", "demo", requires="dtool>=2.99.0", scripts=["demo.sh"])
-    bindir, shims = tmp_path / "bin", tmp_path / "mise/shims"
-    fake_tool(bindir, "dtool", "2.87.0")
-    # A mise whose `use -g dtool@latest` puts a current dtool in its shims dir.
+def install_env(tmp_path, monkeypatch):
+    """A PATH whose fake mise and brew each install a current version of a tool."""
+    bindir, shims, brew = tmp_path / "bin", tmp_path / "mise/shims", tmp_path / "brew"
+    bindir.mkdir()
+    current = "printf '#!/bin/sh\\necho %s version 2.103.1\\n' > {d}/$t; chmod +x {d}/$t"
     (bindir / "mise").write_text(
-        f'#!/bin/sh\n[ "$*" = "use -g dtool@latest" ] || exit 9\nmkdir -p {shims}\n'
-        f"printf '#!/bin/sh\\necho dtool version 2.103.1\\n' > {shims}/dtool\nchmod +x {shims}/dtool\n"
+        f'#!/bin/sh\ncase "$*" in "use -g "*@latest) t=${{3%@latest}};; *) exit 9;; esac\n'
+        f"mkdir -p {shims}\n{current.replace('{d}', str(shims))}\n"
     )
-    (bindir / "mise").chmod(0o755)
+    (bindir / "brew").write_text(
+        f'#!/bin/sh\ncase "$1" in --prefix) echo {brew};; upgrade) t=$2; {current.replace("{d}", str(brew / "bin"))};; *) exit 9;; esac\n'
+    )
+    for f in ("mise", "brew"):
+        (bindir / f).chmod(0o755)
     monkeypatch.setenv("MISE_DATA_DIR", str(tmp_path / "mise"))
-    monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
+    monkeypatch.setenv("PATH", f"{bindir}:{brew / 'bin'}:{tmp_path / 'system'}:{os.environ['PATH']}")
+    return bindir, shims, brew
+
+
+def test_install_provides_a_declared_tool_through_its_installer_and_doctor_passes(tmp_path, monkeypatch):
+    repo, home = make_checkout(tmp_path)
+    skill(repo / ".agents/skills", "demo", requires="mtool>=2.99.0 btool>=2.99.0", scripts=["demo.sh"])
+    bindir, shims, brew = install_env(tmp_path, monkeypatch)
+    fake_tool(brew / "bin", "btool", "2.87.0")  # Homebrew's copy, too old; mtool is missing
 
     result = run_install(repo, home, "--profile", "vps")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PROVIDED: dtool 2.103.1 via mise, for skill demo" in result.stdout
-    assert os.readlink(home / ".local/bin/dtool") == f"{shims}/dtool"
+    assert "PROVIDED: mtool 2.103.1 via mise, for skill demo" in result.stdout
+    assert "PROVIDED: btool 2.103.1 via brew, for skill demo" in result.stdout
+    assert os.readlink(home / ".local/bin/mtool") == f"{shims}/mtool"
+    assert not (home / ".local/bin/btool").exists()
 
     result = run_install(repo, home, "--profile", "vps")
-    assert f"TOOL: dtool 2.103.1 at {home}/.local/bin/dtool, for skill demo (needs >= 2.99.0)" in result.stdout
-    assert (doctor(repo, home, bindir).returncode, doctor(repo, home, bindir).stdout) == (0, "")
+    assert f"TOOL: mtool 2.103.1 at {home}/.local/bin/mtool, for skill demo (needs >= 2.99.0)" in result.stdout
+    assert f"TOOL: btool 2.103.1 at {brew}/bin/btool, for skill demo (needs >= 2.99.0)" in result.stdout
+    check = doctor(repo, home, bindir)
+    assert (check.returncode, check.stdout) == (0, ""), check.stdout + check.stderr
+
+
+def test_install_leaves_a_system_package_to_its_package_manager(tmp_path, monkeypatch):
+    repo, home = make_checkout(tmp_path)
+    skill(repo / ".agents/skills", "demo", requires="stool>=2.99.0", scripts=["demo.sh"])
+    install_env(tmp_path, monkeypatch)
+    fake_tool(tmp_path / "system", "stool", "2.87.0")
+
+    result = run_install(repo, home, "--profile", "vps")
+    assert result.returncode != 0
+    assert (
+        f"WARNING: stool 2.87.0 at {tmp_path}/system/stool is too old for skill demo (needs >= 2.99.0); "
+        "upgrade it with the package manager that installed it" in result.stderr
+    )
+    assert not (home / ".local/bin/stool").exists()

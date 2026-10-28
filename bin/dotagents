@@ -1026,39 +1026,54 @@ fi
 # 5. Validate
 problems=0
 
-# 4.8 Provide each tool a skill declares (skill_requirements). One that is missing
-# or too old is installed with `mise use -g <tool>@latest` and linked into
-# ~/.local/bin, since env.sh puts mise's shims after the system dirs, where an
-# older system copy would still win.
+# 4.8 Provide each tool a skill declares (skill_requirements), through the
+# installer that already owns it, so a tool keeps one installation owner: a
+# Homebrew copy is upgraded with brew; a missing tool, or one mise provides, with
+# `mise use -g <tool>@latest`, linked into ~/.local/bin since env.sh puts mise's
+# shims after the system dirs. Any other copy (a system package) is reported for
+# its own package manager, never shadowed.
 if (( ! ONLY_MODE )) || is_selected ".agents"; then
+  brew_prefix=$(brew --prefix 2>/dev/null || true)
   while IFS='|' read -r tool min skill; do
-    if ! requirement_met "$tool" "$min"; then
-      link="$HOME/.local/bin/$tool"
+    if requirement_met "$tool" "$min"; then
+      printf 'TOOL: %s %s at %s, for skill %s%s\n' "$tool" "${REQ_HAVE:-(no version)}" \
+        "$(PATH="$AGENT_PATH" command -v "$tool")" "$skill" "${min:+ (needs >= $min)}"
+      continue
+    fi
+    found=$(PATH="$AGENT_PATH" command -v "$tool" 2>/dev/null || true)
+    link="$HOME/.local/bin/$tool"
+    if [ -n "$found" ] && [ -n "$brew_prefix" ] && [ "${found#"$brew_prefix"/}" != "$found" ]; then
+      via=brew
+      run brew upgrade "$tool" >/dev/null || true
+    elif [ -z "$found" ] || [ "$found" = "$MISE_SHIMS/$tool" ] \
+      || { [ "$found" = "$link" ] && [ "$(readlink "$link")" = "$MISE_SHIMS/$tool" ]; }; then
+      via=mise
       if [ -e "$link" ] && [ ! -L "$link" ]; then
         printf 'CONFLICT: %s is a real file; skill %s needs %s >= %s\n' "$link" "$skill" "$tool" "${min:-any}"
         conflicts=$((conflicts + 1))
         continue
       fi
       if ! command -v mise >/dev/null 2>&1; then
-        printf 'WARNING: %s %s found, skill %s needs >= %s, and mise is not installed to provide it\n' \
-          "$tool" "${REQ_HAVE:-not}" "$skill" "${min:-any}" >&2
+        printf 'WARNING: skill %s needs %s%s, and mise is not installed to provide it\n' "$skill" "$tool" "${min:+ >= $min}" >&2
         problems=$((problems + 1))
         continue
       fi
       run mise use -g "$tool@latest" >/dev/null || true
       run mkdir -p "$HOME/.local/bin"
       run ln -sfn "$MISE_SHIMS/$tool" "$link"
-      (( DRY_RUN )) && continue
-      if ! requirement_met "$tool" "$min"; then
-        printf 'WARNING: mise did not provide %s >= %s for skill %s\n' "$tool" "${min:-any}" "$skill" >&2
-        problems=$((problems + 1))
-        continue
-      fi
-      printf 'PROVIDED: %s %s via mise, for skill %s\n' "$tool" "$REQ_HAVE" "$skill"
     else
-      printf 'TOOL: %s %s at %s, for skill %s%s\n' "$tool" "${REQ_HAVE:-(no version)}" \
-        "$(PATH="$AGENT_PATH" command -v "$tool")" "$skill" "${min:+ (needs >= $min)}"
+      printf 'WARNING: %s %s at %s is too old for skill %s (needs >= %s); upgrade it with the package manager that installed it\n' \
+        "$tool" "${REQ_HAVE:-(no version)}" "$found" "$skill" "$min" >&2
+      problems=$((problems + 1))
+      continue
     fi
+    (( DRY_RUN )) && continue
+    if ! requirement_met "$tool" "$min"; then
+      printf 'WARNING: %s did not provide %s >= %s for skill %s\n' "$via" "$tool" "${min:-any}" "$skill" >&2
+      problems=$((problems + 1))
+      continue
+    fi
+    printf 'PROVIDED: %s %s via %s, for skill %s\n' "$tool" "$REQ_HAVE" "$via" "$skill"
   done < <(skill_requirements)
 fi
 if command -v jq >/dev/null 2>&1; then

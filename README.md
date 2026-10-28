@@ -100,7 +100,7 @@ package and lock files; they are not symlinked into dotagents.
 
 ### Skill requirements and doctor
 
-A skill declares the tools its scripts need in its `SKILL.md` frontmatter, `metadata.requires: "gh>=2.99.0"` (agent-skills' conventions). The skills read are this checkout's pinned pack (`.agents/skills`, installed by `mise run setup:dev`) and the global `~/.claude/skills`, `~/.agents/skills` and `~/.codex/skills`. Install reports the version of each declared tool it finds. A tool that is missing or too old is installed with `mise use -g <tool>@latest` and linked into `~/.local/bin`, because `env.sh` puts mise's shims after the system dirs, so an older system copy would still win there.
+A skill declares the tools its scripts need in its `SKILL.md` frontmatter, `metadata.requires: "gh>=2.99.0"` (agent-skills' conventions). The skills read are this checkout's pinned pack (`.agents/skills`, installed by `mise run setup:dev`) and the global `~/.claude/skills`, `~/.agents/skills` and `~/.codex/skills`. Install reports the version of each declared tool it finds. A tool that is missing or too old is upgraded by the installer that already owns it, so each tool keeps one installation owner. A Homebrew copy gets `brew upgrade`. A missing tool, or one mise provides, gets `mise use -g <tool>@latest`, linked into `~/.local/bin` because `env.sh` puts mise's shims after the system dirs. Any other copy, such as a system package, is reported as a warning to upgrade it with its own package manager (on Debian or Ubuntu with GitHub's apt repo: `sudo apt-get install --only-upgrade gh`).
 
 `dotagents doctor` makes no changes. It prints one line per finding and exits 1, or prints nothing and exits 0:
 
