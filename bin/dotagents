@@ -16,8 +16,15 @@
 
 set -euo pipefail
 
-# Locate the repo root: dir containing this script's parent.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Locate the repo root: dir containing this script's parent. Install links
+# ~/.local/bin/dotagents to it, so follow links to the script itself first
+# (by hand: older macOS readlink has no -f).
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+  self_link=$(readlink "$self")
+  case "$self_link" in /*) self=$self_link ;; *) self="$(dirname "$self")/$self_link" ;; esac
+done
+SCRIPT_DIR="$(cd "$(dirname "$self")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOTAGENTS_LINK="$HOME/.dotagents"
 SRC="$REPO_ROOT/home"
@@ -333,7 +340,10 @@ check_requirements() {
 # A project whose apm.lock.yaml deploys that skill at a newer version than this
 # checkout's lock is skipped: its copy is ahead, not stale. Source trees, package
 # stores and the apm cache are no skill path. One line per skill directory
-# holding such scripts.
+# holding such scripts. Caches (.cache, and .tmp, where Codex clones its
+# marketplaces) and tmp dirs (a loop's evidence copies of other repos) are no
+# skill path either. Gitignored paths are scanned: a project's installed skill
+# dirs are gitignored.
 check_stale_skill_copies() {
   [ -d "$PINNED_SKILLS" ] || {
     printf 'no pinned pack: run `mise run setup:dev` in %s\n' "$REPO_ROOT"
@@ -344,7 +354,7 @@ check_stale_skill_copies() {
   # ponytail: a directory the account can't read (macOS TCC folders without Full
   # Disk Access) is skipped silently; report it if a skill path ever lives there.
   { find "$HOME" \( -name .git -o -name node_modules -o -name apm_modules -o -name __pycache__ \
-      -o -name Library -o -name .Trash -o -path "$HOME/.cache" \) -prune \
+      -o -name Library -o -name .Trash -o -name .cache -o -name .tmp -o -name tmp \) -prune \
       -o \( -path '*/.claude/skills/*/scripts/*' -o -path '*/.agents/skills/*/scripts/*' \
       -o -path '*/.claude-knowledge/skills/*/scripts/*' -o -path '*/.codex/skills/*/scripts/*' \) \
       -type f -print 2>/dev/null || true; } \
@@ -1049,10 +1059,33 @@ if is_selected ".gemini" && [ -f "$AGY_SHARED" ] && [ -f "$AGY_SETTINGS" ]; then
   fi
 fi
 
+# 4.8 Refresh each global skill install the pinned pack also has, so agents load
+# the pinned version: a copy left by an older install keeps scripts the pack has
+# dropped. Another installer or an agent may have put files there, so the copy
+# replaced is moved to ~/.dotagents-bak/, its path flattened so no skill path
+# matches it, replacing the previous backup of that skill. A link
+# (~/.claude/skills/<n> -> ~/.agents/skills/<n>) follows its target.
+if (( ! ONLY_MODE )) || is_selected ".agents"; then
+  for skill_dir in "${SKILL_DIRS[@]:1}"; do
+    for global in "$skill_dir"/*/; do
+      global=${global%/}
+      pack_skill="$PINNED_SKILLS/${global##*/}"
+      { [ -L "$global" ] || [ ! -d "$pack_skill" ]; } && continue
+      diff -rq -x __pycache__ "$pack_skill" "$global" >/dev/null 2>&1 && continue
+      bak="$HOME/.dotagents-bak/$(printf '%s' "${global#"$HOME"/}" | tr / _)"
+      run mkdir -p "$HOME/.dotagents-bak"
+      run rm -rf "$bak"
+      run mv "$global" "$bak"
+      run cp -R "$pack_skill" "$global"
+      (( DRY_RUN )) || printf 'REFRESHED: %s from the pinned pack; the old copy is in %s\n' "$global" "$bak"
+    done
+  done
+fi
+
 # 5. Validate
 problems=0
 
-# 4.8 Provide each tool a skill declares (skill_requirements), through the
+# 4.9 Provide each tool a skill declares (skill_requirements), through the
 # installer that already owns it, so a tool keeps one installation owner: a
 # Homebrew copy is upgraded with brew; a missing tool, or one mise provides, with
 # `mise use -g <tool>@latest`, linked into ~/.local/bin since env.sh puts mise's
@@ -1084,7 +1117,13 @@ if (( ! ONLY_MODE )) || is_selected ".agents"; then
         problems=$((problems + 1))
         continue
       fi
-      run mise use -g "$tool@latest" || true
+      # mise fails, writing no config, when it can't provide the tool: a platform
+      # its backend has no build for (ttyd's aqua package has none for macOS), or
+      # an unreachable registry. Homebrew provides it then, where the host has it.
+      if ! run mise use -g "$tool@latest" && [ -n "$brew_prefix" ]; then
+        via=brew
+        run brew install "$tool" || true
+      fi
     else
       printf 'WARNING: %s %s at %s is too old for skill %s (needs >= %s); upgrade it with the package manager that installed it\n' \
         "$tool" "${REQ_HAVE:-(no version)}" "$found" "$skill" "$min" >&2
