@@ -4,7 +4,7 @@
 
 Pick the register by who reads it: a human or an agent.
 
-- **A human reads it** — chat with me, anything on GitHub (issues, PR bodies, review and issue comments, milestones), repo docs, emails, slides, posts: read `~/.agents/writing-style.md` first and follow it. Plain technical English, reasons attached, bullets for lists. In chat, lead with the result and skip ceremony — that is a length rule, not a different voice. Issue, milestone and PR bodies use the templates in the `github-project-board-setup` skill.
+- **A human reads it** — chat with me, anything on GitHub (issues, PR bodies, review and issue comments, milestones), repo docs, emails, slides, posts: follow @~/.agents/writing-style.md — plain technical English, reasons attached, bullets for lists. In chat, lead with the result and skip ceremony — that is a length rule, not a different voice. Issue, milestone and PR bodies use the templates in the `github-project-board-setup` skill.
 - **An agent reads it** — prompts, briefs, handoff files, hub messages: task, scope, constraints, evidence. No orchestration backstory, no author or model identity — they waste context and bias the reviewer.
 
 ## Artifacts
@@ -13,6 +13,7 @@ Pick the register by who reads it: a human or an agent.
 - Every path, symbol, command or behaviour claim is checked against the tree or observed before it is written down. Unverifiable → written as an open question with what would settle it.
 - Record the reasoning for a decision once, in one place (vocabulary or contract text), not narrated across issues.
 - Draft outward-facing communication. Never send it.
+- Treat my messages as direction and source documents as facts; write reader-facing text in your own words.
 
 ## Working
 
