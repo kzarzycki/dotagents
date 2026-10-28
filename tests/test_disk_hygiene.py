@@ -50,7 +50,7 @@ def private_words(text):
 
 def test_private_words_finds_a_hashed_word(monkeypatch):
     monkeypatch.setattr(sys.modules[__name__], 'PRIVATE_HASHES', {hashlib.sha256(b'example').hexdigest()})
-    assert private_words('ssh to Example-host.local and example') == ['example']
+    assert private_words('ssh to Example-host.local') == ['example']
     assert private_words('nothing here') == []
 
 
