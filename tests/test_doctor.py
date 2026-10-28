@@ -239,3 +239,27 @@ def test_install_puts_dotagents_on_path(tmp_path):
         cwd=tmp_path, capture_output=True, text=True, timeout=30,
     )
     assert f"no pinned pack: run `mise run setup:dev` in {repo}" in result.stdout, result.stdout + result.stderr
+
+
+def test_a_codex_host_reports_only_real_stale_copies_and_install_clears_the_global_one(tmp_path):
+    """The shape of a macOS host's first doctor run: Codex marketplace clones in .tmp under
+    each Codex home (an upgrade staged beside them), a stale global skill install, and a
+    project on an old pin."""
+    repo, home = make_checkout(tmp_path)
+    skill(repo / ".agents/skills", "demo", scripts=["demo.sh"])
+    skill(repo / ".agents/skills", "orchestrating-agents", scripts=["omnigent_agent.py"])
+    codex_homes = [home / ".codex"] + [home / f".omnigent/codex-native/{h * 32}/codex-home" for h in "ab"]
+    for codex_home in codex_homes:
+        for clone in ("marketplaces/agent-skills", "marketplaces/.staging/marketplace-upgrade-Xy12"):
+            for d in (".agents/skills", ".claude/skills"):
+                skill(codex_home / ".tmp" / clone / d, "demo", scripts=["demo.sh", "post_demo.sh"])
+    skill(home / ".agents/skills", "orchestrating-agents", scripts=["omnigent_agent.py", "herdr_watch.sh"])
+    skill(home / "dev/old/.agents/skills", "demo", scripts=["demo.sh", "post_demo.sh"])
+
+    expected = [
+        f"stale skill copy: {home}/.agents/skills/orchestrating-agents: herdr_watch.sh",
+        f"stale skill copy: {home}/dev/old/.agents/skills/demo: post_demo.sh",
+    ]
+    assert sorted(doctor(repo, home, tmp_path / "bin").stdout.splitlines()) == expected
+    run_install(repo, home, "--profile", "vps")
+    assert doctor(repo, home, tmp_path / "bin").stdout.splitlines() == expected[1:]
