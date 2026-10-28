@@ -167,7 +167,11 @@
     "type": "command",
     "command": "bash $HOME/.claude/statusline.sh"
   },
-  "enabledPlugins": {},
+  "enabledPlugins": {
+    "decision-model@claude-mods": true,
+    "eval-kernel@claude-mods": true,
+    "self-compact@claude-mods": true
+  },
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {
       "source": {
@@ -227,6 +231,12 @@
       "source": {
         "source": "github",
         "repo": "StarTrail-org/PixelRAG"
+      }
+    },
+    "claude-mods": {
+      "source": {
+        "source": "github",
+        "repo": "kzarzycki/claude-mods"
       }
     }
   },

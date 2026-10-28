@@ -35,7 +35,7 @@ dotagents/
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
 
-The installed user baseline enables no capability plugins globally. Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
+The installed user baseline enables three Claude Code mods globally (see claude-mods below) and no other capability plugins. Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
 
 OMP (oh-my-pi) is a first-class payload under `home/.omp/`: its config, rules,
 and extensions install with the normal command just like Claude and Codex
@@ -194,6 +194,18 @@ Run `uvx hindsight-api@0.10.1 --host 127.0.0.1 --port 9077` in the foreground un
 
 The VPS exposes that loopback API through Tailscale **Serve** (not public Funnel): `sudo tailscale serve --bg --https=9077 http://127.0.0.1:9077`. Serve encrypts traffic inside the tailnet. The owner chose tailnet access alone, without a Hindsight API key, to keep existing agent sessions working. The tailnet policy could not be inspected from the VPS, so **every device currently allowed to reach port 9077 can read, change, or delete the memory bank**; restrict the grant to the Mac when policy access is available. If application authentication is added later, stage its key in every running client *before* requiring it on the server; changing the server first rejects in-flight retains. Keep keys, OAuth state, database, and generated hooks machine-local, never in dotagents.
 
+### claude-mods
+
+`settings.shared.json` declares the `claude-mods` marketplace from GitHub (`kzarzycki/claude-mods`), so all eight mods are available on every machine, and enables three:
+
+- `eval-kernel` gives the model an `eval` tool: a JavaScript kernel whose state survives between cells. The kernel runs on `bun` (its `bun` option), which install doesn't provide, so a machine without it has the tool but its cells fail to start.
+- `self-compact` compacts at task boundaries.
+- `decision-model` judges, for `self-compact`, whether a turn finished a task. Without it, `self-compact` nudges with each prompt above its threshold instead.
+
+`decision-model` sends the text it judges to openrouter.ai or api.typesafe.ai when `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` is in Claude's environment, or its `apiKey` option is set; otherwise a Claude model answers under the session's own account. The `work` overlay pins its `backend` option to `claude`, so a work machine never calls those endpoints. `eval-kernel` and `self-compact` call nothing off the machine themselves; an `eval` cell is model-written code with Bun's `fetch` and `process`, the same reach as the Bash tool.
+
+To develop a mod, point this machine's own `claude-mods` entry in `~/.claude/settings.json` at the checkout (`"source": {"source": "directory", "path": "<checkout>"}`). Install keeps it and prints a note (Local overrides).
+
 ### pixelrag bootstrap (per machine)
 
 `settings.shared.json` declares the optional `pixelrag-plugins` marketplace but leaves `pixelbrowse@pixelrag-plugins` disabled globally. A project that enables it also needs the `pixelshot` binary installed once per machine:
@@ -278,11 +290,12 @@ bash "$(ls -d "$HOME"/*/dotagents/bin/remote-setup.sh /home/*/dotagents/bin/remo
 Machine-class config belongs in the committed profile overlay (`home/.claude/settings.<profile>.json`); `~/.claude/settings.json` is generated from the repo, not a free local file. Truly per-machine state, never committed:
 
 - `~/.dotagents-profile` — single line naming this machine's profile
-- Runtime prefs Claude writes into `~/.claude/settings.json` (`/model`, permission prompts, `/plugin`, `/config`) — kept by install under one rule: the repo owns each top-level key it sets, and every other key the host has is kept. Inside four repo keys, which Claude or the host also writes, the repo owns only its own entries:
+- Runtime prefs Claude writes into `~/.claude/settings.json` (`/model`, permission prompts, `/plugin`, `/config`) — kept by install under one rule: the repo owns each top-level key it sets, and every other key the host has is kept. Inside five repo keys, which Claude or the host also writes, the repo owns only its own entries:
   - `permissions`: the `allow`, `deny`, `ask` and `additionalDirectories` lists are unions of the repo's and the host's. Dropping a rule from the repo therefore doesn't revoke it on hosts that already have it; revoke it with a `deny` rule, which wins over `allow`.
   - `autoMode`: the `allow`, `soft_deny` and `environment` lists are unions the same way, so a host's own auto-mode rules (a work-only one, say) stay beside the repo's.
   - `enabledPlugins`: a host entry stays while it is `true`; disabled entries the repo doesn't set are dropped.
-  - `extraKnownMarketplaces`: host marketplaces stay.
+  - `extraKnownMarketplaces`: host marketplaces stay. On a name the repo also sets, the repo's entry wins, except a host entry with a `directory` source: that one wins, and install prints `NOTE: marketplace <name> keeps this host's directory source`, so a machine can develop a mod from its checkout. Delete the host entry and run install to go back to the repo's source.
+  - `pluginConfigs`: plugin options merge per option; the repo's value wins on an option it sets.
 - Antigravity's `~/.gemini/antigravity-cli/settings.json`: agy writes runtime state into it (`trustedWorkspaces`), so it is never linked. Install sets the keys of `home/.gemini/antigravity-cli/settings.shared.json` in it and keeps the rest, once agy has written the file. That sets the default model, whose name carries the effort (`Gemini 3.8 Flash (Low)`, low because agy's default effort spends its quota fast); `agy models` lists the names. Omnigent seeds each Antigravity session's private copy from this file when it creates the session, so sessions made before an install keep the old model.
 
   A repo-owned key is reset to the repo's value (a host `outputStyle` or `env` change included), and a top-level key the repo stops setting stays on hosts that have it, so set its default in the repo to change it everywhere. An unparsable `settings.json` is left unchanged with a warning. `~/.codex/config.toml` is the host's except the `[otel]` block install owns at its end.
