@@ -442,15 +442,17 @@ def stale_check(home, dev, git, run, told, hygiene):
     code, out = run('--floor-gb', '0')
     assert code == 0 and 'STALE' not in out and len(told) == before, out
     copy.write_bytes(script.read_bytes() + b'# released\n')
-    git(checkout, 'commit', '-q', '-am', 'release')
+    (checkout / 'added').write_text('x')  # a release also adds a file
+    git(checkout, 'add', '.')
+    git(checkout, 'commit', '-q', '-m', 'release')
     git(checkout, 'push', '-q', 'origin', 'main')
     git(checkout, 'reset', '-q', '--hard', 'HEAD~1')  # the run reads origin/main, not the checkout
     relaunched = []
     real_execv, os.execv = os.execv, lambda *argv: relaunched.append(argv)  # the real one replaces this process
-    (checkout / 'scratch').write_text('x')  # a dirty checkout is a person's to handle: nothing moves
+    copy.write_bytes(copy.read_bytes() + b'# mine\n')  # a modified tracked file is a person's to handle: nothing moves
     code, out = run('--floor-gb', '0')
     assert code == 0 and 'STALE: This disk-hygiene' in out and len(told) == before + 1 and not relaunched, out
-    (checkout / 'scratch').unlink()
+    git(checkout, 'checkout', '-q', '--', hygiene.SELF)
     code, out = run('--dry-run', '--floor-gb', '0')  # a dry run moves nothing
     assert 'STALE' in out and not relaunched, out
     git(checkout, 'checkout', '-q', '-b', 'topic')  # another branch: nothing moves
@@ -461,17 +463,33 @@ def stale_check(home, dev, git, run, told, hygiene):
     code, out = run('--floor-gb', '0')
     assert 'STALE' in out and not relaunched, out
     git(checkout, 'reset', '-q', '--hard', 'HEAD~1')
-    code, out = run('--floor-gb', '0')  # clean, on main, behind: fast-forward and run the new copy
+    (checkout / 'added').write_text('mine')  # untracked, but main adds it: ff-only refuses and changes nothing
+    code, out = run('--floor-gb', '0')
+    assert 'STALE' in out and not relaunched and (checkout / 'added').read_text() == 'mine', out
+    assert git(checkout, 'rev-parse', 'HEAD') != git(checkout, 'rev-parse', 'origin/main')
+    (checkout / 'added').unlink()
+    (checkout / 'untracked-only').write_text('x')  # untracked and not in main: no block
+    hygiene.DOTAGENTS = installer = home / 'self-install'
+    installer.write_text(f'#!/bin/sh\necho "$@" >> {home}/install.calls\n')
+    installer.chmod(0o755)
+    code, out = run('--floor-gb', '0')  # clean, on main, behind: fast-forward, install, run the new copy
     assert code == 0 and 'STALE' not in out and len(relaunched) == 1 and len(told) == before + 1, out
+    assert (home / 'install.calls').read_text().startswith('install --no-pull\n'), 'a fast-forward installs what it moved'
+    assert (checkout / 'untracked-only').exists() and (checkout / 'added').exists()
     assert relaunched[0][0] == sys.executable and relaunched[0][1][0] == sys.executable, relaunched
     assert os.environ.pop('DISK_HYGIENE_RELAUNCHED') == '1', 'the relaunched copy must not fast-forward again'
     assert copy.read_bytes().endswith(b'# released\n') and git(checkout, 'rev-parse', 'HEAD') == git(checkout, 'rev-parse', 'origin/main')
+    git(checkout, 'reset', '-q', '--hard', 'HEAD~1')
+    installer.write_text('#!/bin/sh\necho boom >&2\nexit 3\n')  # a failed install is reported; the run still starts over
+    code, out = run('--floor-gb', '0')
+    os.environ.pop('DISK_HYGIENE_RELAUNCHED')
+    assert 'FAIL dotagents install after a fast-forward: exit 3: boom' in out and len(relaunched) == 2, out
     git(checkout, 'reset', '-q', '--hard', 'HEAD~1')
     os.environ['DISK_HYGIENE_RELAUNCHED'] = '1'  # a relaunched run that still differs must not loop
     code, out = run('--floor-gb', '0')
     del os.environ['DISK_HYGIENE_RELAUNCHED']
     os.execv = real_execv
-    assert 'STALE' in out and len(relaunched) == 1 and len(told) == before + 1, 'told once per pair of versions'
+    assert 'STALE' in out and len(relaunched) == 2 and len(told) == before + 1, 'told once per pair of versions'
     assert "is not origin/main's" in told[-1] and 'Which may go?' not in told[-1], told[-1]
     copy.write_bytes(script.read_bytes() + b'# released again\n')
     git(checkout, 'commit', '-q', '-am', 'release again')

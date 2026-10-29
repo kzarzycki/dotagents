@@ -560,13 +560,27 @@ def relaunch():
     os.execv(sys.executable, [sys.executable, *sys.argv])
 
 
-def fast_forward():
-    """Move a clean checkout on main to origin/main; false when a person must handle it (dirty, other branch, diverged)."""
-    return (git(REPO, 'status', '--porcelain') == '' and git(REPO, 'branch', '--show-current') == 'main\n'
-            and git(REPO, 'merge', '--ff-only', '--quiet', 'origin/main') is not None)
+def fast_forward(run):
+    """Move a clean checkout on main to origin/main, then install it; false when a person must handle it (dirty, other
+    branch, diverged). Untracked files don't block: `merge --ff-only` itself refuses one that main would overwrite."""
+    if not (git(REPO, 'status', '--porcelain', '--untracked-files=no') == '' and git(REPO, 'branch', '--show-current') == 'main\n'
+            and git(REPO, 'merge', '--ff-only', '--quiet', 'origin/main') is not None):
+        return False
+    if DOTAGENTS.is_file():  # a release may change the links or generated settings install makes
+        try:
+            done = subprocess.run([str(DOTAGENTS), 'install', '--no-pull'], text=True, capture_output=True, timeout=900)
+        except (OSError, subprocess.TimeoutExpired) as error:
+            done = None
+            problem = str(error)
+        if done and done.returncode:
+            problem = f'exit {done.returncode}: {(done.stdout + done.stderr).strip()[-300:]}'
+        if not done or done.returncode:
+            run.failed = True
+            run.say(f'FAIL dotagents install after a fast-forward: {problem}')
+    return True
 
 
-def stale(dry_run=False):
+def stale(run, dry_run=False):
     """A line saying this script is not the checkout's origin/main one (a missed release), else None.
     A checkout that can fast-forward does, and this run starts over as the new copy."""
     if not (REPO / '.git').exists() or git(REPO, 'fetch', '--quiet', 'origin', 'main', timeout=180) is None:
@@ -574,7 +588,7 @@ def stale(dry_run=False):
     main, mine = git(REPO, 'show', f'origin/main:{SELF}'), Path(__file__).read_bytes()
     if main is None or main.encode() == mine:
         return None
-    if not dry_run and not os.environ.get('DISK_HYGIENE_RELAUNCHED') and fast_forward():
+    if not dry_run and not os.environ.get('DISK_HYGIENE_RELAUNCHED') and fast_forward(run):
         relaunch()
         return None
     digest = lambda data: hashlib.sha256(data).hexdigest()[:12]
@@ -603,7 +617,7 @@ def main():
     start = free()
     run.say(f'disk-hygiene {who}{" (dry run)" if args.dry_run else ""}: {start / GB:.1f} GB free')
     asks = []  # what may be wanted: the owner decides
-    if old := stale(args.dry_run):  # first: a fast-forward starts this run over as the new copy
+    if old := stale(run, args.dry_run):  # first: a fast-forward starts this run over as the new copy
         run.say(f'STALE: {old}')
     procs = processes()
     if procs is None:
