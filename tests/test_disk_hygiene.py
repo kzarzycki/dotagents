@@ -445,11 +445,31 @@ def stale_check(home, dev, git, run, told, hygiene):
     git(checkout, 'commit', '-q', '-am', 'release')
     git(checkout, 'push', '-q', 'origin', 'main')
     git(checkout, 'reset', '-q', '--hard', 'HEAD~1')  # the run reads origin/main, not the checkout
+    relaunched = []
+    hygiene.relaunch = lambda: relaunched.append(1)  # the real one replaces this process
+    (checkout / 'scratch').write_text('x')  # a dirty checkout is a person's to handle: nothing moves
     code, out = run('--floor-gb', '0')
-    assert code == 0 and 'STALE: This disk-hygiene' in out and len(told) == before + 1, out
+    assert code == 0 and 'STALE: This disk-hygiene' in out and len(told) == before + 1 and not relaunched, out
+    (checkout / 'scratch').unlink()
+    code, out = run('--dry-run', '--floor-gb', '0')  # a dry run moves nothing
+    assert 'STALE' in out and not relaunched, out
+    git(checkout, 'checkout', '-q', '-b', 'topic')  # another branch: nothing moves
+    code, out = run('--floor-gb', '0')
+    assert 'STALE' in out and not relaunched, out
+    git(checkout, 'checkout', '-q', 'main')
+    git(checkout, 'commit', '-q', '--allow-empty', '-m', 'local')  # diverged: no fast-forward exists
+    code, out = run('--floor-gb', '0')
+    assert 'STALE' in out and not relaunched, out
+    git(checkout, 'reset', '-q', '--hard', 'HEAD~1')
+    code, out = run('--floor-gb', '0')  # clean, on main, behind: fast-forward and run the new copy
+    assert code == 0 and 'STALE' not in out and relaunched == [1] and len(told) == before + 1, out
+    assert copy.read_bytes().endswith(b'# released\n') and git(checkout, 'rev-parse', 'HEAD') == git(checkout, 'rev-parse', 'origin/main')
+    git(checkout, 'reset', '-q', '--hard', 'HEAD~1')
+    os.environ['DISK_HYGIENE_RELAUNCHED'] = '1'  # a relaunched run that still differs must not loop
+    code, out = run('--floor-gb', '0')
+    del os.environ['DISK_HYGIENE_RELAUNCHED']
+    assert 'STALE' in out and relaunched == [1] and len(told) == before + 1, 'told once per pair of versions'
     assert "is not origin/main's" in told[-1] and 'Which may go?' not in told[-1], told[-1]
-    code, out = run('--floor-gb', '0')
-    assert 'STALE' in out and len(told) == before + 1, 'told once per pair of versions'
     copy.write_bytes(script.read_bytes() + b'# released again\n')
     git(checkout, 'commit', '-q', '-am', 'release again')
     git(checkout, 'push', '-q', '-f', 'origin', 'main')  # the cached origin/main moves; the remote then goes away
