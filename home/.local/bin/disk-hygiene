@@ -561,10 +561,12 @@ def relaunch():
 
 
 def fast_forward(run):
-    """Move a clean checkout on main to origin/main, then install it; false when a person must handle it (dirty, other
-    branch, diverged). Untracked files don't block: `merge --ff-only` itself refuses one that main would overwrite."""
+    """Move a clean checkout on main to origin/main, then install it; false when nothing moved (up to date, or a person
+    must handle it: tracked changes, other branch, diverged). Untracked files don't block: `merge --ff-only` itself
+    refuses one that main would overwrite."""
+    before = git(REPO, 'rev-parse', 'HEAD')
     if not (git(REPO, 'status', '--porcelain', '--untracked-files=no') == '' and git(REPO, 'branch', '--show-current') == 'main\n'
-            and git(REPO, 'merge', '--ff-only', '--quiet', 'origin/main') is not None):
+            and git(REPO, 'merge', '--ff-only', '--quiet', 'origin/main') is not None) or git(REPO, 'rev-parse', 'HEAD') == before:
         return False
     if DOTAGENTS.is_file():  # a release may change the links or generated settings install makes
         try:
@@ -583,14 +585,16 @@ def fast_forward(run):
 
 def stale(run, dry_run=False):
     """A line saying this script is not the checkout's origin/main one (a missed release), else None.
-    A checkout that can fast-forward does, and this run starts over as the new copy."""
+    A checkout that can fast-forward does on any release, and this run starts over as the new copy when the script changed."""
     if not (REPO / '.git').exists() or git(REPO, 'fetch', '--quiet', 'origin', 'main', timeout=180) is None:
         return None  # a cached origin/main may be older than this copy: no claim
     main, mine = git(REPO, 'show', f'origin/main:{SELF}'), Path(__file__).read_bytes()
-    if main is None or main.encode() == mine:
-        return None
-    if not dry_run and not os.environ.get('DISK_HYGIENE_RELAUNCHED') and fast_forward(run):
+    differs = main is not None and main.encode() != mine
+    moved = not dry_run and not os.environ.get('DISK_HYGIENE_RELAUNCHED') and fast_forward(run)
+    if differs and moved:
         relaunch()
+        return None
+    if not differs:
         return None
     digest = lambda data: hashlib.sha256(data).hexdigest()[:12]
     return (f'This disk-hygiene ({Path(__file__)}, sha256 {digest(mine)}) is not origin/main\'s ({SELF} in {REPO}, '

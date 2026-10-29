@@ -493,6 +493,23 @@ def stale_check(home, dev, git, run, told, hygiene):
     os.execv = real_execv
     assert 'STALE' in out and len(relaunched) == 2 and len(told) == before + 1, 'told once per pair of versions'
     assert "is not origin/main's" in told[-1] and 'Which may go?' not in told[-1], told[-1]
+    git(checkout, 'reset', '-q', '--hard', 'origin/main')  # a release that leaves the script alone still fast-forwards and installs
+    copy.write_bytes(script.read_bytes())  # the script is the running one again: only 'docs' is new
+    (checkout / 'docs').write_text('x')
+    git(checkout, 'add', '.')
+    git(checkout, 'commit', '-q', '-m', 'docs release')
+    git(checkout, 'push', '-q', 'origin', 'main')
+    git(checkout, 'reset', '-q', '--hard', 'HEAD~1')
+    installer.write_text(f'#!/bin/sh\necho "$@" >> {home}/install.calls\n')
+    installs = lambda: [l for l in (home / 'install.calls').read_text().splitlines() if l.startswith('install')]
+    before_installs, before_relaunches = len(installs()), len(relaunched)
+    os.execv = lambda *argv: relaunched.append(argv)
+    code, out = run('--floor-gb', '0')
+    assert 'STALE' not in out and len(installs()) == before_installs + 1 and len(relaunched) == before_relaunches, out
+    assert git(checkout, 'rev-parse', 'HEAD') == git(checkout, 'rev-parse', 'origin/main') and (checkout / 'docs').exists()
+    code, out = run('--floor-gb', '0')  # up to date: nothing to install
+    assert len(installs()) == before_installs + 1 and len(relaunched) == before_relaunches, out
+    os.execv = real_execv
     copy.write_bytes(script.read_bytes() + b'# released again\n')
     git(checkout, 'commit', '-q', '-am', 'release again')
     git(checkout, 'push', '-q', '-f', 'origin', 'main')  # the cached origin/main moves; the remote then goes away
