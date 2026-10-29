@@ -482,8 +482,10 @@ def stale_check(home, dev, git, run, told, hygiene):
     git(checkout, 'reset', '-q', '--hard', 'HEAD~1')
     installer.write_text('#!/bin/sh\necho boom >&2\nexit 3\n')  # a failed install is reported; the run still starts over
     code, out = run('--floor-gb', '0')
-    os.environ.pop('DISK_HYGIENE_RELAUNCHED')
     assert 'FAIL dotagents install after a fast-forward: exit 3: boom' in out and len(relaunched) == 2, out
+    code, out = run('--floor-gb', '0')  # the relaunched copy: a new Run that must still end in failure
+    assert code == 1 and 'FAIL dotagents install after a fast-forward: exit 3: boom' in out, out
+    os.environ.pop('DISK_HYGIENE_RELAUNCHED')
     git(checkout, 'reset', '-q', '--hard', 'HEAD~1')
     os.environ['DISK_HYGIENE_RELAUNCHED'] = '1'  # a relaunched run that still differs must not loop
     code, out = run('--floor-gb', '0')

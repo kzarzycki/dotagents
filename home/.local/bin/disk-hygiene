@@ -577,6 +577,7 @@ def fast_forward(run):
         if not done or done.returncode:
             run.failed = True
             run.say(f'FAIL dotagents install after a fast-forward: {problem}')
+            os.environ['DISK_HYGIENE_FAILED'] = problem  # the relaunched copy starts a new Run: it reports this and exits 1
     return True
 
 
@@ -616,6 +617,9 @@ def main():
         pass
     start = free()
     run.say(f'disk-hygiene {who}{" (dry run)" if args.dry_run else ""}: {start / GB:.1f} GB free')
+    if carried := os.environ.pop('DISK_HYGIENE_FAILED', None):
+        run.failed = True
+        run.say(f'FAIL dotagents install after a fast-forward: {carried}')
     asks = []  # what may be wanted: the owner decides
     if old := stale(run, args.dry_run):  # first: a fast-forward starts this run over as the new copy
         run.say(f'STALE: {old}')
