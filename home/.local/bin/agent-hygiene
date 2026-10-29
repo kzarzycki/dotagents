@@ -1,1 +1,22 @@
-../../../.agents/skills/agent-hygiene/scripts/agent-hygiene
+#!/usr/bin/env python3
+"""Run the agent-hygiene script of the engineering pack this checkout pins.
+
+When the pack's script is missing (a failed or skipped pack install), run `dotagents install --no-pull` first, so the
+command repairs itself on its next run instead of dangling. disk-hygiene, the old name, links here for one release.
+Python, not sh: the old disk-hygiene relaunches itself through this path with the Python interpreter.
+"""
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+REPO = Path(__file__).resolve().parents[3]  # the dotagents checkout this file is linked from
+SCRIPT = REPO / '.agents/skills/agent-hygiene/scripts/agent-hygiene'
+
+if not SCRIPT.is_file():
+    subprocess.run([str(REPO / 'bin/dotagents'), 'install', '--no-pull'], stdout=sys.stderr)
+if not SCRIPT.is_file():
+    carried = os.environ.get('DISK_HYGIENE_FAILED')  # what the old disk-hygiene's failed install said
+    sys.exit(f'FAIL agent-hygiene: {SCRIPT} is missing and `dotagents install --no-pull` did not install it'
+             + (f' (the install before: {carried})' if carried else '') + '; the next run tries again')
+os.execv(sys.executable, [sys.executable, str(SCRIPT), *sys.argv[1:]])
