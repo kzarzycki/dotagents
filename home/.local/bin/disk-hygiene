@@ -13,6 +13,10 @@ Installed by `dotagents install`; run by an Omnigent scheduled task on each dev 
                 apm.lock.yaml says `apm install` deployed
   environments  .venv / node_modules beside their manifest, in a checkout under ~/dev that
                 no process uses and nothing changed in for --idle-days
+  terminals     Omnigent session terminals whose session is gone (kzarzycki/omnigent#230): this user's ppid-1
+                `omnigent/terminals/program_status.py` wrappers whose --bridge-dir no longer exists get SIGTERM, then SIGKILL
+                (the wrapper ignores SIGTERM) on their process group; launchd reaps the zombies. Logs ptys and zombies before
+                and after, and warns above 80% of the pty limit
   caches        each tool's own command (uv, pnpm, npm, go, pre-commit, brew, and docker's
                 build cache unused for 24 h)
 
@@ -32,6 +36,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -100,6 +105,15 @@ def processes():
     return {line[1:] for line in files.splitlines() if line.startswith('n/')}, commands.splitlines()
 
 
+# An Omnigent terminal wrapper: python, its flags, then the script as the first argument (a tmux server only names it later).
+WRAPPER = re.compile(r'^\S*python[\d.]*\s+(-\S+\s+)*\S*omnigent/terminals/program_status\.py\s')
+# A plain, unescaped bridge dir ending .../claude-native/<id>; any other spelling (a space, a quote, a JSON escape) cannot be
+# read unambiguously from a flattened command line, so it does not parse and the wrapper is kept.
+BRIDGE_DIR = re.compile(r'--bridge-dir[\s"\',=]+((?:/[\w.-]+)+/(?:claude|codex)-native/[0-9a-f]+)(?=["\',\s\]}]|$)')
+GRACE = 3  # seconds between SIGTERM and SIGKILL
+ZOMBIES_HIGH = 20
+
+
 def in_use(path, procs):
     """Why path is in use (a process has it open or as cwd, or names it), else None."""
     opened, commands = procs
@@ -109,6 +123,71 @@ def in_use(path, procs):
     if any(str(path) in c for c in commands):
         return 'a process names it'
     return None
+
+
+def pty_state():
+    """(ptys in use, the machine's pty limit or None)."""
+    if Path('/dev/pts').is_dir():
+        used = sum(p.name.isdigit() for p in Path('/dev/pts').iterdir())
+        limit = sh(['cat', '/proc/sys/kernel/pty/max'])
+    else:
+        used = len(list(Path('/dev').glob('ttys*')))
+        limit = sh(['sysctl', '-n', 'kern.tty.ptmx_max'])
+    return used, int(limit) if limit and limit.strip().isdigit() else None
+
+
+def listing():
+    """[(pid, ppid, uid, pgid, is zombie, command)] of every process; None when ps fails."""
+    out = sh(['ps', '-axww', '-o', 'pid=,ppid=,uid=,pgid=,stat=,command='])
+    rows = [r for r in (line.split(None, 5) for line in (out or '').splitlines()) if len(r) > 5 and all(f.isdigit() for f in r[:4])]
+    return None if out is None else [(*map(int, r[:4]), r[4].startswith('Z'), r[5]) for r in rows]
+
+
+def dead_terminals(run):
+    """Kill this user's orphaned Omnigent terminal wrappers whose bridge dir is gone: they hold a pty for good and
+    their pool (macOS: 511 machine-wide) runs out. Selection is exact; anything else is left alone."""
+    rows = listing()
+    if rows is None:
+        run.failed = True
+        run.say('FAIL terminals: ps failed')
+        return
+    def gone(path):
+        try:
+            os.stat(path)
+            return False
+        except FileNotFoundError:
+            return True
+        except OSError:  # unreadable is not gone
+            return False
+    dead = [r for r in rows if r[1] == 1 and r[2] == os.getuid() and WRAPPER.match(r[5])
+            and (dirs := BRIDGE_DIR.findall(r[5])) and len(dirs) == r[5].count('--bridge-dir') and all(map(gone, dirs))]
+    ptys, limit = pty_state()
+    zombies = sum(r[4] for r in rows)
+    run.say(f'terminals: {len(dead)} dead of {sum(bool(WRAPPER.match(r[5])) for r in rows)}; ptys {ptys}/{limit or "?"}, {zombies} zombies')
+    for pid, _, _, pgid, _, command in dead:
+        run.say(f'{"would kill" if run.dry else "kill"} dead terminal {pid}: {BRIDGE_DIR.findall(command)[0]}')
+    if dead and not run.dry:
+        # the pane's wrapper leads its group (tmux makes it a session leader); a shared group is never signalled whole
+        send = lambda pid, pgid, sig: (os.killpg if pgid == pid else os.kill)(pgid if pgid == pid else pid, sig)
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            for pid, _, _, pgid, _, _ in dead:
+                try:
+                    send(pid, pgid, sig)
+                except ProcessLookupError:
+                    pass
+                except OSError as error:
+                    run.failed = True
+                    run.say(f'FAIL terminal {pid}: {error}')
+            if sig == signal.SIGTERM:
+                time.sleep(GRACE)  # ponytail: a pid reused within the grace is signalled; ps rescan per pid if it ever matters
+        time.sleep(1)  # launchd reaps the zombies
+        rows, (ptys, limit) = listing() or rows, pty_state()
+        zombies = sum(r[4] for r in rows)
+        run.say(f'terminals after: ptys {ptys}/{limit or "?"}, {zombies} zombies')
+    if zombies > ZOMBIES_HIGH:
+        run.say(f'WARN terminals: {zombies} zombies')
+    if limit and ptys > 0.8 * limit:
+        run.say(f'WARN terminals: {ptys} ptys of {limit}, another source is leaking them')
 
 
 def caches(run, commands):
@@ -631,10 +710,12 @@ def main():
     if procs is None:
         run.failed = True
         run.say('FAIL process scan: lsof or ps failed; worktrees, environments and caches left alone')
-    elif args.dev.is_dir():
-        found = checkouts(args.dev.resolve())
-        worktrees(run, found, args.dev.resolve(), procs, asks)
-        environments(run, found, args.idle_days, procs)
+    else:
+        dead_terminals(run)
+        if args.dev.is_dir():
+            found = checkouts(args.dev.resolve())
+            worktrees(run, found, args.dev.resolve(), procs, asks)
+            environments(run, found, args.idle_days, procs)
     drifted = drift(run)
     # Caches last: a pnpm node_modules is an APFS clone of the store, so removing one frees its
     # blocks only once `pnpm store prune` drops the store's copy.
