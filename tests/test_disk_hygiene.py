@@ -667,11 +667,14 @@ def test_dead_terminals(tmp_path, monkeypatch):
     bystander = spawn('sleep', '60')  # leads the group the 'shared' wrapper claims to be in
     orphans = {kids[k].pid for k in kids if k != 'parented'}
     real = hygiene.listing
-    extra = []  # rows a test adds to the real listing
+    groups = {p.pid for p in kids.values()} | {bystander.pid}  # each spawn leads its group, and its children share it
+    extra = []  # rows a test adds to the test's own processes
 
     def fake():
         rows = []
         for pid, ppid, uid, pgid, z, command in real():
+            if pgid not in groups:  # the host's own terminals and zombies are not this test's
+                continue
             if pid == kids['otheruser'].pid:
                 uid += 1
             if pid == kids['shared'].pid:
@@ -702,7 +705,7 @@ def test_dead_terminals(tmp_path, monkeypatch):
         extra += [(900000 + i, 1, 0, 0, True, '') for i in range(25)]
         hygiene.dead_terminals(hygiene.Run(True, tmp_path / 'warn.log'))
         warned = (tmp_path / 'warn.log').read_text()
-        assert 'WARN terminals: 81 ptys of 100' in warned and re.search(r'WARN terminals: (2[5-9]|[3-9]\d) zombies', warned)  # the host may have a zombie of its own
+        assert 'WARN terminals: 81 ptys of 100' in warned and 'WARN terminals: 25 zombies' in warned
 
         monkeypatch.setattr(hygiene, 'listing', lambda: None)  # ps fails: nothing is killed and the run fails
         failed = hygiene.Run(False, tmp_path / 'fail.log')
