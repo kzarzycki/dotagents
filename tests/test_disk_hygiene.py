@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -632,3 +633,56 @@ def test_tell(tmp_path, monkeypatch):
             server.shutdown()
             server.server_close()
 
+
+
+def test_dead_terminals(tmp_path, monkeypatch):
+    """Real child processes stand in for terminal wrappers; only their ppid is faked, since a test's children are not orphans."""
+    hygiene = load('disk_hygiene_terminals')
+    monkeypatch.setattr(hygiene, 'GRACE', 0.3)
+    script = tmp_path / 'omnigent/terminals/program_status.py'
+    script.parent.mkdir(parents=True)
+    script.write_text('import signal, subprocess, sys, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)  # as the real wrapper\n'
+                      'subprocess.Popen(["sleep", "60"])  # its claude\ntime.sleep(60)\n')
+    alive_dir = tmp_path / 'bridge'
+    alive_dir.mkdir()
+    gone = tmp_path / 'gone'
+    spawn = lambda *argv: subprocess.Popen(argv, start_new_session=True)
+    kids = {
+        'dead': spawn(sys.executable, script, '--app', 'x', '--bridge-dir', str(gone)),
+        'json': spawn(sys.executable, script, '--mcp-config', f'{{"args":["--bridge-dir","{gone}"]}}'),
+        'live': spawn(sys.executable, script, '--bridge-dir', str(alive_dir)),
+        'nodir': spawn(sys.executable, script),
+        'other': spawn('sh', '-c', 'sleep 60', 'x', '--bridge-dir', str(gone)),  # not a wrapper
+        'tmux': spawn(sys.executable, '-c', 'import time; time.sleep(60)', str(script), '--bridge-dir', str(gone)),  # only names it
+        'parented': spawn(sys.executable, script, '--bridge-dir', str(gone)),  # still has its parent
+    }
+    orphans = {kids[k].pid for k in kids if k != 'parented'}
+    real = hygiene.listing
+    monkeypatch.setattr(hygiene, 'listing', lambda: [(p, 1 if p in orphans else pp, *rest) for p, pp, *rest in real()])
+    monkeypatch.setattr(hygiene, 'pty_state', lambda: (50, 100))
+    try:
+        time.sleep(0.5)  # let the wrappers install their handler and start their child
+        dry = hygiene.Run(True, tmp_path / 'dry.log')
+        hygiene.dead_terminals(dry)
+        out = (tmp_path / 'dry.log').read_text()
+        assert all(p.poll() is None for p in kids.values())
+        assert f'would kill dead terminal {kids["dead"].pid}' in out and f'would kill dead terminal {kids["json"].pid}' in out
+        assert out.count('would kill') == 2 and 'terminals: 2 dead of ' in out and 'ptys 50/100' in out and 'WARN' not in out
+
+        run = hygiene.Run(False, tmp_path / 'run.log')
+        hygiene.dead_terminals(run)
+        for name in ('dead', 'json'):
+            assert kids[name].wait(5) == -signal.SIGKILL  # it ignores SIGTERM
+        assert {k for k, p in kids.items() if p.poll() is None} == {'live', 'nodir', 'other', 'tmux', 'parented'}
+        out = (tmp_path / 'run.log').read_text()
+        assert 'terminals after: ptys 50/100' in out and not run.failed
+        assert not [r for r in real() if r[5].startswith('sleep 60') and r[3] in (kids['dead'].pid, kids['json'].pid)]  # the group went
+
+        monkeypatch.setattr(hygiene, 'pty_state', lambda: (81, 100))
+        hygiene.dead_terminals(hygiene.Run(True, tmp_path / 'warn.log'))
+        assert 'WARN terminals: 81 ptys of 100' in (tmp_path / 'warn.log').read_text()
+    finally:
+        for p in kids.values():
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(p.pid, signal.SIGKILL)
+            p.wait()
