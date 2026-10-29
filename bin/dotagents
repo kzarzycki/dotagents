@@ -597,13 +597,15 @@ fi
 # apm.lock.yaml pins whenever the lock differs from the one last installed here:
 # ~/.local/bin links into its scripts, and 4.8 and doctor read it, so a pull that
 # moves the pin must reach it. `apm install --frozen` installs exactly the lock
-# and changes no tracked file. A failure is a warning; the next install retries.
-PACK_STAMP="$HOME/.local/state/dotagents/pinned-pack.lock"
+# and changes no tracked file. The record of the last install is per checkout,
+# since each checkout has its own pack, and is dropped before an attempt, so a
+# failure leaves none: it is a warning, and the next install retries.
+PACK_STAMP="$HOME/.local/state/dotagents/pinned-pack/$(printf '%s' "$REPO_ROOT" | tr / _).lock"
 if { (( ! ONLY_MODE )) || is_selected ".agents"; } && [ -f "$REPO_ROOT/apm.lock.yaml" ] \
   && { [ ! -d "$PINNED_SKILLS" ] || ! cmp -s "$REPO_ROOT/apm.lock.yaml" "$PACK_STAMP"; }; then
   if (( DRY_RUN )); then
     printf 'DRY: cd %s && mise exec -- apm install --frozen\n' "$REPO_ROOT"
-  elif (cd "$REPO_ROOT" && mise exec -- apm install --frozen >/dev/null); then
+  elif rm -f "$PACK_STAMP" && (cd "$REPO_ROOT" && mise exec -- apm install --frozen >/dev/null); then
     mkdir -p "${PACK_STAMP%/*}"
     cp "$REPO_ROOT/apm.lock.yaml" "$PACK_STAMP"
     printf 'INSTALLED: the pinned pack in %s at its apm.lock.yaml\n' "$PINNED_SKILLS"
