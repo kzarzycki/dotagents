@@ -446,7 +446,7 @@ def stale_check(home, dev, git, run, told, hygiene):
     git(checkout, 'push', '-q', 'origin', 'main')
     git(checkout, 'reset', '-q', '--hard', 'HEAD~1')  # the run reads origin/main, not the checkout
     relaunched = []
-    hygiene.relaunch = lambda: relaunched.append(1)  # the real one replaces this process
+    real_execv, os.execv = os.execv, lambda *argv: relaunched.append(argv)  # the real one replaces this process
     (checkout / 'scratch').write_text('x')  # a dirty checkout is a person's to handle: nothing moves
     code, out = run('--floor-gb', '0')
     assert code == 0 and 'STALE: This disk-hygiene' in out and len(told) == before + 1 and not relaunched, out
@@ -462,13 +462,16 @@ def stale_check(home, dev, git, run, told, hygiene):
     assert 'STALE' in out and not relaunched, out
     git(checkout, 'reset', '-q', '--hard', 'HEAD~1')
     code, out = run('--floor-gb', '0')  # clean, on main, behind: fast-forward and run the new copy
-    assert code == 0 and 'STALE' not in out and relaunched == [1] and len(told) == before + 1, out
+    assert code == 0 and 'STALE' not in out and len(relaunched) == 1 and len(told) == before + 1, out
+    assert relaunched[0][0] == sys.executable and relaunched[0][1][0] == sys.executable, relaunched
+    assert os.environ.pop('DISK_HYGIENE_RELAUNCHED') == '1', 'the relaunched copy must not fast-forward again'
     assert copy.read_bytes().endswith(b'# released\n') and git(checkout, 'rev-parse', 'HEAD') == git(checkout, 'rev-parse', 'origin/main')
     git(checkout, 'reset', '-q', '--hard', 'HEAD~1')
     os.environ['DISK_HYGIENE_RELAUNCHED'] = '1'  # a relaunched run that still differs must not loop
     code, out = run('--floor-gb', '0')
     del os.environ['DISK_HYGIENE_RELAUNCHED']
-    assert 'STALE' in out and relaunched == [1] and len(told) == before + 1, 'told once per pair of versions'
+    os.execv = real_execv
+    assert 'STALE' in out and len(relaunched) == 1 and len(told) == before + 1, 'told once per pair of versions'
     assert "is not origin/main's" in told[-1] and 'Which may go?' not in told[-1], told[-1]
     copy.write_bytes(script.read_bytes() + b'# released again\n')
     git(checkout, 'commit', '-q', '-am', 'release again')
