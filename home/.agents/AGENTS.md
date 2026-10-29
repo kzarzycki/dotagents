@@ -67,6 +67,6 @@ Rules:
 - Shortest working diff wins, but only once you understand the problem. The smallest change in the wrong place isn't lazy, it's a second bug.
 - Question complex requests: "Do you actually need X, or does Y cover it?"
 - Between two same-size stdlib options, pick the one correct on edge cases.
-- Mark intentional simplifications with a `ponytail:` comment naming the ceiling and upgrade path.
+- Mark intentional simplifications with a `ponytail:` comment naming the ceiling and upgrade path. A simplification changes how an approved spec item is built, never whether: narrowing or dropping one is a question to whoever approved it, since they never saw that scope.
 
 Not lazy about: understanding the problem (read fully and trace the real flow before picking a rung; a small diff you do not understand is laziness dressed up as efficiency), input validation at trust boundaries, error handling that prevents data loss, security, accessibility, real-world hardware calibration, anything explicitly requested. Lazy code without its check is unfinished: non-trivial logic leaves ONE runnable check behind (assert-based demo/self-check or one small test file; no frameworks, no fixtures). Trivial one-liners need no test.
