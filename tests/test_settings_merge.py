@@ -44,6 +44,20 @@ def test_install_keeps_host_settings_the_repo_does_not_set(tmp_path):
     assert settings.read_bytes() == before
 
 
+def test_the_compact_window_is_a_setting_so_a_launch_flag_can_lower_it(tmp_path):
+    # Claude Code ranks CLAUDE_CODE_AUTO_COMPACT_WINDOW above --autocompact, and
+    # --autocompact above autoCompactWindow, so the default lives in the setting.
+    repo, home = make_checkout(tmp_path)
+    settings = home / ".claude/settings.json"
+    settings.parent.mkdir()
+    settings.write_text(json.dumps({"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "330000"}}) + "\n")
+    for profile in ("mac", "vps", "remote", "mac,work"):
+        result = run_install(repo, home, "--profile", profile)
+        assert result.returncode == 0, result.stdout + result.stderr
+        got = json.loads(settings.read_text())
+        assert got["autoCompactWindow"] == 330000 and "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in got["env"], profile
+
+
 def test_unparsable_host_settings_are_left_alone(tmp_path):
     repo, home = make_checkout(tmp_path)
     settings = home / ".claude/settings.json"
