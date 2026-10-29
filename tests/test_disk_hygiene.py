@@ -660,6 +660,7 @@ def test_dead_terminals(tmp_path, monkeypatch):
         'escaped': spawn(sys.executable, script, '--mcp-config', '{"args":["--bridge-dir","/tmp/Jos\\u00e9/claude-native/dead02"]}'),
         'otheruser': spawn(sys.executable, script, '--bridge-dir', str(gone)),  # another account's wrapper
         'second': spawn(sys.executable, script, '--bridge-dir', str(gone), '--bridge-dir', str(alive_dir)),  # one of two dirs exists
+        'mixed': spawn(sys.executable, script, '--bridge-dir', str(gone), '--bridge-dir', str(odd)),  # an unreadable second dir may exist
         'shared': spawn(sys.executable, script, '--bridge-dir', str(gone)),  # a dead wrapper in a group it does not lead
         'parented': spawn(sys.executable, script, '--bridge-dir', str(gone)),  # still has its parent
     }
@@ -692,7 +693,7 @@ def test_dead_terminals(tmp_path, monkeypatch):
         hygiene.dead_terminals(run)
         for name in ('dead', 'json', 'shared'):
             assert kids[name].wait(5) == -signal.SIGKILL  # it ignores SIGTERM
-        assert {k for k, p in kids.items() if p.poll() is None} == {'live', 'nodir', 'other', 'tmux', 'parented', 'space', 'escaped', 'otheruser', 'second'} and bystander.poll() is None
+        assert {k for k, p in kids.items() if p.poll() is None} == {'live', 'nodir', 'other', 'tmux', 'parented', 'space', 'escaped', 'otheruser', 'second', 'mixed'} and bystander.poll() is None
         out = (tmp_path / 'run.log').read_text()
         assert 'terminals after: ptys 50/100' in out and not run.failed
         assert not [r for r in real() if r[5].startswith('sleep 60') and r[3] in (kids['dead'].pid, kids['json'].pid)]  # the group went
