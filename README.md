@@ -114,7 +114,7 @@ The scheduled hygiene job (Agent hygiene) runs it and passes any finding on.
 
 ### Agent hygiene
 
-Host hygiene (merged worktrees, tool caches, idle environments, dead Omnigent terminals) is the `agent-hygiene` skill of the engineering pack this checkout pins; its `SKILL.md` describes what it clears, keeps and asks about, and how a scheduled round runs it. `dotagents install` installs the pinned pack and links `~/.local/bin/agent-hygiene` to the skill's script, through `home/.local/bin/agent-hygiene`. The script's self-update fast-forwards this checkout and runs install, so a release that moves the pin reaches every host. `~/.local/bin/disk-hygiene`, the old name, points to the same script until the scheduled tasks no longer use it.
+Host hygiene (merged worktrees, tool caches, idle environments, dead Omnigent terminals) is the `agent-hygiene` skill of the engineering pack this checkout pins; its `SKILL.md` describes what it clears, keeps and asks about, and how a scheduled round runs it. `dotagents install` installs the pinned pack and links `~/.local/bin/agent-hygiene` to `home/.local/bin/agent-hygiene`, which runs the skill's script, and runs `dotagents install --no-pull` first when a failed or skipped pack install left none, so a host whose pack install failed repairs itself on the next run. The script's self-update fast-forwards this checkout and runs install, so a release that moves the pin reaches every host. `~/.local/bin/disk-hygiene`, the old name, points to the same script until the scheduled tasks no longer use it.
 
 ### `~/.dotagents` symlink
 
