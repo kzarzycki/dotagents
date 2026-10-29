@@ -554,12 +554,28 @@ def drift(run):
     return found
 
 
-def stale():
-    """A line saying this script is not the checkout's origin/main one (a missed release), else None."""
+def relaunch():
+    """Run the new copy of this script in place of this one."""
+    os.environ['DISK_HYGIENE_RELAUNCHED'] = '1'  # a copy that still differs after one fast-forward reports instead of looping
+    os.execv(sys.executable, [sys.executable, *sys.argv])
+
+
+def fast_forward():
+    """Move a clean checkout on main to origin/main; false when a person must handle it (dirty, other branch, diverged)."""
+    return (git(REPO, 'status', '--porcelain') == '' and git(REPO, 'branch', '--show-current') == 'main\n'
+            and git(REPO, 'merge', '--ff-only', '--quiet', 'origin/main') is not None)
+
+
+def stale(dry_run=False):
+    """A line saying this script is not the checkout's origin/main one (a missed release), else None.
+    A checkout that can fast-forward does, and this run starts over as the new copy."""
     if not (REPO / '.git').exists() or git(REPO, 'fetch', '--quiet', 'origin', 'main', timeout=180) is None:
         return None  # a cached origin/main may be older than this copy: no claim
     main, mine = git(REPO, 'show', f'origin/main:{SELF}'), Path(__file__).read_bytes()
     if main is None or main.encode() == mine:
+        return None
+    if not dry_run and not os.environ.get('DISK_HYGIENE_RELAUNCHED') and fast_forward():
+        relaunch()
         return None
     digest = lambda data: hashlib.sha256(data).hexdigest()[:12]
     return (f'This disk-hygiene ({Path(__file__)}, sha256 {digest(mine)}) is not origin/main\'s ({SELF} in {REPO}, '
@@ -586,7 +602,9 @@ def main():
         pass
     start = free()
     run.say(f'disk-hygiene {who}{" (dry run)" if args.dry_run else ""}: {start / GB:.1f} GB free')
-    asks, old = [], None  # what may be wanted: the owner decides
+    asks = []  # what may be wanted: the owner decides
+    if old := stale(args.dry_run):  # first: a fast-forward starts this run over as the new copy
+        run.say(f'STALE: {old}')
     procs = processes()
     if procs is None:
         run.failed = True
@@ -595,8 +613,6 @@ def main():
         found = checkouts(args.dev.resolve())
         worktrees(run, found, args.dev.resolve(), procs, asks)
         environments(run, found, args.idle_days, procs)
-    if old := stale():
-        run.say(f'STALE: {old}')
     drifted = drift(run)
     # Caches last: a pnpm node_modules is an APFS clone of the store, so removing one frees its
     # blocks only once `pnpm store prune` drops the store's copy.
