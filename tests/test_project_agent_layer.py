@@ -227,7 +227,7 @@ def test_install_removes_marker_owned_toolkit_project_residue(tmp_path):
     repo = tmp_path / "repo"
     (repo / "bin").mkdir(parents=True)
     shutil.copy2(ROOT / "bin/dotagents", repo / "bin/dotagents")
-    shutil.copytree(ROOT / "home", repo / "home")
+    shutil.copytree(ROOT / "home", repo / "home", symlinks=True)
     (repo / ".git/info").mkdir(parents=True)
     exclude = repo / ".git/info/exclude"
     exclude.write_text(

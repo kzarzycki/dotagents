@@ -111,3 +111,18 @@ def test_install_keeps_the_pinned_pack_at_its_lock(tmp_path):
     install()
     install()
     assert count() == 7
+
+
+def test_install_links_agent_hygiene_into_the_pinned_pack(tmp_path):
+    """~/.local/bin/agent-hygiene, and disk-hygiene for one release, run the pinned pack's script."""
+    repo, home = make_checkout(tmp_path)
+    script = repo / ".agents/skills/agent-hygiene/scripts/agent-hygiene"
+    script.parent.mkdir(parents=True)
+    script.write_text("#!/bin/sh\necho pack-script\n")
+    script.chmod(0o755)
+    result = run_install(repo, home, "--only", ".local")
+    assert result.returncode == 0, result.stdout + result.stderr
+    for name in ("agent-hygiene", "disk-hygiene"):
+        link = home / ".local/bin" / name
+        assert link.resolve() == script.resolve(), name
+        assert subprocess.run([str(link)], capture_output=True, text=True).stdout == "pack-script\n"
