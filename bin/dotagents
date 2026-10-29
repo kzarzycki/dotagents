@@ -593,6 +593,25 @@ remove_legacy_skill_link "$HOME/.agents/skills"
 remove_legacy_skill_link "$HOME/.claude/skills"
 fi
 
+# 2.5 Install the pinned pack (.agents/skills, gitignored) at the version
+# apm.lock.yaml pins whenever the lock differs from the one last installed here:
+# ~/.local/bin links into its scripts, and 4.8 and doctor read it, so a pull that
+# moves the pin must reach it. `apm install --frozen` installs exactly the lock
+# and changes no tracked file. A failure is a warning; the next install retries.
+PACK_STAMP="$HOME/.local/state/dotagents/pinned-pack.lock"
+if { (( ! ONLY_MODE )) || is_selected ".agents"; } && [ -f "$REPO_ROOT/apm.lock.yaml" ] \
+  && { [ ! -d "$PINNED_SKILLS" ] || ! cmp -s "$REPO_ROOT/apm.lock.yaml" "$PACK_STAMP"; }; then
+  if (( DRY_RUN )); then
+    printf 'DRY: cd %s && mise exec -- apm install --frozen\n' "$REPO_ROOT"
+  elif (cd "$REPO_ROOT" && mise exec -- apm install --frozen >/dev/null); then
+    mkdir -p "${PACK_STAMP%/*}"
+    cp "$REPO_ROOT/apm.lock.yaml" "$PACK_STAMP"
+    printf 'INSTALLED: the pinned pack in %s at its apm.lock.yaml\n' "$PINNED_SKILLS"
+  else
+    printf 'WARNING: could not install the pinned pack in %s (apm install --frozen); the next install retries\n' "$REPO_ROOT" >&2
+  fi
+fi
+
 # 3. Walk home/ and link each item under each agent dir.
 shopt -s nullglob dotglob
 

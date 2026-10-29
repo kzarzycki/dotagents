@@ -58,3 +58,34 @@ def test_unknown_subset_fails_before_mutating_home(tmp_path):
     assert result.returncode == 2
     assert "unsupported --only value" in result.stderr
     assert list(home.iterdir()) == []
+
+
+def test_install_keeps_the_pinned_pack_at_its_lock(tmp_path):
+    """A changed apm.lock.yaml installs the pinned pack once; the same lock again installs nothing."""
+    repo, home = make_checkout(tmp_path)
+    calls, bindir = tmp_path / "mise-calls", tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "mise").write_text(
+        f'#!/bin/sh\necho "$PWD $*" >> {calls}\n'
+        '[ -f fail ] && exit 1\nmkdir -p .agents/skills\n')
+    (bindir / "mise").chmod(0o755)
+    env = {**os.environ, "HOME": str(home), "PATH": f"{bindir}:{os.environ['PATH']}"}
+
+    def install():
+        result = subprocess.run(["/bin/bash", str(repo / "bin/dotagents"), "install", "--no-pull", "--only", ".agents"],
+                                env=env, capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result
+
+    install()  # a checkout without a lock installs no pack
+    assert not calls.exists()
+    (repo / "apm.lock.yaml").write_text("pin: 1\n")
+    assert "INSTALLED: the pinned pack" in install().stdout
+    install()
+    assert calls.read_text() == f"{repo} exec -- apm install --frozen\n"
+    (repo / "apm.lock.yaml").write_text("pin: 2\n")
+    (repo / "fail").touch()
+    assert "could not install the pinned pack" in install().stderr
+    (repo / "fail").unlink()
+    install()
+    assert calls.read_text().count("apm install --frozen") == 3
