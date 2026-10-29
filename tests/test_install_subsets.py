@@ -71,11 +71,11 @@ def test_install_keeps_the_pinned_pack_at_its_lock(tmp_path):
     (bindir / "mise").chmod(0o755)
     env = {**os.environ, "HOME": str(home), "PATH": f"{bindir}:{os.environ['PATH']}"}
 
-    def install(checkout=repo, *args):
+    def install(checkout=repo, *args, code=0):
         result = subprocess.run(
             ["/bin/bash", str(checkout / "bin/dotagents"), "install", "--no-pull", "--only", ".agents", *args],
             env=env, capture_output=True, text=True, timeout=30)
-        assert result.returncode == 0, result.stdout + result.stderr
+        assert result.returncode == code, result.stdout + result.stderr
         return result
 
     def count():
@@ -102,10 +102,10 @@ def test_install_keeps_the_pinned_pack_at_its_lock(tmp_path):
     install()
     assert count() == 4
 
-    (repo / "apm.lock.yaml").write_text("pin: 3\n")
+    shutil.rmtree(repo / ".agents/skills")  # the lock is the recorded one: only the record's drop makes a retry
     (repo / "fail").touch()
-    assert "could not install the pinned pack" in install().stderr
-    install()  # the failed attempt left its skills dir, and still the next install retries
+    assert "could not install the pinned pack" in install(code=1).stderr  # a failure fails the install
+    install(code=1)  # the failed attempt left its skills dir, and still the next install retries
     assert count() == 6
     (repo / "fail").unlink()
     install()

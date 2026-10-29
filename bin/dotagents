@@ -599,7 +599,9 @@ fi
 # moves the pin must reach it. `apm install --frozen` installs exactly the lock
 # and changes no tracked file. The record of the last install is per checkout,
 # since each checkout has its own pack, and is dropped before an attempt, so a
-# failure leaves none: it is a warning, and the next install retries.
+# failure leaves none and the next install retries. A failure is a validation
+# problem (install exits 1), so the hygiene job's self-update reports it.
+pack_failed=0
 PACK_STAMP="$HOME/.local/state/dotagents/pinned-pack/$(printf '%s' "$REPO_ROOT" | tr / _).lock"
 if { (( ! ONLY_MODE )) || is_selected ".agents"; } && [ -f "$REPO_ROOT/apm.lock.yaml" ] \
   && { [ ! -d "$PINNED_SKILLS" ] || ! cmp -s "$REPO_ROOT/apm.lock.yaml" "$PACK_STAMP"; }; then
@@ -611,6 +613,7 @@ if { (( ! ONLY_MODE )) || is_selected ".agents"; } && [ -f "$REPO_ROOT/apm.lock.
     printf 'INSTALLED: the pinned pack in %s at its apm.lock.yaml\n' "$PINNED_SKILLS"
   else
     printf 'WARNING: could not install the pinned pack in %s (apm install --frozen); the next install retries\n' "$REPO_ROOT" >&2
+    pack_failed=1
   fi
 fi
 
@@ -1115,7 +1118,7 @@ if (( ! ONLY_MODE )) || is_selected ".agents"; then
 fi
 
 # 5. Validate
-problems=0
+problems=$pack_failed
 
 # 4.9 Provide each tool a skill declares (skill_requirements), through the
 # installer that already owns it, so a tool keeps one installation owner: a
