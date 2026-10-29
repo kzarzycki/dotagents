@@ -107,7 +107,9 @@ def processes():
 
 # An Omnigent terminal wrapper: python, its flags, then the script as the first argument (a tmux server only names it later).
 WRAPPER = re.compile(r'^\S*python[\d.]*\s+(-\S+\s+)*\S*omnigent/terminals/program_status\.py\s')
-BRIDGE_DIR = re.compile(r'--bridge-dir[\s"\',=]+(/[^\s"\',]+)')  # also inside the JSON of an --mcp-config
+# A plain, unescaped bridge dir ending .../claude-native/<id>; any other spelling (a space, a quote, a JSON escape) cannot be
+# read unambiguously from a flattened command line, so it does not parse and the wrapper is kept.
+BRIDGE_DIR = re.compile(r'--bridge-dir[\s"\',=]+((?:/[\w.-]+)+/(?:claude|codex)-native/[0-9a-f]+)(?=["\',\s\]}]|$)')
 GRACE = 3  # seconds between SIGTERM and SIGKILL
 ZOMBIES_HIGH = 20
 
@@ -158,7 +160,7 @@ def dead_terminals(run):
         except OSError:  # unreadable is not gone
             return False
     dead = [r for r in rows if r[1] == 1 and r[2] == os.getuid() and WRAPPER.match(r[5])
-            and (dirs := BRIDGE_DIR.findall(r[5])) and all(map(gone, dirs))]
+            and (dirs := BRIDGE_DIR.findall(r[5])) and len(dirs) == r[5].count('--bridge-dir') and all(map(gone, dirs))]
     ptys, limit = pty_state()
     zombies = sum(r[4] for r in rows)
     run.say(f'terminals: {len(dead)} dead of {sum(bool(WRAPPER.match(r[5])) for r in rows)}; ptys {ptys}/{limit or "?"}, {zombies} zombies')

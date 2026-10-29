@@ -345,6 +345,7 @@ def disk_hygiene_runs(home, dev, repo, git, monkeypatch):
     assert code == 0 and all(p.exists() for p in kept + removed), out
     assert f'would remove worktree {dev}/wt-squashed' in out and f'would remove env {dev}/idle/.venv' in out, out
     assert 'would tell the chief of staff' in out and not told, out
+    assert 'terminals: 0 dead of 0;' in out, out  # main() runs the terminals step
     (home / 'lsof.txt').rename(home / 'lsof.saved')  # the fake lsof fails: nothing may go
     code, out = run('--floor-gb', '0')
     assert code == 1 and 'FAIL process scan' in out and all(p.exists() for p in kept + removed), out
@@ -643,9 +644,10 @@ def test_dead_terminals(tmp_path, monkeypatch):
     script.parent.mkdir(parents=True)
     script.write_text('import signal, subprocess, sys, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)  # as the real wrapper\n'
                       'subprocess.Popen(["sleep", "60"])  # its claude\ntime.sleep(60)\n')
-    alive_dir = tmp_path / 'bridge'
-    alive_dir.mkdir()
-    gone = tmp_path / 'gone'
+    alive_dir, gone = tmp_path / 'claude-native/cafe01', tmp_path / 'claude-native/dead01'
+    alive_dir.mkdir(parents=True)
+    odd = tmp_path / 'my dir/claude-native/cafe02'  # exists, but a flattened command line cannot say where the path ends
+    odd.mkdir(parents=True)
     spawn = lambda *argv: subprocess.Popen(argv, start_new_session=True)
     kids = {
         'dead': spawn(sys.executable, script, '--app', 'x', '--bridge-dir', str(gone)),
@@ -654,11 +656,28 @@ def test_dead_terminals(tmp_path, monkeypatch):
         'nodir': spawn(sys.executable, script),
         'other': spawn('sh', '-c', 'sleep 60', 'x', '--bridge-dir', str(gone)),  # not a wrapper
         'tmux': spawn(sys.executable, '-c', 'import time; time.sleep(60)', str(script), '--bridge-dir', str(gone)),  # only names it
+        'space': spawn(sys.executable, script, '--bridge-dir', str(odd)),
+        'escaped': spawn(sys.executable, script, '--mcp-config', '{"args":["--bridge-dir","/tmp/Jos\\u00e9/claude-native/dead02"]}'),
+        'otheruser': spawn(sys.executable, script, '--bridge-dir', str(gone)),  # another account's wrapper
+        'second': spawn(sys.executable, script, '--bridge-dir', str(gone), '--bridge-dir', str(alive_dir)),  # one of two dirs exists
+        'shared': spawn(sys.executable, script, '--bridge-dir', str(gone)),  # a dead wrapper in a group it does not lead
         'parented': spawn(sys.executable, script, '--bridge-dir', str(gone)),  # still has its parent
     }
+    bystander = spawn('sleep', '60')  # leads the group the 'shared' wrapper claims to be in
     orphans = {kids[k].pid for k in kids if k != 'parented'}
     real = hygiene.listing
-    monkeypatch.setattr(hygiene, 'listing', lambda: [(p, 1 if p in orphans else pp, *rest) for p, pp, *rest in real()])
+    extra = []  # rows a test adds to the real listing
+
+    def fake():
+        rows = []
+        for pid, ppid, uid, pgid, z, command in real():
+            if pid == kids['otheruser'].pid:
+                uid += 1
+            if pid == kids['shared'].pid:
+                pgid = bystander.pid
+            rows.append((pid, 1 if pid in orphans else ppid, uid, pgid, z, command))
+        return rows + extra
+    monkeypatch.setattr(hygiene, 'listing', fake)
     monkeypatch.setattr(hygiene, 'pty_state', lambda: (50, 100))
     try:
         time.sleep(0.5)  # let the wrappers install their handler and start their child
@@ -666,23 +685,30 @@ def test_dead_terminals(tmp_path, monkeypatch):
         hygiene.dead_terminals(dry)
         out = (tmp_path / 'dry.log').read_text()
         assert all(p.poll() is None for p in kids.values())
-        assert f'would kill dead terminal {kids["dead"].pid}' in out and f'would kill dead terminal {kids["json"].pid}' in out
-        assert out.count('would kill') == 2 and 'terminals: 2 dead of ' in out and 'ptys 50/100' in out and 'WARN' not in out
+        assert all(f'would kill dead terminal {kids[k].pid}' in out for k in ('dead', 'json', 'shared'))
+        assert out.count('would kill') == 3 and 'terminals: 3 dead of ' in out and 'ptys 50/100' in out and 'WARN' not in out
 
         run = hygiene.Run(False, tmp_path / 'run.log')
         hygiene.dead_terminals(run)
-        for name in ('dead', 'json'):
+        for name in ('dead', 'json', 'shared'):
             assert kids[name].wait(5) == -signal.SIGKILL  # it ignores SIGTERM
-        assert {k for k, p in kids.items() if p.poll() is None} == {'live', 'nodir', 'other', 'tmux', 'parented'}
+        assert {k for k, p in kids.items() if p.poll() is None} == {'live', 'nodir', 'other', 'tmux', 'parented', 'space', 'escaped', 'otheruser', 'second'} and bystander.poll() is None
         out = (tmp_path / 'run.log').read_text()
         assert 'terminals after: ptys 50/100' in out and not run.failed
         assert not [r for r in real() if r[5].startswith('sleep 60') and r[3] in (kids['dead'].pid, kids['json'].pid)]  # the group went
 
         monkeypatch.setattr(hygiene, 'pty_state', lambda: (81, 100))
+        extra += [(900000 + i, 1, 0, 0, True, '') for i in range(25)]
         hygiene.dead_terminals(hygiene.Run(True, tmp_path / 'warn.log'))
-        assert 'WARN terminals: 81 ptys of 100' in (tmp_path / 'warn.log').read_text()
+        warned = (tmp_path / 'warn.log').read_text()
+        assert 'WARN terminals: 81 ptys of 100' in warned and 'WARN terminals: 25 zombies' in warned
+
+        monkeypatch.setattr(hygiene, 'listing', lambda: None)  # ps fails: nothing is killed and the run fails
+        failed = hygiene.Run(False, tmp_path / 'fail.log')
+        hygiene.dead_terminals(failed)
+        assert failed.failed and 'FAIL terminals' in (tmp_path / 'fail.log').read_text()
     finally:
-        for p in kids.values():
+        for p in (*kids.values(), bystander):
             with contextlib.suppress(ProcessLookupError):
                 os.killpg(p.pid, signal.SIGKILL)
             p.wait()
