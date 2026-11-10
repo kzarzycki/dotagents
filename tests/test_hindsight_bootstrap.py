@@ -29,7 +29,15 @@ def test_bootstrap_preserves_private_settings_and_refuses_invalid_json(tmp_path,
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     npx = bin_dir / "npx"
-    npx.write_text('#!/bin/sh\nprintf "%s\\n" "$@" >> "$HOME/npx.log"\n')
+    # The installer stages the bundled hooks; each carries reflect's fallback branch.
+    npx.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$@" >> "$HOME/npx.log"\n'
+        'mkdir -p "$HOME/.hindsight/coding-agents/dist"\n'
+        'for h in claude-hook codex-hook; do\n'
+        '  [ -f "$HOME/.hindsight/coding-agents/dist/$h.js" ] ||\n'
+        '    echo "      if (e instanceof ReflectError && e.fallbackEligible) {" > "$HOME/.hindsight/coding-agents/dist/$h.js"\n'
+        'done\n'
+    )
     npx.chmod(0o755)
     env = {**os.environ, "HOME": str(home), "PATH": f"{bin_dir}:{os.environ['PATH']}"}
     env.pop("CLAUDE_CODE_REMOTE", None)
@@ -45,11 +53,16 @@ def test_bootstrap_preserves_private_settings_and_refuses_invalid_json(tmp_path,
     assert installed["customSetting"] == 42
     assert installed["serverMode"] == "self-hosted"
     assert installed["apiUrl"] == url
+    assert installed["pageRefreshEveryTurns"] > 10_000
+    dist = home / ".hindsight/coding-agents/dist"
+    hooks = {h: (dist / h).read_text() for h in ("claude-hook.js", "codex-hook.js")}
+    assert all("e.fallbackEligible && false) {" in t for t in hooks.values())
     assert config.stat().st_mode & 0o777 == 0o600
     assert omp_env.read_text() == f"OTHER_KEY=untouched\nHINDSIGHT_API_URL={url}\n"
     assert omp_env.stat().st_mode & 0o777 == 0o600
     assert run().returncode == 0
     assert json.loads(config.read_text()) == installed
+    assert {h: (dist / h).read_text() for h in hooks} == hooks
 
     called = (home / "npx.log").read_text()
     config.write_text("{invalid")
