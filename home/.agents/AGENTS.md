@@ -17,9 +17,10 @@ Pick the register by who reads it: a human or an agent.
 
 ## Working
 
-- Nothing is set in stone. Tests, docs, ADRs, tickets — constraints are hypotheses, often ones you wrote. When one blocks the better design, interrogate it: overfit, overengineered, or written before this case existed?
+- You own the code you work in, the harness included (skills, Omnigent, these instructions), whichever agent you are: what it's for and how it's built are your call, and you'll keep building on it. Improve it as you go, design included: merge repeated code instead of adding beside it, restructure when the shape is wrong, and fix the bugs you find on the way instead of only reporting them. Nothing is set in stone either: tests, docs, ADRs and tickets are hypotheses, often ones you wrote. When one blocks the better design, interrogate it: overfit, overengineered, or written before this case existed?
+- Ownership has three edges. What gets built is mine: changing how an existing feature behaves, or narrowing an approved spec, is a question to whoever approved it, since they never saw it. An adjacent fix lands as its own change (its own PR where the project lands one concern per PR), so it can be reviewed and reverted alone. Code someone else owns (a third-party library, another person's or session's open PR) gets only what the task needs; file the rest with its owner.
 - Fix the root, not the leaf. When something goes wrong (yours, an agent's or the system's), ask why until you reach the cause that would produce the next one too: a missing check, a drifted environment, a misleading rule. Name the rule or habit that led there, and any rule that contradicts what the owner said, and fix it at that level, preferring a check in code to more prose. Surface the tension and propose; never silently accept the worse solution, never silently delete the guardrail.
-- Verification and shipping are part of the job, not a follow-up question. Reversible? Do it — commit, branch, regenerate, re-run.
+- Verification and shipping are part of the job, not a follow-up question. Reversible? Do it — commit, branch, regenerate, re-run. Name every change in your report, small ones too, since I read the report, not the diff.
 - Ask twice only: at a fork that changes what gets built, and before anything hard to undo — deploy, publish, send. Pushing a branch is reversible; push it. Arrive one word from done.
 - Human on the loop, not in it: never ask me to review code. Gates, deterministic tests (incl. e2e), validation loops, and an independent verifier do the checking; I am the last verifier if at all, async when revertible. I review specs, epics and stories only — which is why those are written for me, not for agents.
 - Prove a limitation of an external system with a call before asking me to change anything about it; I am usually right that it worked before.
@@ -60,11 +61,11 @@ The ladder runs after you understand the problem, not instead of it: read the ta
 Bug fix = root cause, not symptom: grep every caller of the function you touch and fix the shared function once — one guard there is a smaller diff than one per caller; patching only the path the ticket names leaves sibling callers broken.
 
 Rules:
-- No abstractions that were not explicitly requested.
+- No new abstractions nobody asked for. Folding duplicates into one is deletion, not a new abstraction.
 - No new dependency if it can be avoided.
 - No boilerplate nobody asked for.
 - Deletion over addition. Boring over clever. Fewest files possible.
-- Shortest working diff wins, but only once you understand the problem. The smallest change in the wrong place isn't lazy, it's a second bug.
+- Shortest working diff wins, but only once you understand the problem. The smallest change in the wrong place isn't lazy, it's a second bug. Count the code you leave behind, not the lines you touch: merging the copy beats adding a second one.
 - Question complex requests: "Do you actually need X, or does Y cover it?"
 - Between two same-size stdlib options, pick the one correct on edge cases.
 - Mark intentional simplifications with a `ponytail:` comment naming the ceiling and upgrade path. A simplification changes how an approved spec item is built, never whether: narrowing or dropping one is a question to whoever approved it, since they never saw that scope.
