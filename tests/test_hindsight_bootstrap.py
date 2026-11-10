@@ -83,3 +83,24 @@ def test_bootstrap_refuses_a_company_machine_profile(tmp_path):
     )
     assert result.returncode == 1 and "stays off the homelab" in result.stderr
     assert not (home / ".hindsight").exists()
+
+
+def test_bootstrap_refuses_a_bundle_without_the_fallback_line(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".dotagents-profile").write_text("vps\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    npx = bin_dir / "npx"
+    # A future pin whose hook no longer has the line the patch rewrites.
+    npx.write_text(
+        '#!/bin/sh\nmkdir -p "$HOME/.hindsight/coding-agents/dist"\n'
+        'echo "if (reflectFailed) {" > "$HOME/.hindsight/coding-agents/dist/claude-hook.js"\n'
+    )
+    npx.chmod(0o755)
+    env = {**os.environ, "HOME": str(home), "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    env.pop("CLAUDE_CODE_REMOTE", None)
+    result = subprocess.run(
+        ["/bin/bash", str(BOOTSTRAP)], env=env, capture_output=True, text=True, timeout=20, check=False
+    )
+    assert result.returncode == 1 and "no reflect fallback to switch off" in result.stderr
