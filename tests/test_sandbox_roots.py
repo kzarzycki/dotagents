@@ -63,6 +63,18 @@ def test_a_config_without_the_table_gets_one(tmp_path, config):
     assert roots(codex) == [str(home / root) for root in ROOTS]
 
 
+def test_a_fresh_home_is_settled_after_one_install(tmp_path):
+    # otel is re-appended at the end of the file on every install, so the sandbox table must not sit after it
+    repo, home = make_checkout(tmp_path)
+    (home / ".codex").mkdir()
+    assert run_install(repo, home, "--profile", "vps").returncode == 0
+    codex = home / ".codex/config.toml"
+    text = codex.read_text()
+    assert "[otel]" in text and text.index("[sandbox_workspace_write]") < text.index("[otel]")
+    assert run_install(repo, home, "--profile", "vps").returncode == 0
+    assert codex.read_text() == text
+
+
 def test_the_loop_s_lock_folder_is_created_and_a_root_even_on_a_bare_host(tmp_path):
     repo, home = make_checkout(tmp_path)
     (home / ".codex").mkdir()

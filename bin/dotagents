@@ -1060,14 +1060,17 @@ if is_selected ".codex" && [ -d "$HOME/.codex" ]; then
         if (mine == "") bad = 1; else { out[++n] = mine; hand = 1; next }
       }
       { out[++n] = $0 }
+      # The otel block owns the end of the file (4.5 re-appends it there), so a new table goes before it.
+      /^# dotagents otel:/ && out[n - 1] == "[otel]" { otel_at = n - 1 }
       $0 ~ /^[[:space:]]*\[[[:space:]]*sandbox_workspace_write[[:space:]]*\][[:space:]]*(#.*)?$/ { at = n }
       END {
         if (bad) exit 3
         for (i = 1; i <= n; i++) {
+          if (i == otel_at && !at && line != "" && !hand) { print "[sandbox_workspace_write]"; print m; print line; print "" }
           print out[i]
           if (i == at && line != "" && !hand) { print m; print line }
         }
-        if (!at && line != "" && !hand) {
+        if (!at && !otel_at && line != "" && !hand) {
           if (n && out[n] != "") print ""
           print "[sandbox_workspace_write]"; print m; print line
         }
