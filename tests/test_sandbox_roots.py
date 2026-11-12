@@ -103,7 +103,14 @@ def test_a_hand_set_list_that_already_has_a_root_does_not_repeat_it(tmp_path):
 
 def test_a_list_install_cannot_edit_is_left_alone_and_the_warning_names_the_missing_roots(tmp_path):
     user = '[sandbox_workspace_write]\nwritable_roots = [\n  "/mine",\n]\n[other]\nwritable_roots = ["/x"]\n'
-    _, home, codex, result = install(tmp_path, user)
+    repo, home = make_checkout(tmp_path)
+    for root in ROOTS:
+        (home / root).mkdir(parents=True)
+    codex = home / ".codex/config.toml"
+    codex.parent.mkdir()
+    codex.write_text(user)
+    result = run_install(repo, home)
+    assert result.returncode == 1, result.stdout + result.stderr  # reported by name and non-zero (issue #147)
     assert codex.read_text().startswith(user) and MARK not in codex.read_text()
     assert f"{codex} sets its own writable_roots; dotagents sandbox roots not managed" in result.stderr
     assert str(home / ".cache/engineering-loop") in result.stderr

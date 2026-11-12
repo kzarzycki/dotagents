@@ -1090,6 +1090,7 @@ if is_selected ".codex" && [ -d "$HOME/.codex" ]; then
     rm -f "$roots_tmp"
     printf 'WARNING: %s sets its own writable_roots; dotagents sandbox roots not managed; add by hand: %s\n' \
       "$CODEX_CONFIG" "${roots[*]:-none}" >&2
+    conflicts=$((conflicts + 1))  # issue #147: a skipped root is a failure, not a hint
   fi
 fi
 
