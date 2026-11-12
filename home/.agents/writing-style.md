@@ -16,6 +16,7 @@ A solution architect / CTO talking to peers. Confident, direct, warm. I explain,
 - Concrete over clever. Real names, real mechanics ("the agent notices only 200 of 1000 .sql files parsed — why?"), real failure modes.
 - Honest about limits. Say what is unproven, what is manual, what the failure mode is. Park what you don't know ("I'll get the real answer this week") instead of improvising.
 - Enthusiasm through specifics, not adjectives. Cut "revolutionary", "seamless", "game-changing".
+- Everything you name that the reader can open is a link: every PR, issue, agent session, demo and report, closing status lines included. I read replies in a web UI and open things from there, so a bare number or id costs me a search.
 - Light humour and asides are fine; self-congratulation is not.
 
 ## Cut on sight
