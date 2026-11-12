@@ -31,12 +31,13 @@ def test_install_keeps_host_settings_the_repo_does_not_set(tmp_path):
     assert got["enabledPlugins"] == {**fresh["enabledPlugins"], "ponytail@host-market": True}
     assert got["extraKnownMarketplaces"] == {**fresh["extraKnownMarketplaces"], "host-market": host["extraKnownMarketplaces"]["host-market"]}
     # The printed diff carries only the repo's changes.
-    changed = [l for l in result.stdout.splitlines() if l.startswith(("+", "-")) and not l.startswith(("+++", "---"))]
+    own = result.stdout.split(f"UPDATED {settings}:", 1)[1].split("UPDATED ", 1)[0]  # not the Codex config's diff
+    changed = [l for l in own.splitlines() if l.startswith(("+", "-")) and not l.startswith(("+++", "---"))]
     assert sorted(changed) == [
         '+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",',
         '-    "CLAUDE_CODE_ENABLE_TELEMETRY": "0",',
         '-    "stale@host-market": false,',
-    ], result.stdout
+    ], own
 
     before = settings.read_bytes()
     result = run_install(repo, home, "--profile", "vps")
