@@ -47,6 +47,25 @@ fi
 npx --yes @vectorize-io/hindsight-coding-agents@0.6.1 install codex \
   --server self-hosted --api-url "$url"
 
+# With reflect's synthesis down, the hooks inject raw recalled observations
+# instead (10 KB seen, none of it on topic), which every later turn re-reads.
+# 0.6.1 has no option for that, so the fallback branch is cut out of each
+# bundled hook; the agent still has the Hindsight tools to search.
+# ponytail: string patch on the pinned bundle; drop it once upstream has an opt-out.
+dist="$config_dir/coding-agents/dist"
+patched='e instanceof ReflectError && e.fallbackEligible && false)'
+for js in "$dist"/*.js; do
+  if grep -qF 'e instanceof ReflectError && e.fallbackEligible)' "$js"; then
+    perl -pi -e 's/e instanceof ReflectError && e\.fallbackEligible\)/e instanceof ReflectError \&\& e.fallbackEligible \&\& false)/' "$js"
+  fi
+done
+if ! grep -qF "$patched" "$dist/claude-hook.js" 2>/dev/null; then
+  echo "[hindsight-bootstrap] $dist/claude-hook.js has no reflect fallback to switch off; recheck the patch for this version" >&2
+  exit 1
+fi
+
+# The tool guide comes once per session at SessionStart; pageRefreshEveryTurns
+# re-injects it every N turns. 0 reads as 10 (`|| 10`), so N outlasts any session.
 tmp=$(mktemp "$config_dir/.coding-agent.XXXXXX")
 trap 'rm -f "$tmp"' EXIT
 jq --arg url "$url" '. + {
@@ -59,7 +78,8 @@ jq --arg url "$url" '. + {
   bankIdTemplate: "coding-agent-{gitProject}",
   maxParallelRetains: 2,
   retainSessions: true,
-  reflectTimeoutMs: 5000
+  reflectTimeoutMs: 5000,
+  pageRefreshEveryTurns: 1000000
 }' "$config" > "$tmp"
 chmod 600 "$tmp"
 if ! cmp -s "$config" "$tmp"; then

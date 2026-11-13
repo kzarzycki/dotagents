@@ -16,8 +16,15 @@
 
 set -euo pipefail
 
-# Locate the repo root: dir containing this script's parent.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Locate the repo root: dir containing this script's parent. Install links
+# ~/.local/bin/dotagents to it, so follow links to the script itself first
+# (by hand: older macOS readlink has no -f).
+self="${BASH_SOURCE[0]}"
+while [ -L "$self" ]; do
+  self_link=$(readlink "$self")
+  case "$self_link" in /*) self=$self_link ;; *) self="$(dirname "$self")/$self_link" ;; esac
+done
+SCRIPT_DIR="$(cd "$(dirname "$self")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 DOTAGENTS_LINK="$HOME/.dotagents"
 SRC="$REPO_ROOT/home"
@@ -30,6 +37,8 @@ case "$CMD" in
     ;;
   arm-hooks)
     ;;
+  doctor)
+    ;;
   ""|-h|--help|help)
     cat <<EOF
 dotagents — install ~/ symlinks from this repo
@@ -37,6 +46,9 @@ dotagents — install ~/ symlinks from this repo
 Usage:
   dotagents install [--no-pull] [--dry-run] [--profile <name>] [--only <entry>]
   dotagents arm-hooks [--root <path>]... [--install-hooks] [--dry-run]
+  dotagents doctor   Report each tool a skill declares that the host lacks or
+                     has too old, and each copy of a skill script the pinned
+                     pack doesn't have. Silent and 0 when clean, else 1.
 
 Options:
   --no-pull          Skip the git pull step.
@@ -250,6 +262,151 @@ if [ "$CMD" = "arm-hooks" ]; then
   exit 0
 fi
 
+# Skill requirements. A skill declares the tools its scripts need in its SKILL.md
+# frontmatter, `metadata.requires: "gh>=2.99.0 vhs"` (agent-skills' conventions),
+# where each name is both the command and its mise tool. The skills a host's
+# agents load are this checkout's pinned pack (installed by `mise run setup:dev`)
+# and the global skill dirs; the pinned pack is the reference for which scripts
+# a skill has.
+PINNED_SKILLS="$REPO_ROOT/.agents/skills"
+SKILL_DIRS=("$PINNED_SKILLS" "$HOME/.claude/skills" "$HOME/.claude-knowledge/skills" "$HOME/.agents/skills" "$HOME/.codex/skills")
+MISE_SHIMS="${MISE_DATA_DIR:-$HOME/.local/share/mise}/shims"
+# What an agent shell resolves: env.sh puts ~/.local/bin first and mise's shims last.
+# Homebrew's bin dirs are added for a scheduler's minimal PATH, which a login
+# shell's brew shellenv never set.
+AGENT_PATH="$HOME/.local/bin:$PATH:/opt/homebrew/bin:/usr/local/bin:$MISE_SHIMS"
+
+# One line per declared entry: tool|minimum version (empty for a bare tool)|skill.
+skill_requirements() {
+  local files=() d
+  for d in "${SKILL_DIRS[@]}"; do
+    [ -d "$d" ] && for f in "$d"/*/SKILL.md; do [ -f "$f" ] && files+=("$f"); done
+  done
+  (( ${#files[@]} )) || return 0
+  # ponytail: line-based frontmatter read, expects `requires:` indented under a
+  # top-level `metadata:`; a flow mapping (metadata: {requires: ..}) is missed.
+  awk '
+    FNR == 1 { fm = ($0 == "---"); parent = ""; next }
+    !fm { next }
+    $0 == "---" { fm = 0; next }
+    /^[^[:space:]#][^:]*:/ { parent = $0; sub(/:.*/, "", parent); next }
+    parent == "metadata" && /^[[:space:]]+requires:/ {
+      v = $0; sub(/^[^:]*:[[:space:]]*/, "", v); gsub(/["'\'']/, "", v)
+      skill = FILENAME; sub(/\/SKILL\.md$/, "", skill); sub(/.*\//, "", skill)
+      n = split(v, entries, /[[:space:]]+/)
+      for (i = 1; i <= n; i++) {
+        if (entries[i] == "") continue
+        tool = entries[i]; min = ""
+        if (index(tool, ">=")) { min = substr(tool, index(tool, ">=") + 2); tool = substr(tool, 1, index(tool, ">=") - 1) }
+        print tool "|" min "|" skill
+      }
+    }' "${files[@]}"
+}
+
+# The first dotted number a tool's --version prints, from an agent shell's PATH.
+tool_version() {
+  PATH="$AGENT_PATH" "$1" --version 2>/dev/null | grep -Eom1 '[0-9]+(\.[0-9]+)+' || true
+}
+
+version_ge() {
+  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -1)" = "$2" ]
+}
+
+# 0 when an agent shell's tool meets the minimum; REQ_HAVE is the version it found.
+requirement_met() {
+  REQ_HAVE=$(tool_version "$1")
+  PATH="$AGENT_PATH" command -v "$1" >/dev/null 2>&1 || return 1
+  [ -z "$2" ] || { [ -n "$REQ_HAVE" ] && version_ge "$REQ_HAVE" "$2"; }
+}
+
+# Prints one finding per unmet requirement; returns 1 if there is any.
+check_requirements() {
+  local tool min skill found=0
+  while IFS='|' read -r tool min skill; do
+    requirement_met "$tool" "$min" && continue
+    found=1
+    if PATH="$AGENT_PATH" command -v "$tool" >/dev/null 2>&1; then
+      printf 'too old: %s %s, skill %s needs >= %s\n' "$tool" "${REQ_HAVE:-(no version)}" "$skill" "$min"
+    else
+      printf 'missing: %s%s, needed by skill %s\n' "$tool" "${min:+ >= $min}" "$skill"
+    fi
+  done < <(skill_requirements)
+  return "$found"
+}
+
+# A skill script, in a skill path an agent loads (a project's or the global
+# .claude, .agents or .codex skills), that the pinned pack's skill of that name
+# doesn't have: an old pin, an old clone's install, a second copy of the skill.
+# A project whose apm.lock.yaml deploys that skill at a newer version than this
+# checkout's lock is skipped: its copy is ahead, not stale. Source trees, package
+# stores and the apm cache are no skill path. One line per skill directory
+# holding such scripts. Caches (.cache, and .tmp, where Codex clones its
+# marketplaces) and tmp dirs (a loop's evidence copies of other repos) are no
+# skill path either. Gitignored paths are scanned: a project's installed skill
+# dirs are gitignored.
+check_stale_skill_copies() {
+  [ -d "$PINNED_SKILLS" ] || {
+    printf 'no pinned pack: run `mise run setup:dev` in %s\n' "$REPO_ROOT"
+    return 1
+  }
+  local pinned_real
+  pinned_real=$(cd "$PINNED_SKILLS" && pwd -P)
+  # ponytail: a directory the account can't read (macOS TCC folders without Full
+  # Disk Access) is skipped silently; report it if a skill path ever lives there.
+  { find "$HOME" \( -name .git -o -name node_modules -o -name apm_modules -o -name __pycache__ \
+      -o -name Library -o -name .Trash -o -name .cache -o -name .tmp -o -name tmp \) -prune \
+      -o \( -path '*/.claude/skills/*/scripts/*' -o -path '*/.agents/skills/*/scripts/*' \
+      -o -path '*/.claude-knowledge/skills/*/scripts/*' -o -path '*/.codex/skills/*/scripts/*' \) \
+      -type f -print 2>/dev/null || true; } \
+    | awk -v pinned="$PINNED_SKILLS" -v pinned_real="$pinned_real" -v pinned_lock="$REPO_ROOT/apm.lock.yaml" '
+      # The version of the apm.lock.yaml dependency that deploys skill `name`, or "".
+      function lockver(file, name,   line, ver, v) {
+        while ((getline line < file) > 0) {
+          if (line ~ /^- /) ver = ""
+          if (line ~ /^  version: /) { ver = line; sub(/^  version: /, "", ver); gsub(/["'\'']/, "", ver) }
+          if (line ~ ("^  - [.][a-z-]+/skills/" name "$")) v = ver
+        }
+        close(file); return v
+      }
+      function newer(a, b,   x, y, k, n) {
+        n = split(a, x, "."); split(b, y, ".")
+        for (k = 1; k <= n || k in y; k++) if (x[k] + 0 != y[k] + 0) return x[k] + 0 > y[k] + 0
+        return 0
+      }
+      BEGIN {
+        cmd = "cd \"" pinned "\" && find . -path \"./*/scripts/*\" -type f"
+        while ((cmd | getline f) > 0) { sub(/^\.\//, "", f); ref[f] = 1; split(f, p, "/"); skill[p[1]] = 1 }
+        close(cmd)
+      }
+      index($0, pinned "/") == 1 || index($0, pinned_real "/") == 1 { next }
+      {
+        i = match($0, /\/\.(claude|claude-knowledge|agents|codex)\/skills\/[^\/]+\/scripts\//); if (!i) next
+        root = substr($0, 1, i - 1)
+        i = i + index(substr($0, i + 1), "/")
+        rel = substr($0, i + 8); split(rel, p, "/")
+        if ((p[1] in skill) && !(rel in ref)) {
+          dir = substr($0, 1, i + 7) p[1]
+          if (!(dir in seen)) { seen[dir] = 1; order[++n] = dir; sk[dir] = p[1]; top[dir] = root }
+          files[dir] = files[dir] " " substr(rel, length(p[1]) + 10)
+        }
+      }
+      END {
+        for (k = 1; k <= n; k++) {
+          d = order[k]; have = lockver(top[d] "/apm.lock.yaml", sk[d]); pin = lockver(pinned_lock, sk[d])
+          if (have != "" && pin != "" && newer(have, pin)) continue
+          printf "stale skill copy: %s:%s\n", d, files[d]; found = 1
+        }
+        exit found
+      }'
+}
+
+if [ "$CMD" = "doctor" ]; then
+  doctor_status=0
+  check_requirements || doctor_status=1
+  check_stale_skill_copies || doctor_status=1
+  exit "$doctor_status"
+fi
+
 # The merged settings feed both ~/.claude/settings.json and Codex's [otel].
 if is_selected ".claude" || is_selected ".codex"; then
 # 0. Resolve profile. Precedence: --profile arg > existing ~/.dotagents-profile
@@ -436,6 +593,30 @@ remove_legacy_skill_link "$HOME/.agents/skills"
 remove_legacy_skill_link "$HOME/.claude/skills"
 fi
 
+# 2.5 Install the pinned pack (.agents/skills, gitignored) at the version
+# apm.lock.yaml pins whenever the lock differs from the one last installed here:
+# ~/.local/bin links into its scripts, and 4.8 and doctor read it, so a pull that
+# moves the pin must reach it. `apm install --frozen` installs exactly the lock
+# and changes no tracked file. The record of the last install is per checkout,
+# since each checkout has its own pack, and is dropped before an attempt, so a
+# failure leaves none and the next install retries. A failure is a validation
+# problem (install exits 1), so the hygiene job's self-update reports it.
+pack_failed=0
+PACK_STAMP="$HOME/.local/state/dotagents/pinned-pack/$(printf '%s' "$REPO_ROOT" | tr / _).lock"
+if { (( ! ONLY_MODE )) || is_selected ".agents"; } && [ -f "$REPO_ROOT/apm.lock.yaml" ] \
+  && { [ ! -d "$PINNED_SKILLS" ] || ! cmp -s "$REPO_ROOT/apm.lock.yaml" "$PACK_STAMP"; }; then
+  if (( DRY_RUN )); then
+    printf 'DRY: cd %s && mise exec -- apm install --frozen\n' "$REPO_ROOT"
+  elif rm -f "$PACK_STAMP" && (cd "$REPO_ROOT" && mise exec -- apm install --frozen >/dev/null); then
+    mkdir -p "${PACK_STAMP%/*}"
+    cp "$REPO_ROOT/apm.lock.yaml" "$PACK_STAMP"
+    printf 'INSTALLED: the pinned pack in %s at its apm.lock.yaml\n' "$PINNED_SKILLS"
+  else
+    printf 'WARNING: could not install the pinned pack in %s (apm install --frozen); the next install retries\n' "$REPO_ROOT" >&2
+    pack_failed=1
+  fi
+fi
+
 # 3. Walk home/ and link each item under each agent dir.
 shopt -s nullglob dotglob
 
@@ -443,7 +624,7 @@ shopt -s nullglob dotglob
 is_skipped() {
   local name="$1"
   case "$name" in
-    *.local.*|.env*|settings.local.json|projects|.skill-lock.json|skills|*.lock) return 0 ;;
+    *.local.*|.env*|settings.local.json|projects|__pycache__|.skill-lock.json|skills|*.lock) return 0 ;;
     # Per-profile settings files — picked up via $HOME/.dotagents-profile,
     # never linked as ~/.<dotdir>/settings.<profile>.json directly.
     settings.*.json) return 0 ;;
@@ -565,10 +746,12 @@ if is_selected ".claude" || is_selected ".codex"; then
 # (profile wins per key; nested objects merge, arrays replace). Claude writes
 # runtime prefs (/model, permission prompts, /plugin) into the same file
 # between installs. The repo owns each top-level key it sets; every other key
-# the host has is kept. Claude also writes into permissions, enabledPlugins
-# and extraKnownMarketplaces, so there the repo owns only its own entries:
-# permission lists are unions (revoke with a deny rule), and a host plugin
-# entry stays only while enabled. Keys keep the host's order, so the diff
+# the host has is kept. Claude also writes into permissions, enabledPlugins,
+# extraKnownMarketplaces and pluginConfigs, so there the repo owns only its own
+# entries: permission lists are unions (revoke with a deny rule), a host plugin
+# entry stays only while enabled, plugin options merge per option, and a host
+# marketplace with a directory source wins over the repo's of the same name
+# (a mod developed from its checkout). Keys keep the host's order, so the diff
 # printed shows only repo changes.
 # Edit the repo files, never the generated one.
 USER_SETTINGS="$HOME/.claude/settings.json"
@@ -652,6 +835,13 @@ if [ -f "$SHARED_SETTINGS" ]; then
   # telemetryRepos becomes Omnigent's allowlist (4.6) and is dropped from settings.
   telemetry_repos=$(jq -c '.dotagents.telemetryRepos // empty' <<<"$merged")
   merged=$(jq 'del(.dotagents)' <<<"$merged")
+  if is_selected ".claude" && [ -f "$USER_SETTINGS" ]; then
+    jq -r --slurpfile h "$USER_SETTINGS" '($h[0].extraKnownMarketplaces // {}) as $hm
+      | (.extraKnownMarketplaces // {}) | to_entries[]
+      | select($hm[.key].source.source? == "directory" and $hm[.key] != .value)
+      | "NOTE: marketplace \(.key) keeps this host'\''s directory source \($hm[.key].source.path) over the repo'\''s (README: Local overrides)"' \
+      <<<"$merged" 2>/dev/null || true
+  fi
   if ! is_selected ".claude"; then
     :
   elif (( DRY_RUN )); then
@@ -676,7 +866,9 @@ if [ -f "$SHARED_SETTINGS" ]; then
             | $h.enabledPlugins + $r | with_entries(select(.value == true or (.key as $k | $r | has($k)))))
           else . end
         | if .extraKnownMarketplaces and $h.extraKnownMarketplaces
-          then .extraKnownMarketplaces |= $h.extraKnownMarketplaces + . else . end
+          then .extraKnownMarketplaces |= $h.extraKnownMarketplaces + . + ($h.extraKnownMarketplaces
+            | with_entries(select(.value.source.source? == "directory"))) else . end
+        | if .pluginConfigs and $h.pluginConfigs then .pluginConfigs |= $h.pluginConfigs * . else . end
       ' <<<"$merged" > "$tmp"; then
       printf 'WARNING: %s is not a valid settings object; left unchanged\n' "$USER_SETTINGS" >&2
       rm -f "$tmp"
@@ -815,12 +1007,17 @@ fi
 # #475). Install owns `writable_roots` in [sandbox_workspace_write]: the marker
 # line and the key right after it. The paths that exist on this host are listed,
 # absolute, since Codex does not expand `~` there; a missing root is skipped, as
-# Linux's sandbox binds each one. The user's other keys stay. A `writable_roots`
-# without the marker is the user's, so the file is left alone.
-CODEX_WRITABLE_ROOTS=(.apm .cache/uv .local/share/mise .local/state/mise Library/Caches/mise)
+# Linux's sandbox binds each one. The user's other keys stay. A one-line
+# `writable_roots` without the marker is the user's: the roots it lacks are
+# appended, its entries and their order kept. Any other form is left alone, with
+# a warning that names the roots it lacks.
+# .cache/engineering-loop holds the loop's heavy-slot locks; install creates it
+# so a verifier's first lock does not wait on a lead's.
+CODEX_WRITABLE_ROOTS=(.apm .cache/uv .cache/engineering-loop .local/share/mise .local/state/mise Library/Caches/mise)
 CODEX_CONFIG="$HOME/.codex/config.toml"
 if is_selected ".codex" && [ -d "$HOME/.codex" ]; then
   roots_mark='# dotagents sandbox: generated by bin/dotagents install (CODEX_WRITABLE_ROOTS); edit there'
+  (( DRY_RUN )) || mkdir -p "$HOME/.cache/engineering-loop"
   roots=()
   for root in "${CODEX_WRITABLE_ROOTS[@]}"; do
     [ -d "$HOME/$root" ] && roots+=("\"$HOME/$root\"")
@@ -836,20 +1033,44 @@ if is_selected ".codex" && [ -d "$HOME/.codex" ]; then
   fi
   src="$CODEX_CONFIG"; [ -f "$src" ] || src=/dev/null
   roots_tmp=$(mktemp "$HOME/.codex/.config.toml.XXXXXX")
-  # Exit 3: a writable_roots key that is not ours.
-  if awk -v m="$roots_mark" -v line="$roots_line" '
+  # Exit 3: a writable_roots key that is not ours and not a one-line array in
+  # [sandbox_workspace_write] (or dotted), so there is nowhere safe to add to.
+  if WANT=$(printf '%s\n' "${roots[@]}" | tr -d '"') awk -v m="$roots_mark" -v line="$roots_line" '
+      function merge(l,   head, tail, rest, items, have, k, add, w, q, ws) {
+        if (!match(l, /\][[:space:]]*(#.*)?$/)) return ""
+        head = substr(l, 1, RSTART - 1); tail = substr(l, RSTART)
+        if (head ~ /#/ || head !~ /=[[:space:]]*\[/) return ""
+        rest = head
+        while (match(rest, /"[^"]*"|\047[^\047]*\047/)) {
+          q = substr(rest, RSTART + 1, RLENGTH - 2); have[q] = 1; rest = substr(rest, RSTART + RLENGTH)
+        }
+        add = ""
+        for (k = 1; k <= nw; k++) if (!(want[k] in have)) add = add (add == "" ? "" : ", ") "\"" want[k] "\""
+        if (add == "") return l
+        ws = head; sub(/[[:space:]]+$/, "", ws)
+        return ws (ws ~ /\[$/ ? "" : ws ~ /,$/ ? " " : ", ") add tail
+      }
+      BEGIN { nw = split(ENVIRON["WANT"], want, "\n"); if (want[nw] == "") nw-- }
       skip { skip = 0; if ($0 ~ /^[[:space:]]*writable_roots[[:space:]]*=/) next }
       $0 == m { skip = 1; next }
-      /^[[:space:]]*(sandbox_workspace_write[[:space:]]*\.[[:space:]]*)?writable_roots[[:space:]]*=/ { bad = 1 }
+      /^[[:space:]]*\[/ { intable = ($0 ~ /^[[:space:]]*\[[[:space:]]*sandbox_workspace_write[[:space:]]*\][[:space:]]*(#.*)?$/) }
+      /^[[:space:]]*(sandbox_workspace_write[[:space:]]*\.[[:space:]]*)?writable_roots[[:space:]]*=/ {
+        dotted = ($0 ~ /^[[:space:]]*sandbox_workspace_write/)
+        mine = (intable || dotted) ? merge($0) : ""
+        if (mine == "") bad = 1; else { out[++n] = mine; hand = 1; next }
+      }
       { out[++n] = $0 }
+      # The otel block owns the end of the file (4.5 re-appends it there), so a new table goes before it.
+      /^# dotagents otel:/ && out[n - 1] == "[otel]" { otel_at = n - 1 }
       $0 ~ /^[[:space:]]*\[[[:space:]]*sandbox_workspace_write[[:space:]]*\][[:space:]]*(#.*)?$/ { at = n }
       END {
         if (bad) exit 3
         for (i = 1; i <= n; i++) {
+          if (i == otel_at && !at && line != "" && !hand) { print "[sandbox_workspace_write]"; print m; print line; print "" }
           print out[i]
-          if (i == at && line != "") { print m; print line }
+          if (i == at && line != "" && !hand) { print m; print line }
         }
-        if (!at && line != "") {
+        if (!at && !otel_at && line != "" && !hand) {
           if (n && out[n] != "") print ""
           print "[sandbox_workspace_write]"; print m; print line
         }
@@ -870,7 +1091,9 @@ if is_selected ".codex" && [ -d "$HOME/.codex" ]; then
     fi
   else
     rm -f "$roots_tmp"
-    printf 'WARNING: %s sets its own writable_roots; dotagents sandbox roots not managed\n' "$CODEX_CONFIG" >&2
+    printf 'WARNING: %s sets its own writable_roots; dotagents sandbox roots not managed; add by hand: %s\n' \
+      "$CODEX_CONFIG" "${roots[*]:-none}" >&2
+    conflicts=$((conflicts + 1))  # issue #147: a skipped root is a failure, not a hint
   fi
 fi
 
@@ -902,8 +1125,90 @@ if is_selected ".gemini" && [ -f "$AGY_SHARED" ] && [ -f "$AGY_SETTINGS" ]; then
   fi
 fi
 
+# 4.8 Refresh each global skill install the pinned pack also has, so agents load
+# the pinned version: a copy left by an older install keeps scripts the pack has
+# dropped. Another installer or an agent may have put files there, so the copy
+# replaced is moved to ~/.dotagents-bak/, its path flattened so no skill path
+# matches it, replacing the previous backup of that skill. A link
+# (~/.claude/skills/<n> -> ~/.agents/skills/<n>) follows its target.
+if (( ! ONLY_MODE )) || is_selected ".agents"; then
+  for skill_dir in "${SKILL_DIRS[@]:1}"; do
+    for global in "$skill_dir"/*/; do
+      global=${global%/}
+      pack_skill="$PINNED_SKILLS/${global##*/}"
+      { [ -L "$global" ] || [ ! -d "$pack_skill" ]; } && continue
+      diff -rq -x __pycache__ "$pack_skill" "$global" >/dev/null 2>&1 && continue
+      bak="$HOME/.dotagents-bak/$(printf '%s' "${global#"$HOME"/}" | tr / _)"
+      run mkdir -p "$HOME/.dotagents-bak"
+      run rm -rf "$bak"
+      run mv "$global" "$bak"
+      run cp -R "$pack_skill" "$global"
+      (( DRY_RUN )) || printf 'REFRESHED: %s from the pinned pack; the old copy is in %s\n' "$global" "$bak"
+    done
+  done
+fi
+
 # 5. Validate
-problems=0
+problems=$pack_failed
+
+# 4.9 Provide each tool a skill declares (skill_requirements), through the
+# installer that already owns it, so a tool keeps one installation owner: a
+# Homebrew copy is upgraded with brew; a missing tool, or one mise provides, with
+# `mise use -g <tool>@latest`, linked into ~/.local/bin since env.sh puts mise's
+# shims after the system dirs. Any other copy (a system package) is reported for
+# its own package manager, never shadowed.
+if (( ! ONLY_MODE )) || is_selected ".agents"; then
+  brew_prefix=$(brew --prefix 2>/dev/null || true)
+  while IFS='|' read -r tool min skill; do
+    if requirement_met "$tool" "$min"; then
+      printf 'TOOL: %s %s at %s, for skill %s%s\n' "$tool" "${REQ_HAVE:-(no version)}" \
+        "$(PATH="$AGENT_PATH" command -v "$tool")" "$skill" "${min:+ (needs >= $min)}"
+      continue
+    fi
+    found=$(PATH="$AGENT_PATH" command -v "$tool" 2>/dev/null || true)
+    link="$HOME/.local/bin/$tool"
+    if [ -n "$found" ] && [ -n "$brew_prefix" ] && [ "${found#"$brew_prefix"/}" != "$found" ]; then
+      via=brew
+      run brew upgrade "$tool" || true
+    elif [ -z "$found" ] || [ "$found" = "$MISE_SHIMS/$tool" ] \
+      || { [ "$found" = "$link" ] && [ "$(readlink "$link")" = "$MISE_SHIMS/$tool" ]; }; then
+      via=mise
+      if [ -e "$link" ] && [ ! -L "$link" ]; then
+        printf 'CONFLICT: %s is a real file; skill %s needs %s >= %s\n' "$link" "$skill" "$tool" "${min:-any}"
+        conflicts=$((conflicts + 1))
+        continue
+      fi
+      if ! command -v mise >/dev/null 2>&1; then
+        printf 'WARNING: skill %s needs %s%s, and mise is not installed to provide it\n' "$skill" "$tool" "${min:+ >= $min}" >&2
+        problems=$((problems + 1))
+        continue
+      fi
+      # mise fails, writing no config, when it can't provide the tool: a platform
+      # its backend has no build for (ttyd's aqua package has none for macOS), or
+      # an unreachable registry. Homebrew provides it then, where the host has it.
+      if ! run mise use -g "$tool@latest" && [ -n "$brew_prefix" ]; then
+        via=brew
+        run brew install "$tool" || true
+      fi
+    else
+      printf 'WARNING: %s %s at %s is too old for skill %s (needs >= %s); upgrade it with the package manager that installed it\n' \
+        "$tool" "${REQ_HAVE:-(no version)}" "$found" "$skill" "$min" >&2
+      problems=$((problems + 1))
+      continue
+    fi
+    if (( ! DRY_RUN )) && ! requirement_met "$tool" "$min"; then
+      printf 'WARNING: %s did not provide %s >= %s for skill %s\n' "$via" "$tool" "${min:-any}" "$skill" >&2
+      problems=$((problems + 1))
+      continue
+    fi
+    if [ "$via" = mise ]; then
+      run mkdir -p "$HOME/.local/bin"
+      run ln -sfn "$MISE_SHIMS/$tool" "$link"
+    fi
+    (( DRY_RUN )) && continue
+    printf 'PROVIDED: %s %s via %s, for skill %s\n' "$tool" "$REQ_HAVE" "$via" "$skill"
+  done < <(skill_requirements)
+fi
 if command -v jq >/dev/null 2>&1; then
   for f in "$HOME"/.claude/settings.json; do
     [ -e "$f" ] || continue

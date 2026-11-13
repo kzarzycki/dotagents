@@ -7,6 +7,8 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+from test_install_subsets import make_checkout, run_install
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -178,8 +180,9 @@ def test_home_configuration_does_not_enable_direct_matt_plugin():
 
 
 # Machine-wide plugins are opt-in per project; persistent memory is provided
-# by the Hindsight integration rather than a Claude-only plugin.
-USER_SCOPED_PLUGINS = set()
+# by the Hindsight integration rather than a Claude-only plugin. The claude-mods
+# three change the harness itself, so they are on everywhere (#108).
+USER_SCOPED_PLUGINS = {"decision-model@claude-mods", "eval-kernel@claude-mods", "self-compact@claude-mods"}
 
 
 def test_home_claude_global_plugins_are_user_scoped_only():
@@ -201,28 +204,19 @@ def test_home_claude_global_plugins_are_user_scoped_only():
 
 
 def test_install_removes_retired_toolkit_symlinks(tmp_path):
+    # A copy without the pinned pack, so no declared tool makes the exit depend on the host's.
+    repo, home = make_checkout(tmp_path)
     stale = (
-        tmp_path / ".agents/mcp-registry.json",
-        tmp_path / ".claude/hooks",
-        tmp_path / ".agents/rules",
-        tmp_path / ".config/ponytail/config.json",
+        home / ".agents/mcp-registry.json",
+        home / ".claude/hooks",
+        home / ".agents/rules",
+        home / ".config/ponytail/config.json",
     )
     for path in stale:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.symlink_to(ROOT / "home" / path.relative_to(tmp_path))
+        path.symlink_to(repo / "home" / path.relative_to(home))
 
-    result = subprocess.run(
-        [
-            ROOT / "bin/dotagents",
-            "install",
-            "--no-pull",
-            "--profile",
-            "vps",
-        ],
-        env={**os.environ, "HOME": str(tmp_path)},
-        text=True,
-        capture_output=True,
-    )
+    result = run_install(repo, home, "--profile", "vps")
 
     assert result.returncode == 0, result.stdout + result.stderr
     for path in stale:
@@ -233,7 +227,7 @@ def test_install_removes_marker_owned_toolkit_project_residue(tmp_path):
     repo = tmp_path / "repo"
     (repo / "bin").mkdir(parents=True)
     shutil.copy2(ROOT / "bin/dotagents", repo / "bin/dotagents")
-    shutil.copytree(ROOT / "home", repo / "home")
+    shutil.copytree(ROOT / "home", repo / "home", symlinks=True)
     (repo / ".git/info").mkdir(parents=True)
     exclude = repo / ".git/info/exclude"
     exclude.write_text(

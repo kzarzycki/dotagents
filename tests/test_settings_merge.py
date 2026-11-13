@@ -12,7 +12,7 @@ def test_install_keeps_host_settings_the_repo_does_not_set(tmp_path):
     host = json.loads(settings.read_text())
     host["env"]["CLAUDE_CODE_ENABLE_TELEMETRY"] = "0"
     host["permissions"]["additionalDirectories"] = ["/srv/host"]
-    host["enabledPlugins"] = {"stale@host-market": False, "ponytail@host-market": True}
+    host["enabledPlugins"] = {**host["enabledPlugins"], "stale@host-market": False, "ponytail@host-market": True}
     host["extraKnownMarketplaces"]["host-market"] = {"source": {"source": "github", "repo": "x/y"}}
     # Host key order differs from the repo's; it must not show up as a change.
     host = {"model": "opus", **dict(reversed(list(host.items())))}
@@ -28,20 +28,35 @@ def test_install_keeps_host_settings_the_repo_does_not_set(tmp_path):
     assert got["permissions"]["allow"] == ["Bash(host-only:*)"] + fresh["permissions"]["allow"]
     assert got["permissions"]["additionalDirectories"] == ["/srv/host"]
     assert got["autoMode"]["allow"] == [fresh["autoMode"]["allow"][0], "A host-only auto-mode rule.", *fresh["autoMode"]["allow"][1:]]
-    assert got["enabledPlugins"] == {"ponytail@host-market": True}
+    assert got["enabledPlugins"] == {**fresh["enabledPlugins"], "ponytail@host-market": True}
     assert got["extraKnownMarketplaces"] == {**fresh["extraKnownMarketplaces"], "host-market": host["extraKnownMarketplaces"]["host-market"]}
     # The printed diff carries only the repo's changes.
-    changed = [l for l in result.stdout.splitlines() if l.startswith(("+", "-")) and not l.startswith(("+++", "---"))]
+    own = result.stdout.split(f"UPDATED {settings}:", 1)[1].split("UPDATED ", 1)[0]  # not the Codex config's diff
+    changed = [l for l in own.splitlines() if l.startswith(("+", "-")) and not l.startswith(("+++", "---"))]
     assert sorted(changed) == [
         '+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",',
         '-    "CLAUDE_CODE_ENABLE_TELEMETRY": "0",',
         '-    "stale@host-market": false,',
-    ], result.stdout
+    ], own
 
     before = settings.read_bytes()
     result = run_install(repo, home, "--profile", "vps")
     assert result.returncode == 0 and "UPDATED" not in result.stdout
     assert settings.read_bytes() == before
+
+
+def test_the_compact_window_is_a_setting_so_a_launch_flag_can_lower_it(tmp_path):
+    # Claude Code ranks CLAUDE_CODE_AUTO_COMPACT_WINDOW above --autocompact, and
+    # --autocompact above autoCompactWindow, so the default lives in the setting.
+    repo, home = make_checkout(tmp_path)
+    settings = home / ".claude/settings.json"
+    settings.parent.mkdir()
+    settings.write_text(json.dumps({"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "330000"}}) + "\n")
+    for profile in ("mac", "vps", "remote", "mac,work"):
+        result = run_install(repo, home, "--profile", profile)
+        assert result.returncode == 0, result.stdout + result.stderr
+        got = json.loads(settings.read_text())
+        assert got["autoCompactWindow"] == 330000 and "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in got["env"], profile
 
 
 def test_unparsable_host_settings_are_left_alone(tmp_path):
@@ -93,3 +108,42 @@ def test_the_work_overlay_writes_omnigents_telemetry_allowlist_and_mac_removes_i
     result = run_install(repo, home, "--profile", "mac,work")
     assert "not managed by dotagents" in result.stderr
     assert json.loads(allow.read_text()) == {"endpoint": "http://mine", "repos": []}
+
+
+def test_a_hosts_directory_marketplace_wins_and_work_pins_decision_model_to_claude(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    settings = home / ".claude/settings.json"
+    assert run_install(repo, home, "--profile", "mac,work").returncode == 0
+    fresh = json.loads(settings.read_text())
+    assert fresh["extraKnownMarketplaces"]["claude-mods"] == {"source": {"source": "github", "repo": "kzarzycki/claude-mods"}}
+    assert fresh["pluginConfigs"] == {"decision-model@claude-mods": {"options": {"backend": "claude"}}}
+
+    host = json.loads(settings.read_text())
+    checkout = {"source": {"source": "directory", "path": "/src/claude-mods"}}
+    host["extraKnownMarketplaces"]["claude-mods"] = checkout
+    host["extraKnownMarketplaces"]["powerpoint-mcp"] = {"source": {"source": "github", "repo": "fork/powerpoint-mcp"}}
+    host["pluginConfigs"] = {
+        "auto-effort@inline": {"options": {"maxEffort": "high"}},
+        "decision-model@claude-mods": {"options": {"backend": "auto", "claudeModel": "sonnet"}},
+    }
+    settings.write_text(json.dumps(host, indent=2) + "\n")
+
+    result = run_install(repo, home, "--profile", "mac,work")
+    assert result.returncode == 0, result.stdout + result.stderr
+    got = json.loads(settings.read_text())
+    assert got["extraKnownMarketplaces"]["claude-mods"] == checkout
+    assert "NOTE: marketplace claude-mods keeps this host's directory source /src/claude-mods" in result.stdout
+    # Only a directory source is a development override; any other host source is the repo's again.
+    assert got["extraKnownMarketplaces"]["powerpoint-mcp"] == fresh["extraKnownMarketplaces"]["powerpoint-mcp"]
+    assert got["pluginConfigs"] == {
+        "auto-effort@inline": {"options": {"maxEffort": "high"}},
+        "decision-model@claude-mods": {"options": {"backend": "claude", "claudeModel": "sonnet"}},
+    }
+    assert "NOTE: marketplace" in run_install(repo, home, "--profile", "mac,work", "--dry-run").stdout
+
+    # Removing the host's entry brings the managed source back.
+    del got["extraKnownMarketplaces"]["claude-mods"]
+    settings.write_text(json.dumps(got, indent=2) + "\n")
+    result = run_install(repo, home, "--profile", "mac,work")
+    assert "NOTE: marketplace" not in result.stdout
+    assert json.loads(settings.read_text())["extraKnownMarketplaces"]["claude-mods"] == fresh["extraKnownMarketplaces"]["claude-mods"]

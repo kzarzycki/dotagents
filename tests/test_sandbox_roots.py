@@ -10,7 +10,7 @@ import pytest
 
 from test_install_subsets import make_checkout, run_install
 
-ROOTS = (".apm", ".cache/uv", ".local/share/mise")
+ROOTS = (".apm", ".cache/uv", ".cache/engineering-loop", ".local/share/mise")
 MARK = "# dotagents sandbox:"
 
 
@@ -63,18 +63,69 @@ def test_a_config_without_the_table_gets_one(tmp_path, config):
     assert roots(codex) == [str(home / root) for root in ROOTS]
 
 
+def test_a_fresh_home_is_settled_after_one_install(tmp_path):
+    # otel is re-appended at the end of the file on every install, so the sandbox table must not sit after it
+    repo, home = make_checkout(tmp_path)
+    (home / ".codex").mkdir()
+    assert run_install(repo, home, "--profile", "vps").returncode == 0
+    codex = home / ".codex/config.toml"
+    text = codex.read_text()
+    assert "[otel]" in text and text.index("[sandbox_workspace_write]") < text.index("[otel]")
+    assert run_install(repo, home, "--profile", "vps").returncode == 0
+    assert codex.read_text() == text
+
+
+def test_the_loop_s_lock_folder_is_created_and_a_root_even_on_a_bare_host(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    (home / ".codex").mkdir()
+    assert run_install(repo, home).returncode == 0
+    assert (home / ".cache/engineering-loop").is_dir()
+    assert roots(home / ".codex/config.toml") == [str(home / ".cache/engineering-loop")]
+
+
 @pytest.mark.parametrize(
-    "user",
+    "user, kept",
     [
-        '[sandbox_workspace_write]\nwritable_roots = ["/mine"]\n',
-        'sandbox_workspace_write.writable_roots = ["/mine"]\n',
+        ('[sandbox_workspace_write]\nwritable_roots = ["/mine"]\n', "/mine"),
+        ('sandbox_workspace_write.writable_roots = ["/mine"]  # mine\n', "/mine"),
+        ('[sandbox_workspace_write]\nwritable_roots = [ "/mine", ]\n', "/mine"),
+        ("[sandbox_workspace_write]\nwritable_roots = []\n", None),
     ],
 )
-def test_a_hand_set_writable_roots_is_the_user_s(tmp_path, user):
-    _, _, codex, result = install(tmp_path, user)
-    text = codex.read_text()
-    assert text.startswith(user) and MARK not in text  # [otel] may follow; the roots are not ours
+def test_a_hand_set_writable_roots_keeps_its_entries_and_gains_the_missing_roots(tmp_path, user, kept):
+    repo, home, codex, result = install(tmp_path, user)
+    want = [str(home / root) for root in ROOTS]
+    assert roots(codex) == ([kept] if kept else []) + want
+    assert MARK not in codex.read_text() and "sets its own" not in result.stderr
+    before = codex.read_bytes()
+    assert run_install(repo, home).returncode == 0
+    assert codex.read_bytes() == before  # a second install changes nothing
+
+
+def test_a_hand_set_list_that_already_has_a_root_does_not_repeat_it(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    (home / ".cache/engineering-loop").mkdir(parents=True)
+    codex = home / ".codex/config.toml"
+    codex.parent.mkdir()
+    mine = str(home / ".cache/engineering-loop")
+    codex.write_text(f'[sandbox_workspace_write]\nwritable_roots = ["{mine}", "/mine"]\n')
+    assert run_install(repo, home).returncode == 0
+    assert roots(codex) == [mine, "/mine"]
+
+
+def test_a_list_install_cannot_edit_is_left_alone_and_the_warning_names_the_missing_roots(tmp_path):
+    user = '[sandbox_workspace_write]\nwritable_roots = [\n  "/mine",\n]\n[other]\nwritable_roots = ["/x"]\n'
+    repo, home = make_checkout(tmp_path)
+    for root in ROOTS:
+        (home / root).mkdir(parents=True)
+    codex = home / ".codex/config.toml"
+    codex.parent.mkdir()
+    codex.write_text(user)
+    result = run_install(repo, home)
+    assert result.returncode == 1, result.stdout + result.stderr  # reported by name and non-zero (issue #147)
+    assert codex.read_text().startswith(user) and MARK not in codex.read_text()
     assert f"{codex} sets its own writable_roots; dotagents sandbox roots not managed" in result.stderr
+    assert str(home / ".cache/engineering-loop") in result.stderr
 
 
 ALLOWED = [
