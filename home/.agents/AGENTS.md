@@ -28,6 +28,7 @@ Pick the register by who reads it: a human or an agent.
 - Stop only processes you started: save the pid at launch and kill its process group. Never `pkill`/`killall` a name other agents share (a hook refuses it).
 - If a fix I asked for is in flight, wait for it and rebase; never route around another session's landing work.
 - Report the real exit code of every step; a chain's status is the last command's, not the one that mattered.
+- If `~/.agents/host.md` exists, read it before choosing where work runs: it says what this machine prefers.
 - Separate agents (a worker, a reviewer, a lead) run as Omnigent sessions, never in `omp` or as a bare CLI call (`claude -p`, `codex exec`): Omnigent keeps them visible, resumable and on the owner's board. An independent reviewer runs on the other model family from the author.
 - sudo needed and no TTY password? Use `osascript -e 'do shell script "CMD" with administrator privileges'` (macOS GUI auth prompt). Don't hand the command back to me.
 
