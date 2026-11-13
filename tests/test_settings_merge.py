@@ -27,9 +27,16 @@ def test_install_keeps_host_settings_the_repo_does_not_set(tmp_path):
     assert got["env"] == fresh["env"] and got["hooks"] == fresh["hooks"]
     assert got["permissions"]["allow"] == ["Bash(host-only:*)"] + fresh["permissions"]["allow"]
     assert got["permissions"]["additionalDirectories"] == ["/srv/host"]
-    assert got["autoMode"]["allow"] == [fresh["autoMode"]["allow"][0], "A host-only auto-mode rule.", *fresh["autoMode"]["allow"][1:]]
+    assert got["autoMode"]["allow"] == [
+        fresh["autoMode"]["allow"][0],
+        "A host-only auto-mode rule.",
+        *fresh["autoMode"]["allow"][1:],
+    ]
     assert got["enabledPlugins"] == {**fresh["enabledPlugins"], "ponytail@host-market": True}
-    assert got["extraKnownMarketplaces"] == {**fresh["extraKnownMarketplaces"], "host-market": host["extraKnownMarketplaces"]["host-market"]}
+    assert got["extraKnownMarketplaces"] == {
+        **fresh["extraKnownMarketplaces"],
+        "host-market": host["extraKnownMarketplaces"]["host-market"],
+    }
     # The printed diff carries only the repo's changes.
     own = result.stdout.split(f"UPDATED {settings}:", 1)[1].split("UPDATED ", 1)[0]  # not the Codex config's diff
     changed = [l for l in own.splitlines() if l.startswith(("+", "-")) and not l.startswith(("+++", "---"))]
@@ -115,7 +122,9 @@ def test_a_hosts_directory_marketplace_wins_and_work_pins_decision_model_to_clau
     settings = home / ".claude/settings.json"
     assert run_install(repo, home, "--profile", "mac,work").returncode == 0
     fresh = json.loads(settings.read_text())
-    assert fresh["extraKnownMarketplaces"]["claude-mods"] == {"source": {"source": "github", "repo": "kzarzycki/claude-mods"}}
+    assert fresh["extraKnownMarketplaces"]["claude-mods"] == {
+        "source": {"source": "github", "repo": "kzarzycki/claude-mods"}
+    }
     assert fresh["pluginConfigs"] == {"decision-model@claude-mods": {"options": {"backend": "claude"}}}
 
     host = json.loads(settings.read_text())
@@ -146,4 +155,7 @@ def test_a_hosts_directory_marketplace_wins_and_work_pins_decision_model_to_clau
     settings.write_text(json.dumps(got, indent=2) + "\n")
     result = run_install(repo, home, "--profile", "mac,work")
     assert "NOTE: marketplace" not in result.stdout
-    assert json.loads(settings.read_text())["extraKnownMarketplaces"]["claude-mods"] == fresh["extraKnownMarketplaces"]["claude-mods"]
+    assert (
+        json.loads(settings.read_text())["extraKnownMarketplaces"]["claude-mods"]
+        == fresh["extraKnownMarketplaces"]["claude-mods"]
+    )

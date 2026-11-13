@@ -68,14 +68,19 @@ def test_install_keeps_the_pinned_pack_at_its_lock(tmp_path):
     bindir.mkdir()
     # A failing install still creates the skills dir, as a deploy cut short would.
     (bindir / "mise").write_text(
-        f'#!/bin/sh\necho "$PWD $*" >> {calls}\nmkdir -p .agents/skills\n[ -f fail ] && exit 1\nexit 0\n')
+        f'#!/bin/sh\necho "$PWD $*" >> {calls}\nmkdir -p .agents/skills\n[ -f fail ] && exit 1\nexit 0\n'
+    )
     (bindir / "mise").chmod(0o755)
     env = {**os.environ, "HOME": str(home), "PATH": f"{bindir}:{os.environ['PATH']}"}
 
     def install(checkout=repo, *args, code=0):
         result = subprocess.run(
             ["/bin/bash", str(checkout / "bin/dotagents"), "install", "--no-pull", "--only", ".agents", *args],
-            env=env, capture_output=True, text=True, timeout=30)
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
         assert result.returncode == code, result.stdout + result.stderr
         return result
 
@@ -141,11 +146,19 @@ def test_agent_hygiene_installs_a_missing_pack_on_its_next_run(tmp_path):
     (tmp_path / "FAIL").touch()
     env = {**os.environ, "HOME": str(home), "DISK_HYGIENE_FAILED": "exit 42: no network"}
     # the old disk-hygiene relaunches through its link with Python after its install failed
-    done = subprocess.run([sys.executable, str(home / ".local/bin/disk-hygiene")], env=env, capture_output=True, text=True)
-    assert done.returncode == 1 and "did not install it (the install before: exit 42: no network)" in done.stderr, done.stderr
+    done = subprocess.run(
+        [sys.executable, str(home / ".local/bin/disk-hygiene")], env=env, capture_output=True, text=True
+    )
+    assert done.returncode == 1 and "did not install it (the install before: exit 42: no network)" in done.stderr, (
+        done.stderr
+    )
     (tmp_path / "FAIL").unlink()
-    done = subprocess.run([str(home / ".local/bin/agent-hygiene")], env={**os.environ, "HOME": str(home)}, capture_output=True, text=True)
+    done = subprocess.run(
+        [str(home / ".local/bin/agent-hygiene")], env={**os.environ, "HOME": str(home)}, capture_output=True, text=True
+    )
     assert done.stdout == "pack-script\n", done.stdout + done.stderr
     assert calls.read_text() == "install --no-pull\ninstall --no-pull\n"
-    done = subprocess.run([str(home / ".local/bin/agent-hygiene")], env={**os.environ, "HOME": str(home)}, capture_output=True, text=True)
+    done = subprocess.run(
+        [str(home / ".local/bin/agent-hygiene")], env={**os.environ, "HOME": str(home)}, capture_output=True, text=True
+    )
     assert done.stdout == "pack-script\n" and calls.read_text().count("install") == 2, "a present pack installs nothing"

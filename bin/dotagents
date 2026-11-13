@@ -463,14 +463,20 @@ if (( ! ONLY_MODE && ! NO_PULL )); then
   fi
 fi
 
-# 1.5 Enable the repo's tracked git hooks on this clone. core.hooksPath is
-# per-clone local config (not committable), so wire it here — the install
-# everyone already runs becomes the one-step opt-in. Idempotent.
-if (( ! ONLY_MODE )) && [ -d "$REPO_ROOT/.git" ] && [ -d "$REPO_ROOT/.githooks" ]; then
-  current_hooks=$(git -C "$REPO_ROOT" config --local --get core.hooksPath || true)
-  if [ "$current_hooks" != ".githooks" ]; then
-    run git -C "$REPO_ROOT" config --local core.hooksPath .githooks
-    printf 'HOOKED: %s git hooks -> .githooks (gitleaks/json/symlink pre-commit)\n' "$REPO_ROOT"
+# 1.5 Wire the repo's pre-commit hooks (.pre-commit-config.yaml: fast checks on commit and
+# on push, no tests) on this clone. Hooks are per-clone, so the install everyone already
+# runs is the one-step opt-in. Idempotent. `pre-commit install` refuses while
+# core.hooksPath is set, so a clone still on the old tracked .githooks setting is moved over.
+if (( ! ONLY_MODE )) && [ -d "$REPO_ROOT/.git" ] && [ -f "$REPO_ROOT/.pre-commit-config.yaml" ]; then
+  if [ "$(git -C "$REPO_ROOT" config --local --get core.hooksPath || true)" = ".githooks" ]; then
+    run git -C "$REPO_ROOT" config --local --unset core.hooksPath
+    printf 'MOVED: %s core.hooksPath=.githooks -> pre-commit hooks\n' "$REPO_ROOT"
+  fi
+  if ! command -v pre-commit >/dev/null 2>&1; then
+    echo "dotagents: pre-commit not installed; skipping git hooks (mise install)" >&2
+  elif [ ! -x "$REPO_ROOT/.git/hooks/pre-commit" ] || [ ! -x "$REPO_ROOT/.git/hooks/pre-push" ]; then
+    (cd "$REPO_ROOT" && run pre-commit install)
+    printf 'HOOKED: %s pre-commit + pre-push (fast checks, no tests)\n' "$REPO_ROOT"
   fi
 fi
 

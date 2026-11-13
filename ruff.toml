@@ -1,0 +1,6 @@
+# Used by the pre-commit hooks (.pre-commit-config.yaml).
+line-length = 120
+
+[lint]
+# existing code assigns lambdas and names a variable `l`; not worth a rewrite for a fast check
+ignore = ["E731", "E741"]

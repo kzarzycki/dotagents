@@ -47,9 +47,11 @@ class Hold(Exception):
 
 
 def version(value):
-    if not isinstance(value, str) or not re.fullmatch(
-        r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", value
-    ) or len(value) > 40:
+    if (
+        not isinstance(value, str)
+        or not re.fullmatch(r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", value)
+        or len(value) > 40
+    ):
         raise Hold("Version is not a canonical stable release")
     return tuple(map(int, value.split(".")))
 
@@ -224,7 +226,7 @@ def asset_targets(head):
         count = int.from_bytes(head[4:8], "big") if stride and len(head) >= 8 else 0
         if not 0 < count <= MAX_SLICES or len(head) < 8 + count * stride:
             return set()
-        cpus = [int.from_bytes(head[8 + index * stride:12 + index * stride], "big") for index in range(count)]
+        cpus = [int.from_bytes(head[8 + index * stride : 12 + index * stride], "big") for index in range(count)]
     return {MACH_CPUS[cpu] for cpu in cpus if cpu in MACH_CPUS}
 
 
@@ -261,8 +263,12 @@ def stage_candidate(approval):
 def smoke_command(binary, args, cwd, environment, timeout):
     with tempfile.TemporaryFile() as output:
         process = subprocess.Popen(
-            [str(binary), *args], cwd=cwd, env=environment,
-            stdin=subprocess.DEVNULL, stdout=output, stderr=subprocess.STDOUT,
+            [str(binary), *args],
+            cwd=cwd,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            stdout=output,
+            stderr=subprocess.STDOUT,
             start_new_session=True,
         )
         try:
@@ -290,13 +296,17 @@ def smoke(binary, expected_version):
         home.mkdir(mode=0o700)
         work.mkdir(mode=0o700)
         environment = {
-            "HOME": str(home), "PATH": "/usr/bin:/bin",
+            "HOME": str(home),
+            "PATH": "/usr/bin:/bin",
             "PI_CODING_AGENT_DIR": str(home / ".omp/agent"),
             "XDG_CONFIG_HOME": str(home / ".config"),
             "XDG_CACHE_HOME": str(home / ".cache"),
             "XDG_DATA_HOME": str(home / ".local/share"),
             "XDG_STATE_HOME": str(home / ".local/state"),
-            "TMPDIR": str(base), "TERM": "dumb", "LANG": "C.UTF-8", "NO_COLOR": "1",
+            "TMPDIR": str(base),
+            "TERM": "dumb",
+            "LANG": "C.UTF-8",
+            "NO_COLOR": "1",
         }
         actual = smoke_command(binary, ["--version"], work, environment, 5)
         if not re.fullmatch(r"(?:omp/|omp v?)?" + re.escape(expected_version), actual):
@@ -322,7 +332,11 @@ def transaction_metadata():
     if not isinstance(value, dict) or set(value) != {"old", "new"}:
         raise Hold("Upgrade recovery journal is invalid")
     old, new = manifest(value["old"]), manifest(value["new"])
-    if version(new["version"]) <= version(old["version"]) or new["sha256"] == old["sha256"] or new["commit"] == old["commit"]:
+    if (
+        version(new["version"]) <= version(old["version"])
+        or new["sha256"] == old["sha256"]
+        or new["commit"] == old["commit"]
+    ):
         raise Hold("Upgrade recovery journal identities are invalid")
     return old, new
 
@@ -336,7 +350,11 @@ def recover_transaction():
         (STATE / "approved.json").unlink(missing_ok=True)
         (STATE / "candidate").unlink(missing_ok=True)
         sync_directory(STATE)
-        report(status="INSTALLED", version=new["version"], summary=f"OMP {new['version']} activated; interrupted transaction cleanup recovered")
+        report(
+            status="INSTALLED",
+            version=new["version"],
+            summary=f"OMP {new['version']} activated; interrupted transaction cleanup recovered",
+        )
         finish_transaction()
         return "committed"
     if installed != old:
@@ -395,45 +413,81 @@ def activate_if_ready(allow_install=True):
             if not isinstance(decision, dict):
                 raise Hold("Release review report is invalid")
             reviewed = decision.get("target")
-            if (decision.get("review_mode") != "strict" or not isinstance(reviewed, dict)
-                    or any(reviewed.get(key) != approval[key] for key in ("version", "commit", "sha256", "size", "asset_url"))):
+            if (
+                decision.get("review_mode") != "strict"
+                or not isinstance(reviewed, dict)
+                or any(
+                    reviewed.get(key) != approval[key] for key in ("version", "commit", "sha256", "size", "asset_url")
+                )
+            ):
                 raise Hold("Candidate lacks a source review for this exact release")
-            verdict_keys = {"verdict", "reviewed", "chunk_id", "source_sha256", "risks",
-                            "breaking_changes", "features", "uncertainties", "capability_facts"}
+            verdict_keys = {
+                "verdict",
+                "reviewed",
+                "chunk_id",
+                "source_sha256",
+                "risks",
+                "breaking_changes",
+                "features",
+                "uncertainties",
+                "capability_facts",
+            }
             reviews = decision.get("reviews")
             baseline = decision.get("accepted_source")
-            if (not isinstance(reviews, list) or not reviews or decision.get("chunk_count") != len(reviews)
-                    or not hex_value(decision.get("diff_sha256"), 64) or not isinstance(baseline, dict)
-                    or not hex_value(baseline.get("commit"), 40)
-                    or any(not isinstance(item, dict) or set(item) != verdict_keys
-                           or item["chunk_id"] != f"chunk-{index:03d}-of-{len(reviews):03d}"
-                           or item["reviewed"] is not True or item["verdict"] not in ("SAFE", "HOLD")
-                           or not hex_value(item["source_sha256"], 64)
-                           or any(not isinstance(item[key], list) for key in
-                                  ("risks", "breaking_changes", "features", "uncertainties", "capability_facts"))
-                           for index, item in enumerate(reviews, 1))):
+            if (
+                not isinstance(reviews, list)
+                or not reviews
+                or decision.get("chunk_count") != len(reviews)
+                or not hex_value(decision.get("diff_sha256"), 64)
+                or not isinstance(baseline, dict)
+                or not hex_value(baseline.get("commit"), 40)
+                or any(
+                    not isinstance(item, dict)
+                    or set(item) != verdict_keys
+                    or item["chunk_id"] != f"chunk-{index:03d}-of-{len(reviews):03d}"
+                    or item["reviewed"] is not True
+                    or item["verdict"] not in ("SAFE", "HOLD")
+                    or not hex_value(item["source_sha256"], 64)
+                    or any(
+                        not isinstance(item[key], list)
+                        for key in ("risks", "breaking_changes", "features", "uncertainties", "capability_facts")
+                    )
+                    for index, item in enumerate(reviews, 1)
+                )
+            ):
                 raise Hold("Release review lacks complete source coverage")
             if decision.get("status") == "APPROVED":
                 coherence = decision.get("coherence_review")
                 recorded = decision.get("accepted_source_recorded")
-                if (decision.get("risks") != [] or not isinstance(coherence, dict)
-                        or set(coherence) != verdict_keys | {"resolved_concerns", "resolved_capabilities"}
-                        or coherence.get("chunk_id") != "whole-release"
-                        or not hex_value(decision.get("ledger_sha256"), 64)
-                        or coherence.get("source_sha256") != decision["ledger_sha256"]
-                        or coherence.get("verdict") != "SAFE" or coherence.get("reviewed") is not True
-                        or any(coherence.get(key) != [] for key in ("risks", "breaking_changes", "uncertainties"))
-                        or any(not isinstance(coherence.get(key), list) for key in
-                               ("features", "capability_facts", "resolved_concerns", "resolved_capabilities"))
-                        or not isinstance(recorded, dict) or recorded.get("basis") != "audited"
-                        or (recorded.get("version"), recorded.get("commit")) != (approval["version"], approval["commit"])):
+                if (
+                    decision.get("risks") != []
+                    or not isinstance(coherence, dict)
+                    or set(coherence) != verdict_keys | {"resolved_concerns", "resolved_capabilities"}
+                    or coherence.get("chunk_id") != "whole-release"
+                    or not hex_value(decision.get("ledger_sha256"), 64)
+                    or coherence.get("source_sha256") != decision["ledger_sha256"]
+                    or coherence.get("verdict") != "SAFE"
+                    or coherence.get("reviewed") is not True
+                    or any(coherence.get(key) != [] for key in ("risks", "breaking_changes", "uncertainties"))
+                    or any(
+                        not isinstance(coherence.get(key), list)
+                        for key in ("features", "capability_facts", "resolved_concerns", "resolved_capabilities")
+                    )
+                    or not isinstance(recorded, dict)
+                    or recorded.get("basis") != "audited"
+                    or (recorded.get("version"), recorded.get("commit")) != (approval["version"], approval["commit"])
+                ):
                     raise Hold("Source review did not approve this release")
             elif decision.get("status") == "ACCEPTED":
                 acceptance = decision.get("acceptance")
-                if (decision.get("approval_basis") != "user-accepted" or not isinstance(acceptance, dict)
-                        or acceptance.get("basis") != "user-accepted" or acceptance.get("target") != reviewed
-                        or acceptance.get("base_sha256") != installed["sha256"]
-                        or not hex_value(acceptance.get("report_sha256"), 64)):
+                if (
+                    decision.get("approval_basis") != "user-accepted"
+                    or not isinstance(acceptance, dict)
+                    or acceptance.get("basis") != "user-accepted"
+                    or acceptance.get("target") != reviewed
+                    or acceptance.get("base_sha256") != installed["sha256"]
+                    or not hex_value(acceptance.get("report_sha256"), 64)
+                ):
                     raise Hold("User acceptance does not bind this release and baseline")
                 path = STATE / "evidence" / approval["version"] / f"accepted-report-{acceptance['report_sha256']}.json"
                 with regular_file(path) as (stream, _):
@@ -441,9 +495,13 @@ def activate_if_ready(allow_install=True):
                 if len(original) > REPORT_LIMIT or hashlib.sha256(original).hexdigest() != acceptance["report_sha256"]:
                     raise Hold("Accepted review report changed or exceeds bound")
                 held = json.loads(original, object_pairs_hook=unique_object)
-                if (not isinstance(held, dict) or held.get("status") != "HOLD"
-                        or held.get("review_mode") != "strict" or held.get("target") != reviewed
-                        or held.get("risks") != acceptance.get("findings")):
+                if (
+                    not isinstance(held, dict)
+                    or held.get("status") != "HOLD"
+                    or held.get("review_mode") != "strict"
+                    or held.get("target") != reviewed
+                    or held.get("risks") != acceptance.get("findings")
+                ):
                     raise Hold("User acceptance does not match the reviewed findings")
             else:
                 raise Hold("Source review is held or incomplete")
@@ -462,7 +520,11 @@ def activate_if_ready(allow_install=True):
             write_json(STATE / "installed.json", updated)
             (STATE / "approved.json").unlink()
             (STATE / "candidate").unlink(missing_ok=True)
-            report(status="INSTALLED", version=release, summary=f"OMP {release} activated; version and native-read smoke passed")
+            report(
+                status="INSTALLED",
+                version=release,
+                summary=f"OMP {release} activated; version and native-read smoke passed",
+            )
             finish_transaction()
         except (OSError, ValueError, Hold, subprocess.SubprocessError) as error:
             try:
@@ -473,7 +535,11 @@ def activate_if_ready(allow_install=True):
                 try:
                     recover_transaction()
                 except (OSError, ValueError, Hold) as rollback_error:
-                    report(status="HOLD", summary=f"Rollback failed; recovery files retained: {rollback_error}", risks=[str(rollback_error)])
+                    report(
+                        status="HOLD",
+                        summary=f"Rollback failed; recovery files retained: {rollback_error}",
+                        risks=[str(rollback_error)],
+                    )
                     target = recovery_fallback()
             else:
                 (ROOT / "omp-staged").unlink(missing_ok=True)
@@ -490,8 +556,11 @@ def request_audit():
         with open(os.devnull, "rb") as sink, open(os.devnull, "wb") as drain:
             subprocess.Popen(
                 [sys.executable, "-I", str(AUDIT), "check"],
-                stdin=sink, stdout=drain, stderr=drain,
-                cwd=str(STATE), start_new_session=True,
+                stdin=sink,
+                stdout=drain,
+                stderr=drain,
+                cwd=str(STATE),
+                start_new_session=True,
             )
     except (OSError, subprocess.SubprocessError) as failure:
         error = f"Audit service unavailable: {failure}"
@@ -503,16 +572,26 @@ def request_audit():
         pass
     return error
 
+
 def print_report_body(value):
     print(f"Audit: {safe_text(value.get('status', 'UNKNOWN'))} (release {safe_text(value.get('version', 'unknown'))})")
     print(safe_text(value.get("summary", "No summary recorded")))
-    for key, label in (("features", "Features"), ("risks", "Risks"), ("baseline_risks", "Accepted baseline risks"), ("limitations", "Audit limitations")):
+    for key, label in (
+        ("features", "Features"),
+        ("risks", "Risks"),
+        ("baseline_risks", "Accepted baseline risks"),
+        ("limitations", "Audit limitations"),
+    ):
         items = value.get(key)
         if items:
             print(f"{label}:")
             for item in items if isinstance(items, list) else [items]:
                 print(f"  - {safe_text(item)}")
-    for key, label in (("chunk_count", "Chunks reviewed"), ("diff_sha256", "Reviewed diff SHA256"), ("evidence_path", "Evidence path")):
+    for key, label in (
+        ("chunk_count", "Chunks reviewed"),
+        ("diff_sha256", "Reviewed diff SHA256"),
+        ("evidence_path", "Evidence path"),
+    ):
         if value.get(key) is not None:
             print(f"{label}: {safe_text(value[key])}")
 
@@ -522,7 +601,10 @@ def safe_update():
     try:
         result = subprocess.run(
             [sys.executable, "-I", str(AUDIT), "deep-check", "--force"],
-            cwd=str(STATE), capture_output=True, text=True, timeout=5400,
+            cwd=str(STATE),
+            capture_output=True,
+            text=True,
+            timeout=5400,
         )
     except (OSError, subprocess.SubprocessError) as error:
         print(f"Safe update unavailable: {safe_text(str(error))}", file=sys.stderr)
@@ -538,21 +620,17 @@ def safe_update():
             return 0
         print_report_body(value)
         if result.returncode != 0 or status != "APPROVED":
-            print(f"Safe update stopped: {safe_text(value.get('summary', 'full review failed'), 240)}",
-                  file=sys.stderr)
+            print(f"Safe update stopped: {safe_text(value.get('summary', 'full review failed'), 240)}", file=sys.stderr)
             return 1
         activate_if_ready(allow_install=True)
         value = read_json(STATE / "report.json")
         if value.get("status") == "INSTALLED":
             print(safe_text(value.get("summary", "OMP update installed")))
             return 0
-        print(f"Safe update stopped: {safe_text(value.get('summary', 'activation failed'), 240)}",
-              file=sys.stderr)
+        print(f"Safe update stopped: {safe_text(value.get('summary', 'activation failed'), 240)}", file=sys.stderr)
     except (OSError, ValueError, Hold) as error:
         print(f"Safe update stopped: {safe_text(str(error))}", file=sys.stderr)
     return 1
-
-
 
 
 def without_profile(argv):
@@ -581,11 +659,35 @@ def interactive_launch(argv):
     # Conservative allowlist: unknown options, commands and automation pass through
     # untouched. Upgrade work is reserved for unambiguous interactive launches.
     switches = {
-        "-c", "--continue", "--no-session", "--no-extensions", "--no-skills",
-        "--no-rules", "--no-lsp", "--no-pty", "--no-tools", "--no-title",
-        "--hide-thinking", "--advisor", "--prewalk", "--no-prewalk", "--allow-home",
+        "-c",
+        "--continue",
+        "--no-session",
+        "--no-extensions",
+        "--no-skills",
+        "--no-rules",
+        "--no-lsp",
+        "--no-pty",
+        "--no-tools",
+        "--no-title",
+        "--hide-thinking",
+        "--advisor",
+        "--prewalk",
+        "--no-prewalk",
+        "--allow-home",
     }
-    values = {"--model", "--smol", "--slow", "--plan", "--provider", "--profile", "--cwd", "--thinking", "--models", "--resume", "-r"}
+    values = {
+        "--model",
+        "--smol",
+        "--slow",
+        "--plan",
+        "--provider",
+        "--profile",
+        "--cwd",
+        "--thinking",
+        "--models",
+        "--resume",
+        "-r",
+    }
     index = 0
     while index < len(argv):
         arg = argv[index]
@@ -655,7 +757,9 @@ def show_status():
     print_report_body(value)
     if value.get("service_error"):
         print(f"Scheduling: {safe_text(value['service_error'])}")
-    print("Background checks inspect artifacts only. Run omp safe-update for a full source review; only an approved release can activate.")
+    print(
+        "Background checks inspect artifacts only. Run omp safe-update for a full source review; only an approved release can activate."
+    )
     return 0
 
 
@@ -680,12 +784,18 @@ def main(argv=None):
             if value.get("status") == "INSTALLED" and not (STATE / "approved.json").exists():
                 print(safe_text(value.get("summary", "Release installed")))
                 return 0
-            print("Release not activated: " + safe_text(value.get("summary", "Inspect omp --upgrade-status")), file=sys.stderr)
+            print(
+                "Release not activated: " + safe_text(value.get("summary", "Inspect omp --upgrade-status")),
+                file=sys.stderr,
+            )
         except (OSError, ValueError, Hold) as error:
             print("Release not activated: " + safe_text(str(error)), file=sys.stderr)
         return 1
     if routed and routed[0] == "update":
-        print("Direct omp update is disabled: it bypasses the managed artifact check. Use omp safe-update.", file=sys.stderr)
+        print(
+            "Direct omp update is disabled: it bypasses the managed artifact check. Use omp safe-update.",
+            file=sys.stderr,
+        )
         return 2
     target = REAL
     interactive = interactive_launch(argv)
@@ -693,7 +803,7 @@ def main(argv=None):
     if interactive or (STATE / "transaction.json").exists():
         try:
             target = activate_if_ready(allow_install=False)
-        except (OSError, ValueError, Hold) as error:
+        except (OSError, ValueError, Hold):
             if (STATE / "transaction.json").exists():
                 try:
                     target = recovery_fallback()

@@ -33,10 +33,10 @@ def test_bootstrap_preserves_private_settings_and_refuses_invalid_json(tmp_path,
     npx.write_text(
         '#!/bin/sh\nprintf "%s\\n" "$@" >> "$HOME/npx.log"\n'
         'mkdir -p "$HOME/.hindsight/coding-agents/dist"\n'
-        'for h in claude-hook codex-hook; do\n'
+        "for h in claude-hook codex-hook; do\n"
         '  [ -f "$HOME/.hindsight/coding-agents/dist/$h.js" ] ||\n'
         '    echo "      if (e instanceof ReflectError && e.fallbackEligible) {" > "$HOME/.hindsight/coding-agents/dist/$h.js"\n'
-        'done\n'
+        "done\n"
     )
     npx.chmod(0o755)
     env = {**os.environ, "HOME": str(home), "PATH": f"{bin_dir}:{os.environ['PATH']}"}

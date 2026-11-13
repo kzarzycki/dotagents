@@ -92,7 +92,11 @@ def test_doctor_reports_a_skill_script_the_pinned_pack_does_not_have(tmp_path):
     skill(home / "dev/new/apm_modules/x/.claude/skills", "demo", scripts=["post_demo.sh"])
     # Codex clones its marketplaces under .tmp in each Codex home; agents load no skill there.
     skill(home / ".codex/.tmp/marketplaces/x/.agents/skills", "demo", scripts=["post_demo.sh"])
-    skill(home / ".omnigent/codex-native/abc/codex-home/.tmp/marketplaces/x/.claude/skills", "demo", scripts=["post_demo.sh"])
+    skill(
+        home / ".omnigent/codex-native/abc/codex-home/.tmp/marketplaces/x/.claude/skills",
+        "demo",
+        scripts=["post_demo.sh"],
+    )
     skill(home / ".agents/skills", "other", scripts=["any.sh"])
 
     stale = (".claude-knowledge/skills", "dev/old/.agents/skills", "dev/old/.claude/skills")
@@ -235,8 +239,12 @@ def test_install_puts_dotagents_on_path(tmp_path):
     run_install(repo, home, "--profile", "vps")
     # Run through the link, from elsewhere: it still finds its checkout.
     result = subprocess.run(
-        [str(home / ".local/bin/dotagents"), "doctor"], env={**os.environ, "HOME": str(home)},
-        cwd=tmp_path, capture_output=True, text=True, timeout=30,
+        [str(home / ".local/bin/dotagents"), "doctor"],
+        env={**os.environ, "HOME": str(home)},
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
     )
     assert f"no pinned pack: run `mise run setup:dev` in {repo}" in result.stdout, result.stdout + result.stderr
 
