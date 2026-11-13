@@ -3,7 +3,7 @@ import sys
 
 import pytest
 
-# The pre-push hook puts mise's shims on PATH, and a shim run under a test's fake HOME
+# A shell or hook with mise's shims on PATH runs them under a test's fake HOME, which
 # creates mise's data, state and cache dirs there. Install lists those dirs as Codex
 # writable roots when they exist, so the tests' configs would depend on which tools ran.
 # Pin mise to the real dirs, where it keeps them anyway.

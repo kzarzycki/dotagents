@@ -129,16 +129,27 @@ def test_a_list_install_cannot_edit_is_left_alone_and_the_warning_names_the_miss
 
 
 ALLOWED = [
-    "ps -axo pid,command", "pgrep -f pytest",
-    "mise run check", "mise run check:all", "mise run test",
-    "uv run pytest -q", ".venv/bin/pytest -q", ".venv/bin/python -m pytest -q",
+    "ps -axo pid,command",
+    "pgrep -f pytest",
+    "mise run check",
+    "mise run check:all",
+    "mise run test",
+    "uv run pytest -q",
+    ".venv/bin/pytest -q",
+    ".venv/bin/python -m pytest -q",
 ]
 ASKED = [
-    "psql -c x", "sh -c ps", "pkill -f pytest", "mise run deploy", "mise install",
-    "mise run check ::: deploy", "mise run test ::: deploy",
+    "psql -c x",
+    "sh -c ps",
+    "pkill -f pytest",
+    "mise run deploy",
+    "mise install",
+    "mise run check ::: deploy",
+    "mise run test ::: deploy",
     "agent-browser --config ~/.agent-browser/headless.json open http://127.0.0.1:8000",
     "agent-browser --config ~/.agent-browser/headless.json connect 9222",
-    "uv run python x.py", ".venv/bin/python x.py",
+    "uv run python x.py",
+    ".venv/bin/python x.py",
 ]
 
 
@@ -148,7 +159,9 @@ def test_the_rules_allow_the_verifier_s_routine_commands_and_nothing_else(comman
     rules = Path(__file__).parent.parent / "home/.codex/rules/sandbox-reads.rules"
     out = subprocess.run(
         ["codex", "execpolicy", "check", "--rules", str(rules), "--", *command.split()],
-        capture_output=True, text=True, check=True,
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout
     assert (json.loads(out).get("decision") == "allow") == (command in ALLOWED)
 
@@ -188,11 +201,16 @@ def sandbox_failure():
     if not shutil.which("codex") or "CODEX_SANDBOX" in os.environ:
         return None
     with tempfile.TemporaryDirectory() as ws:
-        probe = subprocess.run(["codex", "sandbox", "-c", 'sandbox_mode="workspace-write"', "--", "true"],
-                               cwd=ws, env={"PATH": os.environ["PATH"], "HOME": ws, "CODEX_HOME": ws},
-                               capture_output=True, text=True, timeout=60)
+        probe = subprocess.run(
+            ["codex", "sandbox", "-c", 'sandbox_mode="workspace-write"', "--", "true"],
+            cwd=ws,
+            env={"PATH": os.environ["PATH"], "HOME": ws, "CODEX_HOME": ws},
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
     if probe.returncode:
-        return f"codex sandbox can't start here (exit {probe.returncode}): {(probe.stderr.strip().splitlines() or [""])[0]}"
+        return f"codex sandbox can't start here (exit {probe.returncode}): {(probe.stderr.strip().splitlines() or [''])[0]}"
 
 
 SANDBOX_FAILURE = sandbox_failure()
@@ -210,12 +228,26 @@ def test_codex_s_sandbox_lets_a_gate_write_an_installed_root_and_not_without_it(
     workspace.mkdir()
 
     def touch(name, *config):
-        overrides = ['sandbox_mode="workspace-write"', "sandbox_workspace_write.exclude_tmpdir_env_var=true",
-                     "sandbox_workspace_write.exclude_slash_tmp=true", *config]
+        overrides = [
+            'sandbox_mode="workspace-write"',
+            "sandbox_workspace_write.exclude_tmpdir_env_var=true",
+            "sandbox_workspace_write.exclude_slash_tmp=true",
+            *config,
+        ]
         return subprocess.run(
-            ["codex", "sandbox", *(arg for c in overrides for arg in ("-c", c)), "--", "touch", str(home / ".apm" / name)],
-            cwd=workspace, env={"PATH": os.environ["PATH"], "HOME": str(home), "CODEX_HOME": str(codex.parent)},
-            capture_output=True, text=True, timeout=60,
+            [
+                "codex",
+                "sandbox",
+                *(arg for c in overrides for arg in ("-c", c)),
+                "--",
+                "touch",
+                str(home / ".apm" / name),
+            ],
+            cwd=workspace,
+            env={"PATH": os.environ["PATH"], "HOME": str(home), "CODEX_HOME": str(codex.parent)},
+            capture_output=True,
+            text=True,
+            timeout=60,
         ).returncode
 
     assert touch("x.lock") == 0

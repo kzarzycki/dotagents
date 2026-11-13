@@ -1,0 +1,43 @@
+# Fast checks only, no test suite: they run on each commit and again on push over
+# the commits being pushed, so a commit made with --no-verify or before the hooks
+# were installed still cannot leave the machine unchecked. The tests run once per
+# head, in the gate (`mise run check`) and CI. `bin/dotagents install` wires both
+# stages (`pre-commit install`); run all hooks by hand with `pre-commit run --all-files`.
+default_install_hook_types: [pre-commit, pre-push]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json # install deep-merges settings with jq: broken JSON breaks it on every machine
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: check-symlinks # a dangling in-repo symlink
+      - id: destroyed-symlinks
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      - id: ruff
+      - id: ruff-format
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=error, --exclude=SC2148] # SC2148: sourced files carry no shebang
+  - repo: local
+    hooks:
+      - id: gitleaks # the mise-pinned binary (a hook shell has no mise shims on PATH), with the repo's .gitleaks.toml
+        name: gitleaks
+        language: system
+        entry: sh -c 'PATH="$HOME/.local/share/mise/shims:$PATH" exec gitleaks git --staged --no-banner --redact'
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: gitleaks-push
+        name: gitleaks (commits being pushed)
+        language: system
+        entry: sh -c 'PATH="$HOME/.local/share/mise/shims:$PATH" exec gitleaks git --no-banner --redact --log-opts="${PRE_COMMIT_FROM_REF:+$PRE_COMMIT_FROM_REF..}$PRE_COMMIT_TO_REF"'
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

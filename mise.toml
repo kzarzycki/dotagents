@@ -1,5 +1,6 @@
 [tools]
 gitleaks = "8"
+pre-commit = "4"
 "pipx:pytest" = "8"
 python = "3.14"
 "github:microsoft/apm" = "0.30.0"

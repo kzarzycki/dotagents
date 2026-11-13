@@ -16,6 +16,7 @@ digits and hyphens (a run id).
 
 Cases: tests/test_omnigent_only.py.
 """
+
 import json
 import os
 import re
@@ -26,8 +27,23 @@ WRAPPERS = {"env", "exec", "command", "nohup", "time", "sudo", "nice", "setsid",
 SHELLS = {"sh", "bash", "zsh", "dash"}
 SEPARATORS = set("();|&")
 # omp commands that start no agent: the audited-upgrade gate (docs/knowledge/omp.md) and housekeeping.
-OMP_TOOLS = {"--version", "-v", "--help", "-h", "--upgrade-status", "--upgrade-check", "--upgrade-apply",
-             "safe-update", "config", "plugin", "install", "models", "completions", "login", "gc"}
+OMP_TOOLS = {
+    "--version",
+    "-v",
+    "--help",
+    "-h",
+    "--upgrade-status",
+    "--upgrade-check",
+    "--upgrade-apply",
+    "safe-update",
+    "config",
+    "plugin",
+    "install",
+    "models",
+    "completions",
+    "login",
+    "gc",
+}
 # Short options that take a value in the next word, per command.
 VALUE_FLAGS = {"pkill": set("PgsStuUG"), "killall": set("sutyoNZ")}
 KILL = "kill by name"
@@ -94,10 +110,10 @@ def uncomment(text):
         if m.start() < start:
             continue
         try:
-            shlex.split(kept + text[start:m.start()], comments=False)
+            shlex.split(kept + text[start : m.start()], comments=False)
         except ValueError:  # the `#` sits inside a quote
             continue
-        kept += text[start:m.start()]
+        kept += text[start : m.start()]
         start = text.find("\n", m.start()) % (len(text) + 1)  # no newline: the end
     return kept + text[start:]
 
@@ -145,7 +161,7 @@ def check_segment(words):
     if shared_kill(name, args):
         return KILL
     if "--" in args:  # what follows is another program's argv (`claude mcp add x -- cmd -p 1`)
-        args = args[:args.index("--")]
+        args = args[: args.index("--")]
     if name in SHELLS:
         for flag, script in zip(args, args[1:]):
             if flag.startswith("-") and "c" in flag:
@@ -158,15 +174,21 @@ def main():
     command = json.load(sys.stdin).get("tool_input", {}).get("command", "")
     hit = launches(command)
     if hit == KILL:
-        print("Denied pkill/killall on a name: other agents on this machine run the same command lines, so "
-              "it stops their runs too. Save the pid at launch (`cmd & echo $! > run.pid`) and stop its "
-              "process group (`kill -TERM -- -<pgid>`, `pkill -g <pgid>`), or use `pkill -P <pid>`; "
-              "a `pkill -f` pattern passes only with a path of your own in it.", file=sys.stderr)
+        print(
+            "Denied pkill/killall on a name: other agents on this machine run the same command lines, so "
+            "it stops their runs too. Save the pid at launch (`cmd & echo $! > run.pid`) and stop its "
+            "process group (`kill -TERM -- -<pgid>`, `pkill -g <pgid>`), or use `pkill -P <pid>`; "
+            "a `pkill -f` pattern passes only with a path of your own in it.",
+            file=sys.stderr,
+        )
         sys.exit(2)
     if hit:
-        print(f"Denied `{hit}`: separate agents run as Omnigent sessions, never as a bare CLI call. "
-              "Use the orchestrating-agents skill: `python3 <skill>/scripts/omnigent_agent.py run|start ...` "
-              "(backends/omnigent.md); for an in-process helper use the Agent tool.", file=sys.stderr)
+        print(
+            f"Denied `{hit}`: separate agents run as Omnigent sessions, never as a bare CLI call. "
+            "Use the orchestrating-agents skill: `python3 <skill>/scripts/omnigent_agent.py run|start ...` "
+            "(backends/omnigent.md); for an in-process helper use the Agent tool.",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
 
