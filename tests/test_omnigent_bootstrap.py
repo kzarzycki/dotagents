@@ -66,3 +66,9 @@ def test_only_roots_deploy_script_still_names_allowed_signers():
     naming = {str(p.relative_to(PATCH)) for p in PATCH.rglob("*") if p.is_file() and "allowed_signers" in p.read_text()}
     assert naming <= {"server/omnigent-deploy"}
     assert not (PATCH / "update.sh").exists()
+    assert not (PATCH / "allowed_signers").exists()
+
+
+def test_bootstrap_stays_executable():
+    # The documented entry point is run directly, so it needs its executable bit.
+    assert os.access(PATCH / "bootstrap.sh", os.X_OK)
