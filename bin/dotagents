@@ -338,9 +338,12 @@ check_requirements() {
 # .claude, .agents or .codex skills), that the pinned pack's skill of that name
 # doesn't have: an old pin, an old clone's install, a second copy of the skill.
 # A project whose apm.lock.yaml deploys that skill at a newer version than this
-# checkout's lock is skipped: its copy is ahead, not stale. Source trees, package
-# stores and the apm cache are no skill path. One line per skill directory
-# holding such scripts. Caches (.cache, and .tmp, where Codex clones its
+# checkout's lock is skipped: its copy is ahead, not stale. At an older version
+# the project's pack is behind: all its flagged dirs fold into one `pack behind:`
+# line naming the project, its origin repo and both versions, so several hosts'
+# lines merge into one finding for that project. Source trees, package
+# stores and the apm cache are no skill path. Otherwise one line per skill
+# directory holding such scripts. Caches (.cache, and .tmp, where Codex clones its
 # marketplaces) and tmp dirs (a loop's evidence copies of other repos) are no
 # skill path either. Gitignored paths are scanned: a project's installed skill
 # dirs are gitignored.
@@ -390,11 +393,28 @@ check_stale_skill_copies() {
           files[dir] = files[dir] " " substr(rel, length(p[1]) + 10)
         }
       }
+      # The repo a project root clones, as owner/name from its git origin.
+      function origin(root,   cmd, url, a, m) {
+        cmd = "git -C \"" root "\" config --get remote.origin.url 2>/dev/null"
+        url = ""; cmd | getline url; close(cmd)
+        if (url == "") return "no git origin"
+        sub(/\.git$/, "", url); m = split(url, a, /[\/:]/)
+        return m > 1 ? a[m - 1] "/" a[m] : url
+      }
       END {
         for (k = 1; k <= n; k++) {
           d = order[k]; have = lockver(top[d] "/apm.lock.yaml", sk[d]); pin = lockver(pinned_lock, sk[d])
           if (have != "" && pin != "" && newer(have, pin)) continue
-          printf "stale skill copy: %s:%s\n", d, files[d]; found = 1
+          found = 1
+          if (have != "" && pin != "" && newer(pin, have)) {
+            key = top[d] SUBSEP have SUBSEP pin
+            if (!(key in behind)) {
+              behind[key] = 1
+              printf "pack behind: %s (%s) pack %s behind %s: bump the project'\''s pack\n", top[d], origin(top[d]), have, pin
+            }
+            continue
+          }
+          printf "stale skill copy: %s:%s\n", d, files[d]
         }
         exit found
       }'

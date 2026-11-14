@@ -13,10 +13,11 @@ def skill(root, name, requires=None, scripts=()):
         (d / "scripts" / s).write_text("#!/bin/sh\n")
 
 
-def lock(root, version, skill_dir):
+def lock(root, version, *skill_dirs):
     root.mkdir(parents=True, exist_ok=True)
+    deployed = "".join(f"  - {d}\n" for d in skill_dirs)
     (root / "apm.lock.yaml").write_text(
-        f"dependencies:\n- repo_url: x/pack\n  version: {version}\n  deployed_files:\n  - {skill_dir}\n"
+        f"dependencies:\n- repo_url: x/pack\n  version: {version}\n  deployed_files:\n{deployed}"
     )
 
 
@@ -108,8 +109,42 @@ def test_doctor_reports_a_skill_script_the_pinned_pack_does_not_have(tmp_path):
     finally:
         (home / "private").chmod(0o755)
     assert result.returncode == 1, result.stdout + result.stderr
-    assert sorted(result.stdout.splitlines()) == [f"stale skill copy: {home}/{d}/demo: post_demo.sh" for d in stale]
+    assert sorted(result.stdout.splitlines()) == [
+        f"pack behind: {home}/dev/old (no git origin) pack 0.24.4 behind 0.25.0: bump the project's pack",
+        f"stale skill copy: {home}/.claude-knowledge/skills/demo: post_demo.sh",
+    ]
     assert (clean.returncode, clean.stdout) == (0, ""), clean.stdout + clean.stderr
+
+
+def test_doctor_folds_a_project_whose_pack_is_behind_into_one_line(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    names = ("alpha", "beta", "gamma")
+    for name in names:
+        skill(repo / ".agents/skills", name, scripts=["run.sh"])
+    lock(repo, "0.26.0", *(f".agents/skills/{n}" for n in names))
+    # A project on an older pack: three skills whose scripts changed since.
+    project = home / "dev/widgets"
+    for name in names:
+        skill(project / ".agents/skills", name, scripts=["run.sh", "old_helper.sh"])
+    lock(project, "0.25.1", *(f".agents/skills/{n}" for n in names))
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    subprocess.run(
+        ["git", "-C", str(project), "remote", "add", "origin", "git@example.com:acme/widgets.git"], check=True
+    )
+    # A stray copy with no lock to explain it.
+    skill(home / "dev/stray/.claude/skills", "beta", scripts=["old_helper.sh"])
+
+    result = doctor(repo, home, tmp_path / "bin")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert sorted(result.stdout.splitlines()) == [
+        f"pack behind: {project} (acme/widgets) pack 0.25.1 behind 0.26.0: bump the project's pack",
+        f"stale skill copy: {home}/dev/stray/.claude/skills/beta: old_helper.sh",
+    ]
+
+    # The same version doesn't explain a changed script: each copy keeps its own line.
+    lock(project, "0.26.0", *(f".agents/skills/{n}" for n in names))
+    result = doctor(repo, home, tmp_path / "bin")
+    assert sum(line.startswith("stale skill copy:") for line in result.stdout.splitlines()) == 4, result.stdout
 
 
 def test_doctor_asks_for_the_pinned_pack_when_it_is_not_installed(tmp_path):
