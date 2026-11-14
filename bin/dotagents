@@ -376,8 +376,14 @@ check_stale_skill_copies() {
         for (k = 1; k <= n || k in y; k++) if (x[k] + 0 != y[k] + 0) return x[k] + 0 > y[k] + 0
         return 0
       }
+      # s as one shell word the shell never expands: wrapped in single quotes (\047), each one inside written as \047\\\047\047.
+      function sq(s,   parts, out, k, m) {
+        m = split(s, parts, "\047"); out = parts[1]
+        for (k = 2; k <= m; k++) out = out "\047\\\047\047" parts[k]
+        return "\047" out "\047"
+      }
       BEGIN {
-        cmd = "cd \"" pinned "\" && find . -path \"./*/scripts/*\" -type f"
+        cmd = "cd " sq(pinned) " && find . -path \"./*/scripts/*\" -type f"
         while ((cmd | getline f) > 0) { sub(/^\.\//, "", f); ref[f] = 1; split(f, p, "/"); skill[p[1]] = 1 }
         close(cmd)
       }
@@ -395,7 +401,7 @@ check_stale_skill_copies() {
       }
       # The repo a project root clones, as owner/name from its git origin.
       function origin(root,   cmd, url, a, m) {
-        cmd = "git -C \"" root "\" config --get remote.origin.url 2>/dev/null"
+        cmd = "git -C " sq(root) " config --get remote.origin.url 2>/dev/null"
         url = ""; cmd | getline url; close(cmd)
         if (url == "") return "no git origin"
         sub(/\.git$/, "", url); m = split(url, a, /[\/:]/)

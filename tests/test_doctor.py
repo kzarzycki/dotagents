@@ -147,6 +147,29 @@ def test_doctor_folds_a_project_whose_pack_is_behind_into_one_line(tmp_path):
     assert sum(line.startswith("stale skill copy:") for line in result.stdout.splitlines()) == 4, result.stdout
 
 
+def test_doctor_never_runs_a_directory_name_as_shell_code(tmp_path, monkeypatch):
+    # Quotes, $(...) and backticks in the checkout, HOME and project paths.
+    hostile = "q'\"$(touch${IFS}m1)`touch${IFS}m2`"
+    repo, home = make_checkout(tmp_path / hostile)
+    skill(repo / ".agents/skills", "demo", scripts=["run.sh"])
+    lock(repo, "0.26.0", ".agents/skills/demo")
+    project = home / "dev" / hostile
+    skill(project / ".agents/skills", "demo", scripts=["run.sh", "old_helper.sh"])
+    lock(project, "0.25.1", ".agents/skills/demo")
+    subprocess.run(["git", "init", "-q", str(project)], check=True)
+    subprocess.run(
+        ["git", "-C", str(project), "remote", "add", "origin", "git@example.com:acme/widgets.git"], check=True
+    )
+    monkeypatch.chdir(tmp_path)
+
+    result = doctor(repo, home, tmp_path / "bin")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [
+        f"pack behind: {project} (acme/widgets) pack 0.25.1 behind 0.26.0: bump the project's pack",
+    ]
+    assert not [p for p in tmp_path.rglob("m[12]")], "a directory name ran as shell code"
+
+
 def test_doctor_asks_for_the_pinned_pack_when_it_is_not_installed(tmp_path):
     repo, home = make_checkout(tmp_path)
     result = doctor(repo, home, tmp_path / "bin")
