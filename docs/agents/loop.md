@@ -2,15 +2,6 @@
 
 The `engineering-loop` skill reads this file at every step but the gate.
 
-## Settings
-
-```yaml
-loop:
-  gate: mise run check
-risk:
-  verifier: true
-```
-
 ## Owner
 
 `kzarzycki`
@@ -32,7 +23,7 @@ Run from the branch, never against the real `$HOME`:
 
 Only people approve. There is no spec policy, so every spec waits for the owner. The
 merge proof is the `check` check that GitHub Actions (`.github/workflows/ci.yml`) runs on
-the PR head: `mise run check`, the `gate` above, on every PR with no path filter, since a required check a
+the PR head: `mise run check`, the gate in `docs/agents/gatekeeper.md`, on every PR with no path filter, since a required check a
 filter skips never reports. `risk.verifier: true` lets the verifier decide what is
 high risk: a pass on the head whose `Risk:` line says anything but `low` holds the merge for
 the owner's `approved:merge`, and so does a `risk:high` label.
