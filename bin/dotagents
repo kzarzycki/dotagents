@@ -338,7 +338,8 @@ check_requirements() {
 # .claude, .agents or .codex skills), that the pinned pack's skill of that name
 # doesn't have: an old pin, an old clone's install, a second copy of the skill.
 # A project whose apm.lock.yaml deploys that skill at a newer version than this
-# checkout's lock is skipped: its copy is ahead, not stale. At an older version
+# checkout's lock is skipped: its copy is ahead, not stale, and so is one at the same version but another resolved_commit
+# (pinned between two releases). At an older version
 # the project's pack is behind: all its flagged dirs fold into one `pack behind:`
 # line naming the project, its origin repo and both versions, so several hosts'
 # lines merge into one finding for that project. Source trees, package
@@ -368,6 +369,15 @@ check_stale_skill_copies() {
           if (line ~ /^- /) ver = ""
           if (line ~ /^  version: /) { ver = line; sub(/^  version: /, "", ver); gsub(/["'\'']/, "", ver) }
           if (line ~ ("^  - [.][a-z-]+/skills/" name "$")) v = ver
+        }
+        close(file); return v
+      }
+      # The resolved_commit of that same dependency, or "".
+      function lockcommit(file, name,   line, c, v) {
+        while ((getline line < file) > 0) {
+          if (line ~ /^- /) c = ""
+          if (line ~ /^  resolved_commit: /) { c = line; sub(/^  resolved_commit: /, "", c); gsub(/["'\'']/, "", c) }
+          if (line ~ ("^  - [.][a-z-]+/skills/" name "$")) v = c
         }
         close(file); return v
       }
@@ -411,6 +421,8 @@ check_stale_skill_copies() {
         for (k = 1; k <= n; k++) {
           d = order[k]; have = lockver(top[d] "/apm.lock.yaml", sk[d]); pin = lockver(pinned_lock, sk[d])
           if (have != "" && pin != "" && newer(have, pin)) continue
+          # `version` only moves in a release PR, so a commit carrying the pinned version that is not the pinned commit is after it.
+          if (have != "" && have == pin && (hc = lockcommit(top[d] "/apm.lock.yaml", sk[d])) != "" && (pc = lockcommit(pinned_lock, sk[d])) != "" && hc != pc) continue
           found = 1
           if (have != "" && pin != "" && newer(pin, have)) {
             key = top[d] SUBSEP have SUBSEP pin
