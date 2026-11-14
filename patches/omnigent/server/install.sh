@@ -22,7 +22,6 @@ fi
 [ -f /etc/omnigent/.env ] || install -m 0600 "$old/.env" /etc/omnigent/.env
 chown root:root /etc/omnigent/compose.yaml /etc/omnigent/.env
 chmod 0600 /etc/omnigent/compose.yaml /etc/omnigent/.env
-install -m 0644 -o root -g root "$here/../allowed_signers" /etc/omnigent/allowed_signers
 install -m 0755 -o root -g root "$here/omnigent-deploy" /usr/local/sbin/omnigent-deploy
 install -m 0644 -o root -g root "$here/omnigent-deploy.service" /etc/systemd/system/omnigent-deploy.service
 sed "s/@USER@/$user/g" "$here/sudoers.in" > /etc/sudoers.d/omnigent-deploy

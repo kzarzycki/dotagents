@@ -111,19 +111,6 @@ else
   echo "[omnigent-bootstrap] $CONFIG_FILE exists — left untouched (omnigent owns it; may hold host_id/secrets)"
 fi
 
-# --- (3b) Updater, run daily by an Omnigent scheduled task ---
-mkdir -p "$HOME/.local/bin"
-install -m 0755 "$SCRIPT_DIR/update.sh" "$HOME/.local/bin/omnigent-update"
-echo "[omnigent-bootstrap] installed ~/.local/bin/omnigent-update"
-# The trust root for omnigent-update's signature check. Copied, not symlinked,
-# and never overwritten: a later dotagents pull must not change who is trusted.
-SIGNERS="$HOME/.config/omnigent/allowed_signers"
-if [ ! -f "$SIGNERS" ]; then
-  mkdir -p "$(dirname "$SIGNERS")"
-  install -m 0644 "$SCRIPT_DIR/allowed_signers" "$SIGNERS"
-  echo "[omnigent-bootstrap] installed $SIGNERS"
-fi
-
 # --- (4) Host service ---
 if [ -n "$SERVER" ]; then
   echo "[omnigent-bootstrap] enabling host service for $SERVER..."
