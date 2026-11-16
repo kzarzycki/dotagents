@@ -446,10 +446,12 @@ check_stale_skill_copies() {
           if (have != "" && have == pin && (hc = lockcommit(top[d] "/apm.lock.yaml", sk[d])) != "" && (pc = lockcommit(pinned_lock, sk[d])) != "" && hc != pc) continue
           r = top[d]; gitdirs(r)
           # A copy in a linked worktree refreshes with its branch: it only adds to the main checkout line.
+          # Each worktree counts once under its common dir (the pack behind fold key) and once under
+          # common dir and skill (the stale copy fold key); the keys differ in arity, so one array holds both.
           if (linked[r]) {
             c = common[r]
-            if (!((c, r) in wtany)) { wtany[c, r] = 1; nany[c]++ }
-            if (!((c, sk[d], r) in wtsk)) { wtsk[c, sk[d], r] = 1; nsk[c, sk[d]]++ }
+            if (!((c, r) in seen)) { seen[c, r] = 1; nwt[c]++ }
+            if (!((c, sk[d], r) in seen)) { seen[c, sk[d], r] = 1; nwt[c, sk[d]]++ }
             continue
           }
           found = 1
@@ -465,7 +467,7 @@ check_stale_skill_copies() {
           msg[++m] = sprintf("stale skill copy: %s:%s: %s", d, files[d], action(r, d))
           fold[m] = common[r] == "" ? "" : common[r] SUBSEP sk[d]
         }
-        for (k = 1; k <= m; k++) print msg[k] also(index(fold[k], SUBSEP) ? nsk[fold[k]] : nany[fold[k]])
+        for (k = 1; k <= m; k++) print msg[k] also(nwt[fold[k]])
         exit found
       }'
 }
