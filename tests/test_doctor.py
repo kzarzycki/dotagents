@@ -15,11 +15,12 @@ def skill(root, name, requires=None, scripts=()):
         (d / "scripts" / s).write_text("#!/bin/sh\n")
 
 
-def lock(root, version, *skill_dirs):
+def lock(root, version, *skill_dirs, commit=None):
     root.mkdir(parents=True, exist_ok=True)
     deployed = "".join(f"  - {d}\n" for d in skill_dirs)
+    resolved = f"  resolved_commit: {commit}\n" if commit else ""
     (root / "apm.lock.yaml").write_text(
-        f"dependencies:\n- repo_url: x/pack\n  version: {version}\n  deployed_files:\n{deployed}"
+        f"dependencies:\n- repo_url: x/pack\n  version: {version}\n{resolved}  deployed_files:\n{deployed}"
     )
 
 
@@ -147,6 +148,25 @@ def test_doctor_folds_a_project_whose_pack_is_behind_into_one_line(tmp_path):
     lock(project, "0.26.0", *(f".agents/skills/{n}" for n in names))
     result = doctor(repo, home, tmp_path / "bin")
     assert sum(line.startswith("stale skill copy:") for line in result.stdout.splitlines()) == 4, result.stdout
+
+
+def test_doctor_skips_a_project_pinned_between_two_releases_but_not_one_at_the_pinned_commit(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    skill(repo / ".agents/skills", "alpha", scripts=["run.sh"])
+    lock(repo, "0.26.5", ".agents/skills/alpha", commit="dd7f054")
+    # A project pinned at a later commit: the same version (only a release PR bumps it), another commit, and a script
+    # the pinned pack lacks. It is ahead, not stale.
+    project = home / "dev/widgets"
+    skill(project / ".agents/skills", "alpha", scripts=["run.sh", "new_helper.sh"])
+    lock(project, "0.26.5", ".agents/skills/alpha", commit="a5496b0")
+    result = doctor(repo, home, tmp_path / "bin")
+    assert result.returncode == 0 and result.stdout == "", result.stdout + result.stderr
+
+    # The same commit with an extra script is still a stale copy.
+    lock(project, "0.26.5", ".agents/skills/alpha", commit="dd7f054")
+    result = doctor(repo, home, tmp_path / "bin")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [f"stale skill copy: {project}/.agents/skills/alpha: new_helper.sh"]
 
 
 @pytest.mark.parametrize(
