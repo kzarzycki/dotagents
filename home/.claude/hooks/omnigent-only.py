@@ -14,6 +14,13 @@ scoped by `-P <ppid>` or `-g <pgid>`. Either passes when its pattern holds a `/`
 (a path the session owns, like a worktree's `run.sh`) or a token of 8+ letters,
 digits and hyphens (a run id).
 
+A host also forbids commands its own config lists: `~/.agents/host-commands`, one
+command prefix per line (`swift build`), `#` comments, absent or empty forbids nothing.
+A prefix matches the words of a command, so `swiftly run swift build` matches
+`swift build`, `echo swift test` and `grep swiftc` do not, and a Gradle build that
+compiles Swift underneath is not a `swift` call. Dotagents installs no file there:
+the host owns it, so no host name lives in the repo.
+
 Cases: tests/test_omnigent_only.py.
 """
 
@@ -47,6 +54,8 @@ OMP_TOOLS = {
 # Short options that take a value in the next word, per command.
 VALUE_FLAGS = {"pkill": set("PgsStuUG"), "killall": set("sutyoNZ")}
 KILL = "kill by name"
+HOST = "host rule: "
+HOST_RULES = os.path.expanduser("~/.agents/host-commands")
 KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "{", "!"}
 
 
@@ -60,6 +69,21 @@ def agent_launch(name, args):
     if name in ("gemini", "agy"):
         return bool({"-p", "--print", "--prompt", "-i", "--prompt-interactive"} & set(args))
     return False
+
+
+def host_rules():
+    try:
+        lines = open(HOST_RULES).read().splitlines()
+    except OSError:
+        return []
+    return [r for r in (line.split("#")[0].split() for line in lines) if r]
+
+
+def host_forbidden(words):
+    """The host-config rule (as written) the command words start with, or None."""
+    if words[:2] == ["swiftly", "run"]:  # a toolchain launcher: what follows is the command
+        words = words[2:]
+    return next((" ".join(r) for r in host_rules() if words[: len(r)] == r), None)
 
 
 def shared_kill(name, args):
@@ -158,6 +182,9 @@ def check_segment(words):
     if not words:
         return None
     name, args = os.path.basename(words[0]), words[1:]
+    rule = host_forbidden([name, *args])
+    if rule:
+        return HOST + rule
     if shared_kill(name, args):
         return KILL
     if "--" in args:  # what follows is another program's argv (`claude mcp add x -- cmd -p 1`)
@@ -179,6 +206,13 @@ def main():
             "it stops their runs too. Save the pid at launch (`cmd & echo $! > run.pid`) and stop its "
             "process group (`kill -TERM -- -<pgid>`, `pkill -g <pgid>`), or use `pkill -P <pid>`; "
             "a `pkill -f` pattern passes only with a path of your own in it.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    if hit and hit.startswith(HOST):
+        print(
+            f"Denied: this host's config forbids `{hit[len(HOST) :]}` (a line in {HOST_RULES}). "
+            "Run it in a claude-cloud worker (or on a Mac for Apple toolchains).",
             file=sys.stderr,
         )
         sys.exit(2)
