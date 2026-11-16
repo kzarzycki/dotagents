@@ -184,7 +184,7 @@ def check_segment(words):
     name, args = os.path.basename(words[0]), words[1:]
     rule = host_forbidden([name, *args])
     if rule:
-        return HOST + rule
+        return f"{HOST}{rule}\0{' '.join(words)}"
     if shared_kill(name, args):
         return KILL
     if "--" in args:  # what follows is another program's argv (`claude mcp add x -- cmd -p 1`)
@@ -210,8 +210,9 @@ def main():
         )
         sys.exit(2)
     if hit and hit.startswith(HOST):
+        rule, shown = hit[len(HOST) :].split("\0")
         print(
-            f"Denied: this host's config forbids `{hit[len(HOST) :]}` (a line in {HOST_RULES}). "
+            f"Denied `{shown}`: this host's config forbids `{rule}` (a line in {HOST_RULES}). "
             "Run it in a claude-cloud worker (or on a Mac for Apple toolchains).",
             file=sys.stderr,
         )

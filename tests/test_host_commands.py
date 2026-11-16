@@ -38,7 +38,7 @@ def hook(tmp_path, command, rules=RULES):
 def test_refused_with_rule_and_pointer(tmp_path, command):
     r = hook(tmp_path, command)
     assert r.returncode == 2, command
-    assert "forbids" in r.stderr and "claude-cloud worker" in r.stderr
+    assert r.stderr.startswith("Denied `") and "forbids `" in r.stderr and "claude-cloud worker" in r.stderr
 
 
 @pytest.mark.parametrize(
