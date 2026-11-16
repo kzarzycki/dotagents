@@ -407,6 +407,20 @@ def test_doctor_folds_linked_worktrees_into_their_main_checkouts_line(tmp_path):
     assert (result.returncode, result.stdout) == (0, ""), result.stdout + result.stderr
 
 
+def test_doctor_prints_nothing_when_only_linked_worktrees_hold_a_stale_copy(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    skill(repo / ".agents/skills", "demo", scripts=["run.sh"])
+    main = home / "dev/widgets"
+    worktrees = (main / ".worktrees/a", home / "dev/widgets-worktrees/b")
+    project_with_worktrees(main, *worktrees)
+    (main / "apm.yml").write_text("name: widgets\n")
+    for w in worktrees:
+        skill(w / ".agents/skills", "demo", scripts=["run.sh", "old_helper.sh"])
+
+    result = doctor(repo, home, tmp_path / "bin")
+    assert (result.returncode, result.stdout) == (0, ""), result.stdout + result.stderr
+
+
 def test_doctor_folds_linked_worktrees_of_a_project_behind_the_pin_into_one_pack_behind_line(tmp_path):
     repo, home = make_checkout(tmp_path)
     for name in ("alpha", "beta"):
