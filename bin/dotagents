@@ -344,7 +344,12 @@ check_requirements() {
 # line naming the project, its origin repo and both versions, so several hosts'
 # lines merge into one finding for that project. Source trees, package
 # stores and the apm cache are no skill path. Otherwise one line per skill
-# directory holding such scripts. Caches (.cache, and .tmp, where Codex clones its
+# directory holding such scripts, ending with the action that clears it: `apm
+# install` in a project with an apm.yml, a re-install for a global skill path,
+# else deleting the copy. A linked git worktree's copy refreshes with its branch,
+# so it gets no line of its own: it adds `(also in N linked worktrees)` to its
+# main checkout's line for that skill (or its `pack behind:` line), and without
+# one it is not reported at all. Caches (.cache, and .tmp, where Codex clones its
 # marketplaces) and tmp dirs (a loop's evidence copies of other repos) are no
 # skill path either. Gitignored paths are scanned: a project's installed skill
 # dirs are gitignored.
@@ -362,7 +367,7 @@ check_stale_skill_copies() {
       -o \( -path '*/.claude/skills/*/scripts/*' -o -path '*/.agents/skills/*/scripts/*' \
       -o -path '*/.claude-knowledge/skills/*/scripts/*' -o -path '*/.codex/skills/*/scripts/*' \) \
       -type f -print 2>/dev/null || true; } \
-    | awk -v pinned="$PINNED_SKILLS" -v pinned_real="$pinned_real" -v pinned_lock="$REPO_ROOT/apm.lock.yaml" '
+    | awk -v pinned="$PINNED_SKILLS" -v pinned_real="$pinned_real" -v pinned_lock="$REPO_ROOT/apm.lock.yaml" -v home="$HOME" '
       # The version of the apm.lock.yaml dependency that deploys skill `name`, or "".
       function lockver(file, name,   line, ver, v) {
         while ((getline line < file) > 0) {
@@ -417,23 +422,50 @@ check_stale_skill_copies() {
         sub(/\.git$/, "", url); m = split(url, a, /[\/:]/)
         return m > 1 ? a[m - 1] "/" a[m] : url
       }
+      # Caches, per project root, the absolute common git dir and whether the root is a linked worktree
+      # (its git dir differs from the common one): one git call per root.
+      function gitdirs(root,   cmd, g, c) {
+        if (root in common) return
+        cmd = "git -C " sq(root) " rev-parse --path-format=absolute --git-dir --git-common-dir 2>/dev/null"
+        g = c = ""; cmd | getline g; cmd | getline c; close(cmd)
+        common[root] = c; linked[root] = (g != "" && c != "" && g != c)
+      }
+      # The one action that clears a stale copy under root.
+      function action(root, d,   f, r, x) {
+        if (root == home && d ~ /\/\.(claude|claude-knowledge|agents|codex)\/skills\/[^\/]+$/) return "re-run bin/dotagents install"
+        f = root "/apm.yml"; r = (getline x < f); close(f)
+        if (r >= 0) return "run apm install in " root
+        return "delete the copy, or the clone if unused"
+      }
+      function also(c) { return c ? " (also in " c " linked worktrees)" : "" }
       END {
         for (k = 1; k <= n; k++) {
           d = order[k]; have = lockver(top[d] "/apm.lock.yaml", sk[d]); pin = lockver(pinned_lock, sk[d])
           if (have != "" && pin != "" && newer(have, pin)) continue
           # `version` only moves in a release PR, so a commit carrying the pinned version that is not the pinned commit is after it.
           if (have != "" && have == pin && (hc = lockcommit(top[d] "/apm.lock.yaml", sk[d])) != "" && (pc = lockcommit(pinned_lock, sk[d])) != "" && hc != pc) continue
+          r = top[d]; gitdirs(r)
+          # A copy in a linked worktree refreshes with its branch: it only adds to the main checkout line.
+          if (linked[r]) {
+            c = common[r]
+            if (!((c, r) in wtany)) { wtany[c, r] = 1; nany[c]++ }
+            if (!((c, sk[d], r) in wtsk)) { wtsk[c, sk[d], r] = 1; nsk[c, sk[d]]++ }
+            continue
+          }
           found = 1
           if (have != "" && pin != "" && newer(pin, have)) {
-            key = top[d] SUBSEP have SUBSEP pin
+            key = r SUBSEP have SUBSEP pin
             if (!(key in behind)) {
               behind[key] = 1
-              printf "pack behind: %s (%s) pack %s behind %s: bump the project'\''s pack\n", top[d], origin(top[d]), have, pin
+              msg[++m] = sprintf("pack behind: %s (%s) pack %s behind %s: bump the project'\''s pack", r, origin(r), have, pin)
+              fold[m] = common[r]
             }
             continue
           }
-          printf "stale skill copy: %s:%s\n", d, files[d]
+          msg[++m] = sprintf("stale skill copy: %s:%s: %s", d, files[d], action(r, d))
+          fold[m] = common[r] == "" ? "" : common[r] SUBSEP sk[d]
         }
+        for (k = 1; k <= m; k++) print msg[k] also(index(fold[k], SUBSEP) ? nsk[fold[k]] : nany[fold[k]])
         exit found
       }'
 }

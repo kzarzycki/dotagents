@@ -24,6 +24,23 @@ def lock(root, version, *skill_dirs, commit=None):
     )
 
 
+DELETE = "delete the copy, or the clone if unused"
+
+
+def git(*args):
+    subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args], check=True, capture_output=True
+    )
+
+
+def project_with_worktrees(main, *worktrees):
+    """A main checkout with one commit, and a linked worktree at each path."""
+    git("init", "-q", str(main))
+    git("-C", str(main), "commit", "-q", "--allow-empty", "-m", "init")
+    for i, w in enumerate(worktrees):
+        git("-C", str(main), "worktree", "add", "-q", "-b", f"wt{i}", str(w))
+
+
 def fake_tool(bindir, name, version):
     bindir.mkdir(parents=True, exist_ok=True)
     tool = bindir / name
@@ -114,7 +131,7 @@ def test_doctor_reports_a_skill_script_the_pinned_pack_does_not_have(tmp_path):
     assert result.returncode == 1, result.stdout + result.stderr
     assert sorted(result.stdout.splitlines()) == [
         f"pack behind: {home}/dev/old (no git origin) pack 0.24.4 behind 0.25.0: bump the project's pack",
-        f"stale skill copy: {home}/.claude-knowledge/skills/demo: post_demo.sh",
+        f"stale skill copy: {home}/.claude-knowledge/skills/demo: post_demo.sh: re-run bin/dotagents install",
     ]
     assert (clean.returncode, clean.stdout) == (0, ""), clean.stdout + clean.stderr
 
@@ -141,7 +158,7 @@ def test_doctor_folds_a_project_whose_pack_is_behind_into_one_line(tmp_path):
     assert result.returncode == 1, result.stdout + result.stderr
     assert sorted(result.stdout.splitlines()) == [
         f"pack behind: {project} (acme/widgets) pack 0.25.1 behind 0.26.0: bump the project's pack",
-        f"stale skill copy: {home}/dev/stray/.claude/skills/beta: old_helper.sh",
+        f"stale skill copy: {home}/dev/stray/.claude/skills/beta: old_helper.sh: {DELETE}",
     ]
 
     # The same version doesn't explain a changed script: each copy keeps its own line.
@@ -166,7 +183,7 @@ def test_doctor_skips_a_project_pinned_between_two_releases_but_not_one_at_the_p
     lock(project, "0.26.5", ".agents/skills/alpha", commit="dd7f054")
     result = doctor(repo, home, tmp_path / "bin")
     assert result.returncode == 1, result.stdout + result.stderr
-    assert result.stdout.splitlines() == [f"stale skill copy: {project}/.agents/skills/alpha: new_helper.sh"]
+    assert result.stdout.splitlines() == [f"stale skill copy: {project}/.agents/skills/alpha: new_helper.sh: {DELETE}"]
 
 
 @pytest.mark.parametrize(
@@ -353,9 +370,84 @@ def test_a_codex_host_reports_only_real_stale_copies_and_install_clears_the_glob
     skill(home / "dev/old/.agents/skills", "demo", scripts=["demo.sh", "post_demo.sh"])
 
     expected = [
-        f"stale skill copy: {home}/.agents/skills/orchestrating-agents: herdr_watch.sh",
-        f"stale skill copy: {home}/dev/old/.agents/skills/demo: post_demo.sh",
+        f"stale skill copy: {home}/.agents/skills/orchestrating-agents: herdr_watch.sh: re-run bin/dotagents install",
+        f"stale skill copy: {home}/dev/old/.agents/skills/demo: post_demo.sh: {DELETE}",
     ]
     assert sorted(doctor(repo, home, tmp_path / "bin").stdout.splitlines()) == expected
     run_install(repo, home, "--profile", "vps")
     assert doctor(repo, home, tmp_path / "bin").stdout.splitlines() == expected[1:]
+
+
+def test_doctor_folds_linked_worktrees_into_their_main_checkouts_line(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    for name in ("demo", "beta"):
+        skill(repo / ".agents/skills", name, scripts=["run.sh"])
+    main = home / "dev/widgets"
+    # One worktree inside the project, as `.worktrees/<branch>`, one beside it; a third holds only another skill's copy.
+    worktrees = (main / ".worktrees/a", home / "dev/widgets-worktrees/b")
+    project_with_worktrees(main, *worktrees, main / ".worktrees/c")
+    (main / "apm.yml").write_text("name: widgets\n")
+    skill(main / ".agents/skills", "demo", scripts=["run.sh", "old_helper.sh"])
+    skill(main / ".worktrees/c/.agents/skills", "beta", scripts=["run.sh", "old_helper.sh"])
+    for w in worktrees:
+        # Two skill paths in one worktree count it once.
+        for d in (".agents/skills", ".claude/skills"):
+            skill(w / d, "demo", scripts=["run.sh", "old_helper.sh"])
+
+    result = doctor(repo, home, tmp_path / "bin")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [
+        f"stale skill copy: {main}/.agents/skills/demo: old_helper.sh: run apm install in {main} "
+        "(also in 2 linked worktrees)"
+    ]
+
+    # Without the main checkout's copy, the worktree copies refresh with their branch: nothing to report.
+    (main / ".agents/skills/demo/scripts/old_helper.sh").unlink()
+    result = doctor(repo, home, tmp_path / "bin")
+    assert (result.returncode, result.stdout) == (0, ""), result.stdout + result.stderr
+
+
+def test_doctor_folds_linked_worktrees_of_a_project_behind_the_pin_into_one_pack_behind_line(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    for name in ("alpha", "beta"):
+        skill(repo / ".agents/skills", name, scripts=["run.sh"])
+    lock(repo, "0.26.0", ".agents/skills/alpha", ".agents/skills/beta")
+    main = home / "dev/widgets"
+    worktrees = (main / ".worktrees/a", main / ".worktrees/b")
+    project_with_worktrees(main, *worktrees)
+    for root in (main, *worktrees):
+        for name in ("alpha", "beta"):
+            skill(root / ".agents/skills", name, scripts=["run.sh", "old_helper.sh"])
+        lock(root, "0.25.1", ".agents/skills/alpha", ".agents/skills/beta")
+
+    result = doctor(repo, home, tmp_path / "bin")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [
+        f"pack behind: {main} (no git origin) pack 0.25.1 behind 0.26.0: bump the project's pack "
+        "(also in 2 linked worktrees)"
+    ]
+
+
+@pytest.mark.parametrize(
+    "where, action",
+    [
+        ("dev/widgets", "run apm install in {home}/dev/widgets"),
+        ("", "re-run bin/dotagents install"),
+        ("dev/old-clone", DELETE),
+    ],
+    ids=["project-with-apm-yml", "global-skill-path", "other"],
+)
+def test_each_stale_copy_line_ends_with_the_action_that_clears_it(tmp_path, where, action):
+    repo, home = make_checkout(tmp_path)
+    skill(repo / ".agents/skills", "demo", scripts=["demo.sh"])
+    root = home / where
+    if where == "dev/widgets":
+        root.mkdir(parents=True)
+        (root / "apm.yml").write_text("name: widgets\n")
+    skill(root / ".agents/skills", "demo", scripts=["demo.sh", "old_helper.sh"])
+
+    result = doctor(repo, home, tmp_path / "bin")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert result.stdout.splitlines() == [
+        f"stale skill copy: {root}/.agents/skills/demo: old_helper.sh: {action.format(home=home)}"
+    ]
