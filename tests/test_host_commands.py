@@ -5,7 +5,7 @@ import pytest
 
 from test_omnigent_only import HOOK
 
-RULES = "# heavy toolchains\nswift build\nswift test  # why\nswiftc\nxcodebuild\n"
+RULES = "# heavy toolchains\nswift build\nswift test  # why\nswiftc\nxcodebuild\napprovals.py local-ci\n"
 
 
 def hook(tmp_path, command, rules=RULES):
@@ -35,6 +35,11 @@ def hook(tmp_path, command, rules=RULES):
         "bash -lc 'swift build'",
         "/usr/bin/swift build",
         "swiftly run /opt/tc/bin/swift build",
+        "uv run /any/path/approvals.py local-ci 12",
+        "uv run python3 scripts/approvals.py local-ci --record",
+        "python3 ./approvals.py local-ci",
+        "python approvals.py local-ci",
+        "cd x && uv run engineering/skills/engineering-loop/scripts/approvals.py local-ci",
     ],
 )
 def test_refused_with_rule_and_pointer(tmp_path, command):
@@ -52,6 +57,9 @@ def test_refused_with_rule_and_pointer(tmp_path, command):
         "echo swift test",
         "grep swiftc Package.swift",
         "git commit -m 'swift build fix'",
+        "uv run approvals.py land 12",
+        "echo uv run approvals.py local-ci",
+        "python3 -c 'print(1)'",
     ],
 )
 def test_allowed_on_a_host_with_the_rules(tmp_path, command):

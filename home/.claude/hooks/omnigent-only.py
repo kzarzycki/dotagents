@@ -79,10 +79,16 @@ def host_rules():
     return [r for r in (line.split("#")[0].split() for line in lines) if r]
 
 
+# Launchers whose next word is the command that runs: a rule names that command, not them.
+LAUNCHERS = (["swiftly", "run"], ["uv", "run"], ["python3"], ["python"])
+
+
 def host_forbidden(words):
-    """The host-config rule (as written) the command words start with, or None."""
-    if words[:2] == ["swiftly", "run"]:  # a toolchain launcher: what follows is the command
-        words = [os.path.basename(words[2]), *words[3:]] if words[2:] else []
+    """The host-config rule (as written) the command words start with, or None. A path word
+    counts by its basename, so a rule `approvals.py local-ci` matches every path to the script."""
+    words = [os.path.basename(w) if "/" in w else w for w in words]
+    while launcher := next((x for x in LAUNCHERS if words[: len(x)] == x), None):
+        words = words[len(launcher) :]
     return next((" ".join(r) for r in host_rules() if words[: len(r)] == r), None)
 
 
