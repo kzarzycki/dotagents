@@ -207,3 +207,43 @@ def test_hook_denies_kill_by_shared_name(command):
 def test_hook_allows_scoped_kill(command):
     result = hook(command)
     assert (result.returncode, result.stderr) == (0, ""), command
+
+
+SLEEP_DENIED = [
+    "until [ -f run.exit ]; do sleep 20; done",
+    "while true; do curl -s h; sleep 5; done",
+    "while ! test -f x; do sleep 1; done; cat x",
+    "while sleep 5; do date; done",
+    "cd w && until grep -q DONE log; do sleep 30; done",
+    "x=$(until [ -s f ]; do sleep 1; done; cat f)",
+    "nohup sh -c 'until [ -f e ]; do sleep 20; done; echo ok' >/dev/null 2>&1 &",
+    'bash -c "while :; do sleep 60; done"',
+    "until x\ndo\n  sleep 2\ndone",
+    "while true; do timeout 5 sleep 1; done",
+    "for i in 1 2; do while true; do sleep 1; done; done",
+    "until [ -f ok ]; do for h in a b; do ping -c1 $h; done; sleep 5; done",
+]
+SLEEP_ALLOWED = [
+    "sleep 5",
+    "sleep 5 && cat log",
+    "for f in a b c; do gh run view $f; sleep 2; done",
+    "while read l; do echo $l; done < f",
+    "while read l; do echo $l; done < f; sleep 3",
+    'echo "while x; do sleep 1; done"',
+    "cat <<EOF\nwhile true; do sleep 1; done\nEOF",
+    "# while true; do sleep 1; done\nls",
+    "grep -n 'until .* sleep' notes.md",
+    "while read h; do for p in 1 2; do echo $h$p; done; done < f; sleep 2",
+]
+
+
+@pytest.mark.parametrize("command", SLEEP_DENIED)
+def test_hook_denies_a_sleep_loop(command):
+    result = hook(command)
+    assert result.returncode == 2 and "wait-for --log <log> --pid <pidfile> --notify" in result.stderr, command
+
+
+@pytest.mark.parametrize("command", SLEEP_ALLOWED)
+def test_hook_allows_a_single_sleep_and_paced_loops(command):
+    result = hook(command)
+    assert (result.returncode, result.stderr) == (0, ""), command

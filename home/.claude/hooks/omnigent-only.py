@@ -21,6 +21,12 @@ A prefix matches the words of a command, so `swiftly run swift build` matches
 compiles Swift underneath is not a `swift` call. Dotagents installs no file there:
 the host owns it, so no host name lives in the repo.
 
+A wait is one command that ends on every outcome (`omnigent_agent.py wait-for
+--log <log> --pid <pidfile> --notify`), so a `while` or `until` loop that runs
+`sleep` is refused: a hand-written check misses an ending it did not foresee, and
+the work sits finished unnoticed. A single `sleep`, and a `for` loop paced by one,
+pass.
+
 Cases: tests/test_omnigent_only.py.
 """
 
@@ -54,6 +60,7 @@ OMP_TOOLS = {
 # Short options that take a value in the next word, per command.
 VALUE_FLAGS = {"pkill": set("PgsStuUG"), "killall": set("sutyoNZ")}
 KILL = "kill by name"
+SLEEP_LOOP = "sleep loop"
 HOST = "host rule: "
 HOST_RULES = os.path.expanduser("~/.agents/host-commands")
 KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "{", "!"}
@@ -163,9 +170,18 @@ def launches(cmd):
             tokens = None
     if tokens is None:  # unbalanced quotes: let the shell report it
         return None
-    segment = []
+    segment, loops = [], []  # loops: the loops open at this segment, innermost last, True for while/until
     for tok in tokens + [";"]:
         if tok and set(tok) <= SEPARATORS:
+            lead = segment[: next((i for i, w in enumerate(segment) if w not in KEYWORDS), len(segment))]
+            loops += [True for w in lead if w in ("while", "until")]
+            if segment[len(lead) : len(lead) + 1] in (["for"], ["select"]):
+                loops.append(False)
+            if segment[:1] == ["done"] and loops:
+                loops.pop()
+            words = command_words(segment)
+            if any(loops) and words and os.path.basename(words[0]) == "sleep":
+                return SLEEP_LOOP
             hit = check_segment(segment)
             if hit:
                 return hit
@@ -175,16 +191,22 @@ def launches(cmd):
     return None
 
 
-def check_segment(words):
-    # Skip assignments, shell keywords (`do`, `then`) and wrappers with their flags (`env -i`, `timeout 60`).
+def command_words(words):
+    """The words from the command on: assignments, shell keywords (`do`, `then`) and wrappers with their flags
+    (`env -i`, `timeout 60`) skipped. Empty for a `command -v` lookup, which runs nothing."""
     # ponytail: a wrapper flag that takes a value (`sudo -u bob`) hides the command.
     while words and (re.match(r"^\w+=", words[0]) or words[0] in WRAPPERS or words[0] in KEYWORDS):
-        if words[0] == "command" and re.fullmatch(r"-p?[vV]", "".join(words[1:2])):  # a lookup, not a run
-            return None
+        if words[0] == "command" and re.fullmatch(r"-p?[vV]", "".join(words[1:2])):
+            return []
         wrapper = words[0] in WRAPPERS
         words = words[1:]
         while wrapper and words and (words[0].startswith("-") or re.match(r"^\d+[smhd]?$", words[0])):
             words = words[1:]
+    return words
+
+
+def check_segment(words):
+    words = command_words(words)
     if not words:
         return None
     name, args = os.path.basename(words[0]), words[1:]
@@ -212,6 +234,16 @@ def main():
             "it stops their runs too. Save the pid at launch (`cmd & echo $! > run.pid`) and stop its "
             "process group (`kill -TERM -- -<pgid>`, `pkill -g <pgid>`), or use `pkill -P <pid>`; "
             "a `pkill -f` pattern passes only with a path of your own in it.",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+    if hit == SLEEP_LOOP:
+        print(
+            "Denied a `while`/`until` loop that runs `sleep`: a hand-written wait misses endings it did not "
+            "foresee. Wait with one command that ends on every outcome: `python3 <orchestrating-agents>/scripts/"
+            "omnigent_agent.py wait-for --log <log> --pid <pidfile> --notify` for a run, `wait <session> <report> "
+            "--notify` for a session, `wait-for --pr <n>` for a PR's checks; in Claude Code the Monitor tool "
+            "waits on a condition. A single `sleep N` passes.",
             file=sys.stderr,
         )
         sys.exit(2)
