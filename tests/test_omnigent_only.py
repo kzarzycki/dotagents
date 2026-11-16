@@ -221,6 +221,7 @@ SLEEP_DENIED = [
     "until x\ndo\n  sleep 2\ndone",
     "while true; do timeout 5 sleep 1; done",
     "for i in 1 2; do while true; do sleep 1; done; done",
+    "until [ -f ok ]; do for h in a b; do ping -c1 $h; done; sleep 5; done",
 ]
 SLEEP_ALLOWED = [
     "sleep 5",
@@ -232,6 +233,7 @@ SLEEP_ALLOWED = [
     "cat <<EOF\nwhile true; do sleep 1; done\nEOF",
     "# while true; do sleep 1; done\nls",
     "grep -n 'until .* sleep' notes.md",
+    "while read h; do for p in 1 2; do echo $h$p; done; done < f; sleep 2",
 ]
 
 

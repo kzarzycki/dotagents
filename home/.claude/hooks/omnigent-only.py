@@ -170,15 +170,17 @@ def launches(cmd):
             tokens = None
     if tokens is None:  # unbalanced quotes: let the shell report it
         return None
-    segment, loops = [], 0  # loops: the while/until loops open at this segment
+    segment, loops = [], []  # loops: the loops open at this segment, innermost last, True for while/until
     for tok in tokens + [";"]:
         if tok and set(tok) <= SEPARATORS:
             lead = segment[: next((i for i, w in enumerate(segment) if w not in KEYWORDS), len(segment))]
-            loops += sum(w in ("while", "until") for w in lead)
-            if segment[:1] == ["done"]:
-                loops = max(loops - 1, 0)
+            loops += [True for w in lead if w in ("while", "until")]
+            if segment[len(lead) : len(lead) + 1] in (["for"], ["select"]):
+                loops.append(False)
+            if segment[:1] == ["done"] and loops:
+                loops.pop()
             words = command_words(segment)
-            if loops and words and os.path.basename(words[0]) == "sleep":
+            if any(loops) and words and os.path.basename(words[0]) == "sleep":
                 return SLEEP_LOOP
             hit = check_segment(segment)
             if hit:
