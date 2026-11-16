@@ -63,7 +63,7 @@ def test_the_compact_window_is_a_setting_so_a_launch_flag_can_lower_it(tmp_path)
         result = run_install(repo, home, "--profile", profile)
         assert result.returncode == 0, result.stdout + result.stderr
         got = json.loads(settings.read_text())
-        assert got["autoCompactWindow"] == 330000 and "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in got["env"], profile
+        assert got["autoCompactWindow"] == 200000 and "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in got["env"], profile
 
 
 def test_unparsable_host_settings_are_left_alone(tmp_path):

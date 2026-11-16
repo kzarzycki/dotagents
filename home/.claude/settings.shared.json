@@ -246,7 +246,7 @@
   "skipWorkflowUsageWarning": true,
   "verbose": false,
   "autoCompactEnabled": true,
-  "autoCompactWindow": 330000,
+  "autoCompactWindow": 200000,
   "skipAutoPermissionPrompt": true,
   "outputStyle": "Concise",
   "syncClaudeAiSkills": false,
