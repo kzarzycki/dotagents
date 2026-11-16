@@ -82,7 +82,7 @@ def host_rules():
 def host_forbidden(words):
     """The host-config rule (as written) the command words start with, or None."""
     if words[:2] == ["swiftly", "run"]:  # a toolchain launcher: what follows is the command
-        words = words[2:]
+        words = [os.path.basename(words[2]), *words[3:]] if words[2:] else []
     return next((" ".join(r) for r in host_rules() if words[: len(r)] == r), None)
 
 

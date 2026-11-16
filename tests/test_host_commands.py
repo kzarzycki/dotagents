@@ -33,6 +33,8 @@ def hook(tmp_path, command, rules=RULES):
         "swiftly run swift build",
         "FOO=1 timeout 60 swift test",
         "bash -lc 'swift build'",
+        "/usr/bin/swift build",
+        "swiftly run /opt/tc/bin/swift build",
     ],
 )
 def test_refused_with_rule_and_pointer(tmp_path, command):
@@ -60,3 +62,11 @@ def test_allowed_on_a_host_with_the_rules(tmp_path, command):
 @pytest.mark.parametrize("rules", [None, "", "# nothing\n"])
 def test_host_without_rules_forbids_nothing(tmp_path, rules):
     assert hook(tmp_path, "swift build", rules).returncode == 0
+
+
+@pytest.mark.parametrize(
+    "command, shown",
+    [("swift build -c release", "swift build -c release"), ("cd Core && timeout 60 swift test -x", "swift test -x")],
+)
+def test_refusal_names_the_refused_command(tmp_path, command, shown):
+    assert hook(tmp_path, command).stderr.startswith(f"Denied `{shown}`: this host's config forbids `")
