@@ -363,7 +363,8 @@ check_stale_skill_copies() {
   # ponytail: a directory the account can't read (macOS TCC folders without Full
   # Disk Access) is skipped silently; report it if a skill path ever lives there.
   { find "$HOME" \( -name .git -o -name node_modules -o -name apm_modules -o -name __pycache__ \
-      -o -name Library -o -name .Trash -o -name .cache -o -name .tmp -o -name tmp \) -prune \
+      -o -name Library -o -name .Trash -o -name .cache -o -name .tmp -o -name tmp \
+      -o -name workspaces -o -name runs \) -prune \
       -o \( -path '*/.claude/skills/*/scripts/*' -o -path '*/.agents/skills/*/scripts/*' \
       -o -path '*/.claude-knowledge/skills/*/scripts/*' -o -path '*/.codex/skills/*/scripts/*' \) \
       -type f -print 2>/dev/null || true; } \
