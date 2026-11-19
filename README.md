@@ -209,6 +209,8 @@ The VPS exposes that loopback API through Tailscale **Serve** (not public Funnel
 
 `decision-model` sends the text it judges to openrouter.ai or api.typesafe.ai when `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` is in Claude's environment, or its `apiKey` option is set; otherwise a Claude model answers under the session's own account. The `work` overlay pins its `backend` option to `claude`, so a work machine never calls those endpoints. `eval-kernel` and `self-compact` call nothing off the machine themselves; an `eval` cell is model-written code with Bun's `fetch` and `process`, the same reach as the Bash tool.
 
+`claude-code-mode` starts an Omnigent Claude session in which the model's only tool for shell, file and web work is code-mode's `repl`. It runs `omnigent claude` and denies Bash, Read, Edit, Write, Glob, Grep, NotebookEdit, WebFetch and WebSearch with `--disallowedTools`. That flag binds only the model, so the mod's scripts still call those tools. It also turns `code-mode` on and `eval-kernel` off for that session. The deny is a per-session flag, not an Omnigent agent setting, because an agent's `executor.config.disallowed_tools` also adds a server deny policy, and Omnigent's PreToolUse hook would apply that policy to the mod's calls too. Set `CODE_MODE_DIR` to a `plugins/code-mode` checkout to load it from there until `code-mode` is in the marketplace.
+
 To develop a mod, point this machine's own `claude-mods` entry in `~/.claude/settings.json` at the checkout (`"source": {"source": "directory", "path": "<checkout>"}`). Install keeps it and prints a note (Local overrides).
 
 ### pixelrag bootstrap (per machine)

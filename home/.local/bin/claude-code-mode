@@ -1,0 +1,23 @@
+#!/bin/sh
+# Start an Omnigent claude-native session in Code Mode: the model works only through the code-mode
+# mod's `repl` tool (mcp__code-mode__repl), whose scripts still call the built-ins below.
+#
+# --disallowedTools hides the built-ins from the model alone. Deny rules don't bind a mod's
+# $.tool.call (Claude Code's mod API docs), and code-mode reads their absence as its exclusive
+# mode. A --tools list or a tool.list removal would take them from the mod as well.
+#
+# ponytail: per session, not per agent. Omnigent's executor.config.disallowed_tools adds the same
+# flag but also a server deny policy (__spec_disallowed_tools), which its catch-all PreToolUse hook
+# applies to the mod's calls too. Move this into the agent once Omnigent has a model-only key.
+#
+# --settings merges into Omnigent's invocation settings: code-mode on, and eval-kernel (its old
+# name) off, so the model doesn't get two REPLs. CODE_MODE_DIR loads code-mode from a checkout
+# instead, for as long as code-mode@claude-mods isn't in the marketplace.
+set -eu
+deny=Bash,Read,Edit,Write,Glob,Grep,NotebookEdit,WebFetch,WebSearch
+if [ -n "${CODE_MODE_DIR:-}" ]; then
+  exec omnigent claude --disallowedTools "$deny" --plugin-dir "$CODE_MODE_DIR" \
+    --settings '{"enabledPlugins":{"eval-kernel@claude-mods":false}}' "$@"
+fi
+exec omnigent claude --disallowedTools "$deny" \
+  --settings '{"enabledPlugins":{"code-mode@claude-mods":true,"eval-kernel@claude-mods":false}}' "$@"
