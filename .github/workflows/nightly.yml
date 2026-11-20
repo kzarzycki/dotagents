@@ -1,0 +1,39 @@
+# The full suite, nightly. CI runs only the tests a change touches, so this is what catches a break the selection
+# missed. On red it opens (or comments) one issue listing the merges since the last green run (nightly.py red).
+name: nightly
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: read
+
+jobs:
+  full:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # nightly.py walks the history between the last green commit and this one
+          persist-credentials: false
+      - uses: jdx/mise-action@9e7f7633ff6f6d6048a9418a68d48f288f50eb14 # v4.2.3
+      - run: npm install -g @openai/codex@0.162.1
+      - run: mise run check
+      - name: Open or update the red issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # the newest default-branch commit a nightly passed on; the root commit when none has
+          green=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/nightly.yml/runs?status=success&branch=main&per_page=1" --jq '.workflow_runs[0].head_sha // empty')
+          [ -n "$green" ] || green=$(git rev-list --max-parents=0 HEAD | tail -n1)
+          # a red `mise run test` stops `check` before it installs the pack's skills, so install them here
+          mise run agent-sync --frozen
+          python3 .agents/skills/engineering-loop/scripts/nightly.py red --last-green "$green" --red "$GITHUB_SHA" --run "$RUN"

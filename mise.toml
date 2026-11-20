@@ -91,6 +91,15 @@ alias = "test:changed"
 description = "Run the project test suite; it is fast enough to be the loop's test:changed too."
 run = "pytest -q"
 
+[tasks."test:affected"]
+description = "Run only the tests the change touches, selected from git diff against GATE_BASE (else origin/main); no saved state."
+run = "python3 lib/affected_tests.py"
+
+[tasks.check-fast]
+description = "What CI runs on a PR and on push to main: the affected tests and the frozen agent configuration check. The nightly runs the full `check`."
+# ponytail: a combination of merged PRs is not fully tested before it lands; the nightly full run catches it.
+run = ["mise run test:affected", "mise run agent-sync --frozen"]
+
 [tasks."setup:dev"]
 description = "Set up a fresh checkout or worktree: install the gitignored agent skills the loop's tasks call."
 run = "mise run agent-sync"

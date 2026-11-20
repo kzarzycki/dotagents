@@ -43,6 +43,12 @@ Never on GitHub rule.
 `mise trust` and `mise run setup:dev`, which installs the gitignored skills the loop's
 tasks call. Remove it with `git worktree remove`.
 
+## Affected tests
+
+Affected tests: mise run test:affected
+
+It reads only `git diff` against `GATE_BASE` (else `origin/main`), so it needs no saved state on a fresh clone or in CI, and runs everything when the base can't be diffed. CI runs it on a PR and on push to main (`mise run check-fast`); the nightly workflow runs the full `mise run check`, so a break the selection misses shows up there.
+
 ## Ledger
 
 `docs/agents/limitations.md`
