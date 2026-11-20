@@ -7,7 +7,7 @@ HIDDEN = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit", "WebF
 GUIDE = "Work through repl.\nIts scripts: call tools as JavaScript.\n"
 
 
-def run(tmp_path, *args, installed=True):
+def run(tmp_path, *args, installed=True, guide_exit=0):
     """claude-code-mode with fake bun and omnigent: bun prints the plugin folder (-e) or the guide, omnigent records
     its arguments and, for `agent add`, unpacks the archive it was handed."""
     plugin = tmp_path / "plugin"
@@ -16,7 +16,7 @@ def run(tmp_path, *args, installed=True):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "bun").write_text(
-        f'#!/bin/sh\ncase "$1" in -e) echo "{plugin if installed else ""}" ;; *) printf %s "$GUIDE" ;; esac\n'
+        f'#!/bin/sh\ncase "$1" in -e) echo "{plugin if installed else ""}" ;; *) printf %s "$GUIDE"; exit {guide_exit} ;; esac\n'
     )
     (bin_dir / "omnigent").write_text(
         '#!/bin/sh\nprintf "%s\\0" "$@" > "$OUT/args"\n[ "$1 $2" = "agent add" ] && tar -xzf "$3" -C "$OUT"\nexit 0\n'
@@ -44,6 +44,20 @@ def test_without_the_plugin_names_the_install(tmp_path):
     assert argv is None
 
 
+def test_without_bun_says_so(tmp_path):
+    run(tmp_path)  # builds the fakes
+    (tmp_path / "bin/bun").unlink()
+    r = subprocess.run(
+        ["/bin/sh", str(SCRIPT)],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env={"HOME": str(tmp_path), "PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin"},
+    )
+    assert r.returncode == 1
+    assert "needs bun" in r.stderr
+
+
 def test_install_agent_hands_omnigent_a_claude_native_agent(tmp_path):
     r, argv, out = run(tmp_path, "--install-agent")
     assert r.returncode == 0, r.stderr
@@ -56,6 +70,12 @@ def test_install_agent_hands_omnigent_a_claude_native_agent(tmp_path):
     # patterns, not plain names: a plain name becomes Omnigent's server deny policy, which refuses the mod's calls too
     assert "    disallowed_tools: [" + ", ".join(f'"{t}(*)"' for t in HIDDEN) + "]\n" in spec
     assert spec.endswith("prompt: |\n" + "".join(f"  {line}\n" for line in GUIDE.splitlines()))
+
+
+def test_install_agent_stops_when_the_guide_fails(tmp_path):
+    r, argv, _ = run(tmp_path, "--install-agent", guide_exit=42)
+    assert r.returncode == 42
+    assert argv is None
 
 
 def test_session_turns_code_mode_on_for_itself_only(tmp_path):
