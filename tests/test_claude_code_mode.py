@@ -9,7 +9,7 @@ GUIDE = "Work through repl.\nIts scripts: call tools as JavaScript.\n"
 
 def run(tmp_path, *args, installed=True):
     """claude-code-mode with fake bun and omnigent: bun prints the plugin folder (-e) or the guide, omnigent records
-    its arguments and, for `agent add`, the spec it was handed."""
+    its arguments and, for `agent add`, unpacks the archive it was handed."""
     plugin = tmp_path / "plugin"
     plugin.mkdir(exist_ok=True)
     (plugin / "guide.ts").write_text("")
@@ -19,7 +19,7 @@ def run(tmp_path, *args, installed=True):
         f'#!/bin/sh\ncase "$1" in -e) echo "{plugin if installed else ""}" ;; *) printf %s "$GUIDE" ;; esac\n'
     )
     (bin_dir / "omnigent").write_text(
-        '#!/bin/sh\nprintf "%s\\0" "$@" > "$OUT/args"\n[ "$1 $2" = "agent add" ] && cp "$3" "$OUT/spec.yaml"\nexit 0\n'
+        '#!/bin/sh\nprintf "%s\\0" "$@" > "$OUT/args"\n[ "$1 $2" = "agent add" ] && tar -xzf "$3" -C "$OUT"\nexit 0\n'
     )
     for f in ("bun", "omnigent"):
         (bin_dir / f).chmod(0o755)
@@ -48,7 +48,9 @@ def test_install_agent_hands_omnigent_a_claude_native_agent(tmp_path):
     r, argv, out = run(tmp_path, "--install-agent")
     assert r.returncode == 0, r.stderr
     assert argv[:2] == ["agent", "add"]
-    spec = (out / "spec.yaml").read_text()
+    # the server reads only config.yaml from the upload, so the archive must hold exactly that
+    assert sorted(p.name for p in out.iterdir()) == ["args", "config.yaml"]
+    spec = (out / "config.yaml").read_text()
     assert "\nname: code-mode\n" in spec
     assert "    harness: claude-native\n" in spec
     # patterns, not plain names: a plain name becomes Omnigent's server deny policy, which refuses the mod's calls too

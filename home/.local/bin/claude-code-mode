@@ -34,7 +34,10 @@ if [ -z "$dir" ] || [ ! -f "$dir/guide.ts" ]; then
 fi
 
 if [ "${1:-}" = --install-agent ]; then
-  spec=$(mktemp -d)/code-mode.yaml
+  # A tarball with config.yaml at its root: Omnigent's server reads only config.yaml from an upload,
+  # so a lone code-mode.yaml gets "404: config.yaml not found", and a folder source expands the
+  # guide's own `${...}` as environment variables.
+  tmp=$(mktemp -d) spec=$tmp/config.yaml
   {
     printf 'spec_version: 1\nname: code-mode\n'
     printf 'description: "Claude Code with code-mode'"'"'s repl as the one way to work: shell, files, search and tool calls as JavaScript."\n'
@@ -43,7 +46,8 @@ if [ "${1:-}" = --install-agent ]; then
     printf 'prompt: |\n'
     bun "$dir/guide.ts" exclusive | sed 's/^/  /'
   } > "$spec"
-  exec omnigent agent add "$spec"
+  tar -czf "$tmp/code-mode.tar.gz" -C "$tmp" config.yaml
+  exec omnigent agent add "$tmp/code-mode.tar.gz"
 fi
 
 guide=${XDG_CACHE_HOME:-$HOME/.cache}/code-mode/guide-exclusive.md
