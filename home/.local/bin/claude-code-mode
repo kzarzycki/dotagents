@@ -1,23 +1,56 @@
 #!/bin/sh
 # Start an Omnigent claude-native session in Code Mode: the model works only through the code-mode
 # mod's `repl` tool (mcp__code-mode__repl), whose scripts still call the built-ins below.
+#   claude-code-mode [claude args]   a session, per invocation
+#   claude-code-mode --install-agent the same as the Omnigent agent `code-mode`, in the session picker
+#
+# The Code Mode guide goes into the system prompt (--append-system-prompt-file), where the mod can't
+# put it: an organization's sec-default mod skips a person's prompt hooks. A file, because Omnigent
+# refuses a launch argument over 4,096 characters; with a prompt file, Omnigent sends its own
+# appended guidance as session-start context instead. CODE_MODE_GUIDE=system makes
+# repl's own description point there instead of repeating it.
 #
 # --disallowedTools hides the built-ins from the model alone. Deny rules don't bind a mod's
 # $.tool.call (Claude Code's mod API docs), and code-mode reads their absence as its exclusive
 # mode. A --tools list or a tool.list removal would take them from the mod as well.
 #
-# ponytail: per session, not per agent. Omnigent's executor.config.disallowed_tools adds the same
-# flag but also a server deny policy (__spec_disallowed_tools), which its catch-all PreToolUse hook
-# applies to the mod's calls too. Move this into the agent once Omnigent has a model-only key.
+# The agent lists them as `Bash(*)`, not `Bash`: a plain name in an agent's disallowed_tools also
+# becomes Omnigent's server deny policy, whose PreToolUse hook refuses the mod's calls too
+# ("Tool 'Bash' is forbidden by the agent spec"); a pattern goes to the harness flag only.
+#
+# ponytail: the agent's prompt is a copy of the guide made at install, and it can't set
+# CODE_MODE_GUIDE (no per-agent settings), so repl's description repeats the guide there. Rerun
+# --install-agent after updating code-mode; omnigent#473 asks for per-agent settings.
 #
 # --settings merges into Omnigent's invocation settings: code-mode on, and eval-kernel (its old
 # name) off, so the model doesn't get two REPLs. CODE_MODE_DIR loads code-mode from a checkout
-# instead, for as long as code-mode@claude-mods isn't in the marketplace.
+# instead of the installed plugin.
 set -eu
 deny=Bash,Read,Edit,Write,Glob,Grep,NotebookEdit,WebFetch,WebSearch
-if [ -n "${CODE_MODE_DIR:-}" ]; then
-  exec omnigent claude --disallowedTools "$deny" --plugin-dir "$CODE_MODE_DIR" \
-    --settings '{"enabledPlugins":{"eval-kernel@claude-mods":false}}' "$@"
+dir=${CODE_MODE_DIR:-$(bun -e 'const p = require(process.env.HOME + "/.claude/plugins/installed_plugins.json").plugins["code-mode@claude-mods"]; console.log(p?.find(i => i.scope === "user")?.installPath ?? "")' 2>/dev/null || true)}
+if [ -z "$dir" ] || [ ! -f "$dir/guide.ts" ]; then
+  echo "claude-code-mode: code-mode isn't installed (claude plugin install code-mode@claude-mods), or set CODE_MODE_DIR to its folder" >&2
+  exit 1
 fi
-exec omnigent claude --disallowedTools "$deny" \
-  --settings '{"enabledPlugins":{"code-mode@claude-mods":true,"eval-kernel@claude-mods":false}}' "$@"
+
+if [ "${1:-}" = --install-agent ]; then
+  spec=$(mktemp -d)/code-mode.yaml
+  {
+    printf 'spec_version: 1\nname: code-mode\n'
+    printf 'description: "Claude Code with code-mode'"'"'s repl as the one way to work: shell, files, search and tool calls as JavaScript."\n'
+    printf 'executor:\n  type: omnigent\n  config:\n    harness: claude-native\n'
+    printf '    disallowed_tools: [%s]\n' "$(printf '%s' "$deny" | sed 's/\([A-Za-z]*\)/"\1(*)"/g; s/,/, /g')"
+    printf 'prompt: |\n'
+    bun "$dir/guide.ts" exclusive | sed 's/^/  /'
+  } > "$spec"
+  exec omnigent agent add "$spec"
+fi
+
+guide=${XDG_CACHE_HOME:-$HOME/.cache}/code-mode/guide-exclusive.md
+mkdir -p "${guide%/*}" && bun "$dir/guide.ts" exclusive > "$guide"
+settings='{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"code-mode@claude-mods":true,"eval-kernel@claude-mods":false}}'
+if [ -n "${CODE_MODE_DIR:-}" ]; then
+  exec omnigent claude --disallowedTools "$deny" --plugin-dir "$dir" --append-system-prompt-file "$guide" \
+    --settings '{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"eval-kernel@claude-mods":false}}' "$@"
+fi
+exec omnigent claude --disallowedTools "$deny" --append-system-prompt-file "$guide" --settings "$settings" "$@"
