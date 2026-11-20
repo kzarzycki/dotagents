@@ -77,3 +77,35 @@ def test_default_base_is_origin_main(tmp_path):
         [sys.executable, "affected_tests.py", "--list"], cwd=r, env=env, capture_output=True, text=True
     )
     assert done.returncode == 0 and "none" in done.stderr
+
+
+def test_shipped_markdown_runs_everything(tmp_path):
+    r = repo(tmp_path)
+    (r / "home").mkdir()
+    change(r, "home/x.md", "x\n")
+    assert run(r, "--list").stdout.split() == ["tests/test_ok.py"]
+
+
+def test_a_deleted_test_selects_nothing_and_exits_0(tmp_path):
+    r = repo(tmp_path)
+    git(r, "rm", "-q", "tests/test_ok.py")
+    git(r, "commit", "-qm", "rm")
+    done = run(r)
+    assert done.returncode == 0 and "none" in done.stderr
+
+
+def test_a_test_named_file_outside_tests_runs_everything(tmp_path):
+    r = repo(tmp_path)
+    (r / "lib").mkdir()
+    change(r, "lib/test_x.py", "x = 1\n")
+    assert run(r, "--list").stdout.split() == ["tests/test_ok.py"]
+
+
+def test_a_doc_a_test_names_selects_that_test(tmp_path):
+    r = repo(tmp_path)
+    (r / "tests/test_readme.py").write_text("def test_r():\n    assert 'README.md'\n")
+    git(r, "add", "-A")
+    git(r, "commit", "-qm", "readme test")
+    git(r, "tag", "-f", "base")
+    change(r, "README.md", "b\n")
+    assert run(r, "--list").stdout.split() == ["tests/test_readme.py"]

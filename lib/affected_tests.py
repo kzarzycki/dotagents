@@ -5,7 +5,7 @@ The changed files come from `git diff` against GATE_BASE (else origin/main), rea
 fresh clone and CI need no saved state. A changed test file runs alone only when every other changed file is
 documentation outside `home/`. Anything else (installer, shipped config or instructions, test setup) runs the whole
 suite, and so does a base git cannot diff: the installer tests read `home/`, `bin/` and `lib/` through paths no name
-search sees. A docs-only change selects nothing and exits 0: the nightly runs the full suite.
+search sees. A doc a test file names by path selects that test file; any other docs-only change selects nothing and exits 0: the nightly runs the full suite.
 """
 
 import os
@@ -36,7 +36,10 @@ def targets(files, tests):
     docs = [f for f in files if f.endswith(".md") and not f.startswith("home/")]
     if any(not is_test(f) and f not in docs for f in files):
         return tests
-    return sorted(f for f in files if is_test(f) and Path(f).exists())
+    picked = {f for f in files if is_test(f) and Path(f).exists()}
+    # a doc some test reads by path (README.md, docs/ROADMAP.md) selects the test files that name it
+    picked.update(t for f in docs for t in tests if f in Path(t).read_text(errors="ignore"))
+    return sorted(picked)
 
 
 if __name__ == "__main__":

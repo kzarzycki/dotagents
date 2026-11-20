@@ -105,7 +105,7 @@ description = "Set up a fresh checkout or worktree: install the gitignored agent
 run = "mise run agent-sync"
 
 [tasks.check]
-description = "The test suite and the frozen agent configuration check. The loop runs it before every push, and CI runs it as the merge proof."
+description = "The test suite and the frozen agent configuration check. The loop runs it before every push and the nightly workflow runs it; CI runs `check-fast`."
 run = ["mise run test", "mise run agent-sync --frozen"]
 
 [tasks."loop:approvals"]
