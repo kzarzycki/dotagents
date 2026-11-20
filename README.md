@@ -35,7 +35,7 @@ dotagents/
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
 
-The installed user baseline enables three Claude Code mods globally (see claude-mods below) and no other capability plugins. Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
+The installed user baseline enables two Claude Code mods globally (see claude-mods below) and no other capability plugins. Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
 
 OMP (oh-my-pi) is a first-class payload under `home/.omp/`: its config, rules,
 and extensions install with the normal command just like Claude and Codex
@@ -201,13 +201,15 @@ The VPS exposes that loopback API through Tailscale **Serve** (not public Funnel
 
 ### claude-mods
 
-`settings.shared.json` declares the `claude-mods` marketplace from GitHub (`kzarzycki/claude-mods`), so all eight mods are available on every machine, and enables three:
-
-- `eval-kernel` gives the model an `eval` tool: a JavaScript kernel whose state survives between cells. The kernel runs on `bun` (its `bun` option), which install doesn't provide, so a machine without it has the tool but its cells fail to start.
+`settings.shared.json` declares the `claude-mods` marketplace from GitHub (`kzarzycki/claude-mods`), so all eight mods are available on every machine, and enables two:
 - `self-compact` compacts at task boundaries.
 - `decision-model` judges, for `self-compact`, whether a turn finished a task. Without it, `self-compact` nudges with each prompt above its threshold instead.
 
-`decision-model` sends the text it judges to openrouter.ai or api.typesafe.ai when `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` is in Claude's environment, or its `apiKey` option is set; otherwise a Claude model answers under the session's own account. The `work` overlay pins its `backend` option to `claude`, so a work machine never calls those endpoints. `eval-kernel` and `self-compact` call nothing off the machine themselves; an `eval` cell is model-written code with Bun's `fetch` and `process`, the same reach as the Bash tool.
+`code-mode` is off by default, while it is tried on chosen work: it changes how the model works in every session that loads it. It gives the model a `repl` tool, a JavaScript kernel whose state survives between scripts, and those scripts call Claude's own tools. The kernel runs on `bun` (its `bun` option), which install doesn't provide. Install sets `eval-kernel`, its old name, to off, so a machine that had it turned on stops loading a plugin the marketplace no longer has.
+
+`decision-model` sends the text it judges to openrouter.ai or api.typesafe.ai when `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` is in Claude's environment, or its `apiKey` option is set; otherwise a Claude model answers under the session's own account. The `work` overlay pins its `backend` option to `claude`, so a work machine never calls those endpoints. `code-mode` and `self-compact` call nothing off the machine themselves; a `repl` script is model-written code with Bun's `fetch` and `process`, the same reach as the Bash tool.
+
+`claude-code-mode` starts an Omnigent Claude session in which the model's only tool for shell, file and web work is code-mode's `repl`. It runs `omnigent claude` and denies Bash, Read, Edit, Write, Glob, Grep, NotebookEdit, WebFetch and WebSearch with `--disallowedTools`. That flag binds only the model, so the mod's scripts still call those tools. It also turns `code-mode` on for that session only and puts the Code Mode guide in the system prompt. `claude-code-mode --install-agent` registers the same setup as the Omnigent agent `code-mode`, so a lead can start a worker or verifier on it. The agent lists the hidden tools as patterns (`Bash(*)`), because a plain name in an agent's `disallowed_tools` also becomes a server deny policy, and Omnigent's PreToolUse hook would apply it to the mod's calls too. Its prompt is a copy of the installed plugin's guide, so rerun `--install-agent` after code-mode updates. Set `CODE_MODE_DIR` to a `plugins/code-mode` checkout to load it from there.
 
 To develop a mod, point this machine's own `claude-mods` entry in `~/.claude/settings.json` at the checkout (`"source": {"source": "directory", "path": "<checkout>"}`). Install keeps it and prints a note (Local overrides).
 
