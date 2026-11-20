@@ -256,6 +256,27 @@ Manual steps the script cannot do:
 - Start `claude` once in a terminal and clear every first-run prompt. Native sessions run the CLI inside tmux and stall on any dialog they cannot answer.
 - macOS: the service runs in the user's desktop session (`gui/<uid>`), so that user must stay logged in (switch users, don't log out; log in again after a reboot). CLI logins live in that session's keychain, which is why `claude auth status` over ssh reports logged out while the service works.
 
+#### Omnigent agents
+
+`patches/omnigent/agents/<name>/config.yaml` holds Omnigent agent definitions. They are not installed by `dotagents install`: Omnigent keeps agents on its server, so you add one with the CLI.
+
+- `claude-ai-chat`: a claude-sdk agent pinned to `claude-opus-5-5` whose `prompt` is Anthropic's [published claude.ai system prompt for Opus 5.5](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-opus-5-5.md), with `{{currentDateTime}}` filled in. It replaces Claude Code's own system prompt; CLAUDE.md, skills, hooks and tools still load.
+
+Install or reinstall (re-run after every refresh):
+
+```sh
+omnigent agent add ~/.dotagents/patches/omnigent/agents/claude-ai-chat
+```
+
+Refresh the prompt when Anthropic publishes a new section on that page:
+
+```sh
+~/.dotagents/patches/omnigent/agents/refresh-claude-ai-chat   # --date "Monday, May 4, 2026" to override today's date
+git diff patches/omnigent/agents                              # check the change, then commit and reinstall
+```
+
+The script takes the newest dated section, joins the two code blocks the page splits it into, fills the date (today, so the model knows how old its knowledge is) and rewrites only the `prompt:` block. If Anthropic ships a new model's page, change `URL` in the script and `executor.model` and `description` in the config by hand. `tests/test_claude_ai_chat_agent.py` covers the script.
+
 ### dev marketplace (live local plugins)
 
 `home/.claude/settings.shared.json` declares a `dev` directory marketplace at `~/dev` and wires a SessionStart hook that runs `patches/dev-marketplace/apply.sh`, which:

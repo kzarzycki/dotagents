@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""Rewrite `prompt` in claude-ai-chat/config.yaml from Anthropic's published page.
+
+Usage: refresh-claude-ai-chat [--url URL | --file PAGE.md] [--date TEXT]
+Takes the newest dated section, joins its code blocks (the page splits the prompt
+across two fences) and fills {{currentDateTime}} with --date (default: today).
+Edits only the `prompt:` block, so the rest of the file keeps its layout.
+"""
+
+import argparse
+import datetime
+import pathlib
+import re
+import urllib.request
+
+URL = "https://platform.claude.com/docs/en/release-notes/system-prompts/claude-opus-5-5.md"
+CONFIG = pathlib.Path(__file__).parent / "claude-ai-chat" / "config.yaml"
+
+
+def prompt_from_page(page, date):
+    section = page.split("\n## ")[1]  # the newest section comes first
+    heading, body = section.split("\n", 1)
+    blocks = re.findall(r"```text wrap\n(.*?)\n```(?=\n|$)", body, re.S)
+    text = "\n".join(blocks).replace("{{currentDateTime}}", date)
+    return heading.strip(), text
+
+
+def rewrite(config, text):
+    head, sep, _ = config.partition("\nprompt: |\n")
+    body = "".join(("  " + l if l else "") + "\n" for l in text.splitlines())
+    return head + sep + body
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--url", default=URL)
+    ap.add_argument("--file", help="read this saved page instead of fetching")
+    ap.add_argument("--date", default=datetime.date.today().strftime("%A, %B %d, %Y").replace(" 0", " "))
+    a = ap.parse_args()
+    page = pathlib.Path(a.file).read_text() if a.file else urllib.request.urlopen(a.url).read().decode()
+    heading, text = prompt_from_page(page, a.date)
+    CONFIG.write_text(rewrite(CONFIG.read_text(), text))
+    print(f"prompt refreshed from the {heading} section")
+
+
+if __name__ == "__main__":
+    main()
