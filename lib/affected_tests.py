@@ -9,6 +9,7 @@ search sees. A docs-only change selects nothing and exits 0: the nightly runs th
 """
 
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -44,4 +45,8 @@ if __name__ == "__main__":
     print("\n".join(picked) if picked else "affected tests: none", file=None if picked else sys.stderr)
     if "--list" in sys.argv or not picked:
         sys.exit(0)
-    sys.exit(subprocess.run([sys.executable, "-m", "pytest", "-q", *picked]).returncode)
+    sys.exit(
+        subprocess.run(
+            [*(["pytest"] if shutil.which("pytest") else [sys.executable, "-m", "pytest"]), "-q", *picked]
+        ).returncode
+    )
