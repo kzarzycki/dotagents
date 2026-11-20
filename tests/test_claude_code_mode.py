@@ -4,6 +4,7 @@ from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parent.parent / "home/.local/bin/claude-code-mode"
 HIDDEN = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit", "WebFetch", "WebSearch"]
+OMNIGENT = [f"mcp__omnigent__sys_os_{t}" for t in ("shell", "read", "write", "edit")]
 GUIDE = "Work through repl.\nIts scripts: call tools as JavaScript.\n"
 
 
@@ -68,7 +69,10 @@ def test_install_agent_hands_omnigent_a_claude_native_agent(tmp_path):
     assert "\nname: code-mode\n" in spec
     assert "    harness: claude-native\n" in spec
     # patterns, not plain names: a plain name becomes Omnigent's server deny policy, which refuses the mod's calls too
-    assert "    disallowed_tools: [" + ", ".join(f'"{t}(*)"' for t in HIDDEN) + "]\n" in spec
+    assert (
+        "    disallowed_tools: [" + ", ".join([f'"{t}(*)"' for t in HIDDEN] + [f'"{t}"' for t in OMNIGENT]) + "]\n"
+        in spec
+    )
     assert spec.endswith("prompt: |\n" + "".join(f"  {line}\n" for line in GUIDE.splitlines()))
 
 
@@ -82,7 +86,7 @@ def test_session_turns_code_mode_on_for_itself_only(tmp_path):
     r, argv, _ = run(tmp_path, "--resume", "x")
     assert r.returncode == 0, r.stderr
     assert argv[0] == "claude"
-    assert argv[argv.index("--disallowedTools") + 1] == ",".join(HIDDEN)
+    assert argv[argv.index("--disallowedTools") + 1] == ",".join(HIDDEN + OMNIGENT)
     guide = Path(argv[argv.index("--append-system-prompt-file") + 1])
     assert guide.read_text() == GUIDE
     settings = json.loads(argv[argv.index("--settings") + 1])

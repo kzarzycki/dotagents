@@ -27,6 +27,9 @@
 # instead of the installed plugin.
 set -eu
 deny=Bash,Read,Edit,Write,Glob,Grep,NotebookEdit,WebFetch,WebSearch
+# Omnigent's own shell and file tools: without them hidden too, the model falls back to them.
+# Plain names: no script calls them, so the server deny policy they become in an agent costs nothing.
+omni=mcp__omnigent__sys_os_shell,mcp__omnigent__sys_os_read,mcp__omnigent__sys_os_write,mcp__omnigent__sys_os_edit
 command -v bun >/dev/null || { echo "claude-code-mode: needs bun (code-mode's kernel runs on it), and it isn't on PATH" >&2; exit 1; }
 dir=${CODE_MODE_DIR:-$(bun -e 'const p = require(process.env.HOME + "/.claude/plugins/installed_plugins.json").plugins["code-mode@claude-mods"]; console.log(p?.find(i => i.scope === "user")?.installPath ?? "")' 2>/dev/null || true)}
 if [ -z "$dir" ] || [ ! -f "$dir/guide.ts" ]; then
@@ -45,7 +48,7 @@ if [ "${1:-}" = --install-agent ]; then
     printf 'spec_version: 1\nname: code-mode\n'
     printf 'description: "Claude Code with code-mode'"'"'s repl as the one way to work: shell, files, search and tool calls as JavaScript."\n'
     printf 'executor:\n  type: omnigent\n  config:\n    harness: claude-native\n'
-    printf '    disallowed_tools: [%s]\n' "$(printf '%s' "$deny" | sed 's/\([A-Za-z]*\)/"\1(*)"/g; s/,/, /g')"
+    printf '    disallowed_tools: [%s]\n' "$(printf '%s' "$deny" | sed 's/\([A-Za-z]*\)/"\1(*)"/g; s/,/, /g'), $(printf '%s' "$omni" | sed 's/[^,]*/"&"/g; s/,/, /g')"
     printf 'prompt: |\n'
     printf '%s\n' "$prompt" | sed 's/^/  /'
   } > "$spec"
@@ -57,7 +60,7 @@ guide=${XDG_CACHE_HOME:-$HOME/.cache}/code-mode/guide-exclusive.md
 mkdir -p "${guide%/*}" && bun "$dir/guide.ts" exclusive > "$guide"
 settings='{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"code-mode@claude-mods":true,"eval-kernel@claude-mods":false}}'
 if [ -n "${CODE_MODE_DIR:-}" ]; then
-  exec omnigent claude --disallowedTools "$deny" --plugin-dir "$dir" --append-system-prompt-file "$guide" \
+  exec omnigent claude --disallowedTools "$deny,$omni" --plugin-dir "$dir" --append-system-prompt-file "$guide" \
     --settings '{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"eval-kernel@claude-mods":false}}' "$@"
 fi
-exec omnigent claude --disallowedTools "$deny" --append-system-prompt-file "$guide" --settings "$settings" "$@"
+exec omnigent claude --disallowedTools "$deny,$omni" --append-system-prompt-file "$guide" --settings "$settings" "$@"
