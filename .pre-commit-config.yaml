@@ -1,7 +1,7 @@
 # Fast checks only, no test suite: they run on each commit and again on push over
 # the commits being pushed, so a commit made with --no-verify or before the hooks
 # were installed still cannot leave the machine unchecked. The tests run once per
-# head, in the gate (`mise run check`) and CI. `bin/dotagents install` wires both
+# head, in the gate (`mise run check`), CI (`check-fast`) and the nightly (`check`). `bin/dotagents install` wires both
 # stages (`pre-commit install`); run all hooks by hand with `pre-commit run --all-files`.
 default_install_hook_types: [pre-commit, pre-push]
 repos:

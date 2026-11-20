@@ -34,6 +34,7 @@ jobs:
           # the newest default-branch commit a nightly passed on; the root commit when none has
           green=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/nightly.yml/runs?status=success&branch=main&per_page=1" --jq '.workflow_runs[0].head_sha // empty')
           [ -n "$green" ] || green=$(git rev-list --max-parents=0 HEAD | tail -n1)
-          # a red `mise run test` stops `check` before it installs the pack's skills, so install them here
-          mise run agent-sync --frozen
+          # a red `mise run test` stops `check` before it installs the pack's skills, so install them here; not
+          # --frozen, since drifted agent config is a red the reporter must still report
+          mise run agent-sync
           python3 .agents/skills/engineering-loop/scripts/nightly.py red --last-green "$green" --red "$GITHUB_SHA" --run "$RUN"
