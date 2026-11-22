@@ -10,4 +10,11 @@ loop:
   delegate: all
 risk:
   verifier: true
+bot:
+  pack-bump:
+    branch: claude/ready-pack-bump-
+    paths:
+      - apm.yml
+      - apm.lock.yaml
+      - ".agents/**"
 ```
