@@ -18,13 +18,13 @@
 # becomes Omnigent's server deny policy, whose PreToolUse hook refuses the mod's calls too
 # ("Tool 'Bash' is forbidden by the agent spec"); a pattern goes to the harness flag only.
 #
-# ponytail: the agent's prompt is a copy of the guide made at install, and it can't set
-# CODE_MODE_GUIDE (no per-agent settings), so repl's description repeats the guide there. Rerun
-# --install-agent after updating code-mode; omnigent#473 asks for per-agent settings.
+# ponytail: the agent's prompt is a copy of the guide made at install. Rerun --install-agent
+# after updating code-mode.
 #
-# --settings merges into Omnigent's invocation settings: code-mode on, and eval-kernel (its old
-# name) off, so the model doesn't get two REPLs. CODE_MODE_DIR loads code-mode from a checkout
-# instead of the installed plugin.
+# The settings (a session's --settings, the agent's executor.config.settings) merge into Omnigent's
+# invocation settings: code-mode on for this session alone, eval-kernel (its old name) off, so the
+# model doesn't get two REPLs. The agent's needs an Omnigent with per-agent settings (omnigent#473).
+# CODE_MODE_DIR loads code-mode from a checkout instead of the installed plugin.
 set -eu
 deny=Bash,Read,Edit,Write,Glob,Grep,NotebookEdit,WebFetch,WebSearch
 # Omnigent's own shell and file tools: without them hidden too, the model falls back to them.
@@ -37,6 +37,7 @@ if [ -z "$dir" ] || [ ! -f "$dir/guide.ts" ]; then
   exit 1
 fi
 
+settings='{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"code-mode@claude-mods":true,"eval-kernel@claude-mods":false}}'
 if [ "${1:-}" = --install-agent ]; then
   # A tarball with config.yaml at its root: Omnigent's server reads only config.yaml from an upload,
   # so a lone code-mode.yaml gets "404: config.yaml not found", and a folder source expands the
@@ -49,6 +50,7 @@ if [ "${1:-}" = --install-agent ]; then
     printf 'description: "Claude Code with code-mode'"'"'s repl as the one way to work: shell, files, search and tool calls as JavaScript."\n'
     printf 'executor:\n  type: omnigent\n  config:\n    harness: claude-native\n'
     printf '    disallowed_tools: [%s]\n' "$(printf '%s' "$deny" | sed 's/\([A-Za-z]*\)/"\1(*)"/g; s/,/, /g'), $(printf '%s' "$omni" | sed 's/[^,]*/"&"/g; s/,/, /g')"
+    printf '    settings: %s\n' "$settings" # JSON is a YAML flow mapping
     printf 'prompt: |\n'
     printf '%s\n' "$prompt" | sed 's/^/  /'
   } > "$spec"
@@ -58,7 +60,6 @@ fi
 
 guide=${XDG_CACHE_HOME:-$HOME/.cache}/code-mode/guide-exclusive.md
 mkdir -p "${guide%/*}" && bun "$dir/guide.ts" exclusive > "$guide"
-settings='{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"code-mode@claude-mods":true,"eval-kernel@claude-mods":false}}'
 if [ -n "${CODE_MODE_DIR:-}" ]; then
   exec omnigent claude --disallowedTools "$deny,$omni" --plugin-dir "$dir" --append-system-prompt-file "$guide" \
     --settings '{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"eval-kernel@claude-mods":false}}' "$@"

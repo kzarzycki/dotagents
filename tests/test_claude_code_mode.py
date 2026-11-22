@@ -73,6 +73,14 @@ def test_install_agent_hands_omnigent_a_claude_native_agent(tmp_path):
         "    disallowed_tools: [" + ", ".join([f'"{t}(*)"' for t in HIDDEN] + [f'"{t}"' for t in OMNIGENT]) + "]\n"
         in spec
     )
+    # the agent turns code-mode on for its own sessions through Omnigent's per-agent settings
+    # (a JSON flow mapping, so json reads it as YAML would)
+    (line,) = [line for line in spec.splitlines() if line.startswith("    settings: ")]
+    settings = json.loads(line.removeprefix("    settings: "))
+    assert settings == {
+        "env": {"CODE_MODE_GUIDE": "system"},
+        "enabledPlugins": {"code-mode@claude-mods": True, "eval-kernel@claude-mods": False},
+    }
     assert spec.endswith("prompt: |\n" + "".join(f"  {line}\n" for line in GUIDE.splitlines()))
 
 
