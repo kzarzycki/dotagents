@@ -159,3 +159,17 @@ def test_a_hosts_directory_marketplace_wins_and_work_pins_decision_model_to_clau
         json.loads(settings.read_text())["extraKnownMarketplaces"]["claude-mods"]
         == fresh["extraKnownMarketplaces"]["claude-mods"]
     )
+
+
+def test_install_drops_orca_hooks_a_host_still_carries(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    settings = home / ".claude/settings.json"
+    assert run_install(repo, home, "--profile", "vps").returncode == 0
+    orca = {"type": "command", "command": 'if [ -x "$HOME/.orca/agent-hooks/claude-hook.sh" ]; then /bin/sh "$HOME/.orca/agent-hooks/claude-hook.sh"; fi'}
+    host = json.loads(settings.read_text())
+    for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest"):
+        host["hooks"].setdefault(event, []).append({"matcher": "*", "hooks": [orca]})
+    settings.write_text(json.dumps(host, indent=2) + "\n")
+
+    assert run_install(repo, home, "--profile", "vps").returncode == 0
+    assert ".orca" not in settings.read_text()
