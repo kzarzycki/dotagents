@@ -1,13 +1,13 @@
 lockfile_version: '2'
-generated_at: '2026-11-22T00:10:29.173579+00:00'
+generated_at: '2026-11-22T07:48:06.147039+00:00'
 apm_version: 0.30.0
 dependencies:
 - repo_url: kzarzycki/agent-skills
   name: engineering
   host: github.com
-  resolved_commit: 5cd391369cfc41a46354a07811cf8b3fe9777dab
-  resolved_ref: engineering-v0.34.0
-  version: 0.34.0
+  resolved_commit: 2ad76eb2ea5203c57b7f7d8c5fa367f04e0d49e8
+  resolved_ref: engineering-v0.34.1
+  version: 0.34.1
   virtual_path: engineering
   is_virtual: true
   package_type: marketplace_plugin
@@ -413,7 +413,7 @@ dependencies:
     .agents/skills/orchestrating-agents/scripts/__pycache__: sha256:ffd55781e5e61b34f467e23b3b15b8b25ad72a939365a236bdce5628d082a03c
     .agents/skills/orchestrating-agents/scripts/claude_cloud.py: sha256:9e26bf68250ce9e29d513b1450845b2de02a564b1d918835bb6faa5a4266343b
     .agents/skills/orchestrating-agents/scripts/claude_environments.py: sha256:1113eebc015d7a89d5aabc01cd5a5db96c85adcf2ce26d8fd0b48b106dc9568e
-    .agents/skills/orchestrating-agents/scripts/omnigent_agent.py: sha256:909f91e1b1417e3614014e6d7fa06995635bbdec0f91e0c741a91fac57c3e2ae
+    .agents/skills/orchestrating-agents/scripts/omnigent_agent.py: sha256:029cfee48782f30009d7674e5a83d71f4da95f46908441476cef89450506509b
     .agents/skills/pr/CREDITS.md: sha256:ac9da0b1f2814a47b4a64c9588675e6f7aeff868d91d5ed795173253060a330b
     .agents/skills/pr/SKILL.md: sha256:f92c28a76fd33976c30217db41ab4f48e27debf90f037a4e1de56ce0a68d8601
     .agents/skills/pr/agents/openai.yaml: sha256:2295b586624db4ef546f3fd4695492f039d941a46d8a1593a702ce3ca511b8ad
@@ -536,7 +536,7 @@ dependencies:
     .claude/skills/orchestrating-agents/scripts/__pycache__: sha256:ffd55781e5e61b34f467e23b3b15b8b25ad72a939365a236bdce5628d082a03c
     .claude/skills/orchestrating-agents/scripts/claude_cloud.py: sha256:9e26bf68250ce9e29d513b1450845b2de02a564b1d918835bb6faa5a4266343b
     .claude/skills/orchestrating-agents/scripts/claude_environments.py: sha256:1113eebc015d7a89d5aabc01cd5a5db96c85adcf2ce26d8fd0b48b106dc9568e
-    .claude/skills/orchestrating-agents/scripts/omnigent_agent.py: sha256:909f91e1b1417e3614014e6d7fa06995635bbdec0f91e0c741a91fac57c3e2ae
+    .claude/skills/orchestrating-agents/scripts/omnigent_agent.py: sha256:029cfee48782f30009d7674e5a83d71f4da95f46908441476cef89450506509b
     .claude/skills/pr/CREDITS.md: sha256:ac9da0b1f2814a47b4a64c9588675e6f7aeff868d91d5ed795173253060a330b
     .claude/skills/pr/SKILL.md: sha256:f92c28a76fd33976c30217db41ab4f48e27debf90f037a4e1de56ce0a68d8601
     .claude/skills/pr/agents/openai.yaml: sha256:2295b586624db4ef546f3fd4695492f039d941a46d8a1593a702ce3ca511b8ad
@@ -571,10 +571,10 @@ dependencies:
     .claude/skills/wizard/SKILL.md: sha256:2fb85928b7ab44f20348553392b68142e1da0022142772473e2daed45789b65e
     .claude/skills/wizard/agents/openai.yaml: sha256:98f44d682d58e262f160dc59a8befc365e0aa65820dd0261864af26aa8e59d83
     .claude/skills/wizard/template.sh: sha256:2b9bceab14f71bf05d54847155b37c466065f2e86d83b348a70dacc0bff0a01f
-  content_hash: sha256:889cc3c094527fba56f49b2ed1326d6e59240a949419b79e10eab025ec88ecd9
-  constraint: ^0.34.0
-  resolved_tag: engineering-v0.34.0
-  resolved_at: '2026-11-22T00:10:24+00:00'
+  content_hash: sha256:3920912807e7ec716f145146536a19772a0530148373d8a325ce955f09d3f904
+  constraint: ^0.34.1
+  resolved_tag: engineering-v0.34.1
+  resolved_at: '2026-11-22T07:48:00+00:00'
 deployments:
 - kind: project-relative
   target: claude
@@ -1583,7 +1583,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:909f91e1b1417e3614014e6d7fa06995635bbdec0f91e0c741a91fac57c3e2ae
+  content_hash: sha256:029cfee48782f30009d7674e5a83d71f4da95f46908441476cef89450506509b
 - kind: project-relative
   target: claude
   value: .claude/skills/pr
@@ -2987,7 +2987,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:909f91e1b1417e3614014e6d7fa06995635bbdec0f91e0c741a91fac57c3e2ae
+  content_hash: sha256:029cfee48782f30009d7674e5a83d71f4da95f46908441476cef89450506509b
 - kind: project-relative
   target: codex
   value: .agents/skills/pr
