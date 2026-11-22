@@ -1,13 +1,13 @@
 lockfile_version: '2'
-generated_at: '2026-11-21T22:36:56.126358+00:00'
+generated_at: '2026-11-22T00:10:29.173579+00:00'
 apm_version: 0.30.0
 dependencies:
 - repo_url: kzarzycki/agent-skills
   name: engineering
   host: github.com
-  resolved_commit: 2b68248975d0c5c9331fda06f48a39ed5ec34607
-  resolved_ref: engineering-v0.33.6
-  version: 0.33.6
+  resolved_commit: 5cd391369cfc41a46354a07811cf8b3fe9777dab
+  resolved_ref: engineering-v0.34.0
+  version: 0.34.0
   virtual_path: engineering
   is_virtual: true
   package_type: marketplace_plugin
@@ -363,13 +363,13 @@ dependencies:
     .agents/skills/domain-modeling/GLOSSARY-FORMAT.md: sha256:a881be42e0c9feae0f686373ecb66fe9c5700e7fac09007d2a5325c41c2cf507
     .agents/skills/domain-modeling/SKILL.md: sha256:024c8668c5d0255d2bacb01bfaba45d8977c15ea1c05f1e3582db90c90b77b35
     .agents/skills/domain-modeling/agents/openai.yaml: sha256:f6bf2aa996c6e6f53fdd0708e18a0d16a56aed8322cca59fedbe3c0d2c75f06b
-    .agents/skills/engineering-loop/SKILL.md: sha256:7a3a5b071c7cc007e0a20c0ef92e6d6cd43a8390314bfa3ac7ebff35f67cc2d7
+    .agents/skills/engineering-loop/SKILL.md: sha256:d83311df32d462951f6014ef3977479ce35942d52e29e36ce77d1c3624a3b8e4
     .agents/skills/engineering-loop/agents/openai.yaml: sha256:26e240be83b139fc23b1e361c26a732119fcfddd89c066e6afdb2f99217f039e
     .agents/skills/engineering-loop/coding-standards.md: sha256:6fb7839983e70a0096fa6fbda09257b5a8e0bbbfd261ee0113beda15d684639f
     .agents/skills/engineering-loop/events.md: sha256:c2d3f35f62d7ac73d0ca783f7c6f0d821bd1819a81db89d5c9a9fcee7d94cb24
     .agents/skills/engineering-loop/github.md: sha256:bfdebab3e38939a780572638c0c6839d7adb91ba207ac7b20b2015de29514f5f
     .agents/skills/engineering-loop/issues.md: sha256:2cb1f33c3ef5e0030ca2eeedff3b3a66443a1e363c7732078f02e1d3049a1798
-    .agents/skills/engineering-loop/lead.md: sha256:cc66c1613537610e10c1bcc8db2cdea65f1cfc76999634ad90988b2d2c2f26c0
+    .agents/skills/engineering-loop/lead.md: sha256:0e4d20788c9eb8158ef946b766d5f210ac3131d27b461add07bd680c1f1a6035
     .agents/skills/engineering-loop/proof-run.md: sha256:75a25b5ed8ee8fbb7e88cd5e87980de02154508ffca5c1570f0be4a8c140d531
     .agents/skills/engineering-loop/scripts/__pycache__: sha256:ffd55781e5e61b34f467e23b3b15b8b25ad72a939365a236bdce5628d082a03c
     .agents/skills/engineering-loop/scripts/acceptance.py: sha256:0bcbe98cbc2cfb935029c49e45fe33a63de30319258fe12370084f05fdda4793
@@ -379,14 +379,14 @@ dependencies:
     .agents/skills/engineering-loop/scripts/cloud_verifier.py: sha256:7325111b2ec7a7369f30a35f132ec735cbb7e10db61f3d752dff6d2b8296f045
     .agents/skills/engineering-loop/scripts/events.py: sha256:c3a30fbba8209cdd2dc01ac27a608e033cb201c7a92d2a57d362382215cdf725
     .agents/skills/engineering-loop/scripts/folding.py: sha256:32d04516ae86ffcc641edcdd73cda671f1a85dc28426fa11dc2b67cdcee1f598
-    .agents/skills/engineering-loop/scripts/gatekeeper.py: sha256:ff18c1f37e38f000c7f19bf937655b16593fff7aabf21d3aafdc121a8bed8ba9
-    .agents/skills/engineering-loop/scripts/github_adapter.py: sha256:7108b2bbb31dfc8887e01e1919e1e29bf83ffa2c12a6b160ea65c430f7b0237e
+    .agents/skills/engineering-loop/scripts/gatekeeper.py: sha256:c00f20a08c47a28f352d2853d1aec71140373d386375d99b3983ca67c9afdcf9
+    .agents/skills/engineering-loop/scripts/github_adapter.py: sha256:22137a13b0f1fc6faf7b6bed62e8e0be05117d8a0039413138b24fa80c972bda
     .agents/skills/engineering-loop/scripts/labels.py: sha256:cd2f488be4297206bf9a7b6e4dc91f5f0388135e77db82f4b2b9ee196d2e4e23
     .agents/skills/engineering-loop/scripts/mutate.py: sha256:c046536f6efdb0c0a75ca7016269e18c537b71dac0f8ac38faff764526f4abe7
     .agents/skills/engineering-loop/scripts/nightly.py: sha256:a67fd7aa55fc2011124dec0d775e41b6516c618f26431c280d91cd8de2c7de1d
     .agents/skills/engineering-loop/scripts/rulesets.py: sha256:1b696be3b36fb0049b618ccc05080dce1fca75c6f5fa05714393b9b1ef062162
     .agents/skills/engineering-loop/verifier.md: sha256:9f60ea8ed02b74c04c23054a51408b5c8ebd38b33363cc1ecabe5b8d550cc90f
-    .agents/skills/engineering-loop/worker.md: sha256:efe016ead4c9c5bd04afc5bb13cd1bbfd214b087af0feed0080b01da62d5d8dd
+    .agents/skills/engineering-loop/worker.md: sha256:49eaab1479af152b45a376d8d32023f5c2c13b156222e94200ab8d4db7a65da8
     .agents/skills/grill-with-docs/SKILL.md: sha256:e50417b3416bc41277ba6fbe033de84a6369f62d1d33ad3d19a94fbaad8f1379
     .agents/skills/grill-with-docs/agents/openai.yaml: sha256:94cd0ab161fb468a836349f5ed482ba58ce8e709a05c57ce533d739dbd35cca9
     .agents/skills/grilling/SKILL.md: sha256:8d3bce0cf9eb146c7355d982273aeba79e51f362b5be5124f452af19d03d67cb
@@ -409,11 +409,11 @@ dependencies:
     .agents/skills/orchestrating-agents/agents/openai.yaml: sha256:bee3121e0b1fd3049913f30b0eda156db09541d161089c39f38418d7debab471
     .agents/skills/orchestrating-agents/backends/herdr-link.md: sha256:393e6df1c3d394bb1df8c9f5979984e8a968454b8015a73ae177816fe07ad35e
     .agents/skills/orchestrating-agents/backends/native.md: sha256:ae87ec084cefae5e456b4fa8098435c6ec7bbf436e5f312623ad3312ff6ae226
-    .agents/skills/orchestrating-agents/backends/omnigent.md: sha256:5b17da41e4066a2ecf306785fb2b72b4138cfe9771db43a7123110280d6bddf6
+    .agents/skills/orchestrating-agents/backends/omnigent.md: sha256:83b91047662de74db1d6e10e893ae635ea9c81d9409adb23d47d1e88bad4c517
     .agents/skills/orchestrating-agents/scripts/__pycache__: sha256:ffd55781e5e61b34f467e23b3b15b8b25ad72a939365a236bdce5628d082a03c
     .agents/skills/orchestrating-agents/scripts/claude_cloud.py: sha256:9e26bf68250ce9e29d513b1450845b2de02a564b1d918835bb6faa5a4266343b
     .agents/skills/orchestrating-agents/scripts/claude_environments.py: sha256:1113eebc015d7a89d5aabc01cd5a5db96c85adcf2ce26d8fd0b48b106dc9568e
-    .agents/skills/orchestrating-agents/scripts/omnigent_agent.py: sha256:0b067e07d0396bc1e6e4266943010fe82d8c347a6b870c7e55f10c55e8d7e8e4
+    .agents/skills/orchestrating-agents/scripts/omnigent_agent.py: sha256:909f91e1b1417e3614014e6d7fa06995635bbdec0f91e0c741a91fac57c3e2ae
     .agents/skills/pr/CREDITS.md: sha256:ac9da0b1f2814a47b4a64c9588675e6f7aeff868d91d5ed795173253060a330b
     .agents/skills/pr/SKILL.md: sha256:f92c28a76fd33976c30217db41ab4f48e27debf90f037a4e1de56ce0a68d8601
     .agents/skills/pr/agents/openai.yaml: sha256:2295b586624db4ef546f3fd4695492f039d941a46d8a1593a702ce3ca511b8ad
@@ -486,13 +486,13 @@ dependencies:
     .claude/skills/domain-modeling/GLOSSARY-FORMAT.md: sha256:a881be42e0c9feae0f686373ecb66fe9c5700e7fac09007d2a5325c41c2cf507
     .claude/skills/domain-modeling/SKILL.md: sha256:024c8668c5d0255d2bacb01bfaba45d8977c15ea1c05f1e3582db90c90b77b35
     .claude/skills/domain-modeling/agents/openai.yaml: sha256:f6bf2aa996c6e6f53fdd0708e18a0d16a56aed8322cca59fedbe3c0d2c75f06b
-    .claude/skills/engineering-loop/SKILL.md: sha256:7a3a5b071c7cc007e0a20c0ef92e6d6cd43a8390314bfa3ac7ebff35f67cc2d7
+    .claude/skills/engineering-loop/SKILL.md: sha256:d83311df32d462951f6014ef3977479ce35942d52e29e36ce77d1c3624a3b8e4
     .claude/skills/engineering-loop/agents/openai.yaml: sha256:26e240be83b139fc23b1e361c26a732119fcfddd89c066e6afdb2f99217f039e
     .claude/skills/engineering-loop/coding-standards.md: sha256:6fb7839983e70a0096fa6fbda09257b5a8e0bbbfd261ee0113beda15d684639f
     .claude/skills/engineering-loop/events.md: sha256:c2d3f35f62d7ac73d0ca783f7c6f0d821bd1819a81db89d5c9a9fcee7d94cb24
     .claude/skills/engineering-loop/github.md: sha256:bfdebab3e38939a780572638c0c6839d7adb91ba207ac7b20b2015de29514f5f
     .claude/skills/engineering-loop/issues.md: sha256:2cb1f33c3ef5e0030ca2eeedff3b3a66443a1e363c7732078f02e1d3049a1798
-    .claude/skills/engineering-loop/lead.md: sha256:cc66c1613537610e10c1bcc8db2cdea65f1cfc76999634ad90988b2d2c2f26c0
+    .claude/skills/engineering-loop/lead.md: sha256:0e4d20788c9eb8158ef946b766d5f210ac3131d27b461add07bd680c1f1a6035
     .claude/skills/engineering-loop/proof-run.md: sha256:75a25b5ed8ee8fbb7e88cd5e87980de02154508ffca5c1570f0be4a8c140d531
     .claude/skills/engineering-loop/scripts/__pycache__: sha256:ffd55781e5e61b34f467e23b3b15b8b25ad72a939365a236bdce5628d082a03c
     .claude/skills/engineering-loop/scripts/acceptance.py: sha256:0bcbe98cbc2cfb935029c49e45fe33a63de30319258fe12370084f05fdda4793
@@ -502,14 +502,14 @@ dependencies:
     .claude/skills/engineering-loop/scripts/cloud_verifier.py: sha256:7325111b2ec7a7369f30a35f132ec735cbb7e10db61f3d752dff6d2b8296f045
     .claude/skills/engineering-loop/scripts/events.py: sha256:c3a30fbba8209cdd2dc01ac27a608e033cb201c7a92d2a57d362382215cdf725
     .claude/skills/engineering-loop/scripts/folding.py: sha256:32d04516ae86ffcc641edcdd73cda671f1a85dc28426fa11dc2b67cdcee1f598
-    .claude/skills/engineering-loop/scripts/gatekeeper.py: sha256:ff18c1f37e38f000c7f19bf937655b16593fff7aabf21d3aafdc121a8bed8ba9
-    .claude/skills/engineering-loop/scripts/github_adapter.py: sha256:7108b2bbb31dfc8887e01e1919e1e29bf83ffa2c12a6b160ea65c430f7b0237e
+    .claude/skills/engineering-loop/scripts/gatekeeper.py: sha256:c00f20a08c47a28f352d2853d1aec71140373d386375d99b3983ca67c9afdcf9
+    .claude/skills/engineering-loop/scripts/github_adapter.py: sha256:22137a13b0f1fc6faf7b6bed62e8e0be05117d8a0039413138b24fa80c972bda
     .claude/skills/engineering-loop/scripts/labels.py: sha256:cd2f488be4297206bf9a7b6e4dc91f5f0388135e77db82f4b2b9ee196d2e4e23
     .claude/skills/engineering-loop/scripts/mutate.py: sha256:c046536f6efdb0c0a75ca7016269e18c537b71dac0f8ac38faff764526f4abe7
     .claude/skills/engineering-loop/scripts/nightly.py: sha256:a67fd7aa55fc2011124dec0d775e41b6516c618f26431c280d91cd8de2c7de1d
     .claude/skills/engineering-loop/scripts/rulesets.py: sha256:1b696be3b36fb0049b618ccc05080dce1fca75c6f5fa05714393b9b1ef062162
     .claude/skills/engineering-loop/verifier.md: sha256:9f60ea8ed02b74c04c23054a51408b5c8ebd38b33363cc1ecabe5b8d550cc90f
-    .claude/skills/engineering-loop/worker.md: sha256:efe016ead4c9c5bd04afc5bb13cd1bbfd214b087af0feed0080b01da62d5d8dd
+    .claude/skills/engineering-loop/worker.md: sha256:49eaab1479af152b45a376d8d32023f5c2c13b156222e94200ab8d4db7a65da8
     .claude/skills/grill-with-docs/SKILL.md: sha256:e50417b3416bc41277ba6fbe033de84a6369f62d1d33ad3d19a94fbaad8f1379
     .claude/skills/grill-with-docs/agents/openai.yaml: sha256:94cd0ab161fb468a836349f5ed482ba58ce8e709a05c57ce533d739dbd35cca9
     .claude/skills/grilling/SKILL.md: sha256:8d3bce0cf9eb146c7355d982273aeba79e51f362b5be5124f452af19d03d67cb
@@ -532,11 +532,11 @@ dependencies:
     .claude/skills/orchestrating-agents/agents/openai.yaml: sha256:bee3121e0b1fd3049913f30b0eda156db09541d161089c39f38418d7debab471
     .claude/skills/orchestrating-agents/backends/herdr-link.md: sha256:393e6df1c3d394bb1df8c9f5979984e8a968454b8015a73ae177816fe07ad35e
     .claude/skills/orchestrating-agents/backends/native.md: sha256:ae87ec084cefae5e456b4fa8098435c6ec7bbf436e5f312623ad3312ff6ae226
-    .claude/skills/orchestrating-agents/backends/omnigent.md: sha256:5b17da41e4066a2ecf306785fb2b72b4138cfe9771db43a7123110280d6bddf6
+    .claude/skills/orchestrating-agents/backends/omnigent.md: sha256:83b91047662de74db1d6e10e893ae635ea9c81d9409adb23d47d1e88bad4c517
     .claude/skills/orchestrating-agents/scripts/__pycache__: sha256:ffd55781e5e61b34f467e23b3b15b8b25ad72a939365a236bdce5628d082a03c
     .claude/skills/orchestrating-agents/scripts/claude_cloud.py: sha256:9e26bf68250ce9e29d513b1450845b2de02a564b1d918835bb6faa5a4266343b
     .claude/skills/orchestrating-agents/scripts/claude_environments.py: sha256:1113eebc015d7a89d5aabc01cd5a5db96c85adcf2ce26d8fd0b48b106dc9568e
-    .claude/skills/orchestrating-agents/scripts/omnigent_agent.py: sha256:0b067e07d0396bc1e6e4266943010fe82d8c347a6b870c7e55f10c55e8d7e8e4
+    .claude/skills/orchestrating-agents/scripts/omnigent_agent.py: sha256:909f91e1b1417e3614014e6d7fa06995635bbdec0f91e0c741a91fac57c3e2ae
     .claude/skills/pr/CREDITS.md: sha256:ac9da0b1f2814a47b4a64c9588675e6f7aeff868d91d5ed795173253060a330b
     .claude/skills/pr/SKILL.md: sha256:f92c28a76fd33976c30217db41ab4f48e27debf90f037a4e1de56ce0a68d8601
     .claude/skills/pr/agents/openai.yaml: sha256:2295b586624db4ef546f3fd4695492f039d941a46d8a1593a702ce3ca511b8ad
@@ -571,10 +571,10 @@ dependencies:
     .claude/skills/wizard/SKILL.md: sha256:2fb85928b7ab44f20348553392b68142e1da0022142772473e2daed45789b65e
     .claude/skills/wizard/agents/openai.yaml: sha256:98f44d682d58e262f160dc59a8befc365e0aa65820dd0261864af26aa8e59d83
     .claude/skills/wizard/template.sh: sha256:2b9bceab14f71bf05d54847155b37c466065f2e86d83b348a70dacc0bff0a01f
-  content_hash: sha256:55698404952b3518057fd4db3f700e57820a98015ab1dc6a5526998573d2f888
-  constraint: ^0.33.6
-  resolved_tag: engineering-v0.33.6
-  resolved_at: '2026-11-21T22:36:51+00:00'
+  content_hash: sha256:889cc3c094527fba56f49b2ed1326d6e59240a949419b79e10eab025ec88ecd9
+  constraint: ^0.34.0
+  resolved_tag: engineering-v0.34.0
+  resolved_at: '2026-11-22T00:10:24+00:00'
 deployments:
 - kind: project-relative
   target: claude
@@ -1043,7 +1043,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:7a3a5b071c7cc007e0a20c0ef92e6d6cd43a8390314bfa3ac7ebff35f67cc2d7
+  content_hash: sha256:d83311df32d462951f6014ef3977479ce35942d52e29e36ce77d1c3624a3b8e4
 - kind: project-relative
   target: claude
   value: .claude/skills/engineering-loop/agents/openai.yaml
@@ -1097,7 +1097,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:cc66c1613537610e10c1bcc8db2cdea65f1cfc76999634ad90988b2d2c2f26c0
+  content_hash: sha256:0e4d20788c9eb8158ef946b766d5f210ac3131d27b461add07bd680c1f1a6035
 - kind: project-relative
   target: claude
   value: .claude/skills/engineering-loop/proof-run.md
@@ -1187,7 +1187,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:ff18c1f37e38f000c7f19bf937655b16593fff7aabf21d3aafdc121a8bed8ba9
+  content_hash: sha256:c00f20a08c47a28f352d2853d1aec71140373d386375d99b3983ca67c9afdcf9
 - kind: project-relative
   target: claude
   value: .claude/skills/engineering-loop/scripts/github_adapter.py
@@ -1196,7 +1196,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:7108b2bbb31dfc8887e01e1919e1e29bf83ffa2c12a6b160ea65c430f7b0237e
+  content_hash: sha256:22137a13b0f1fc6faf7b6bed62e8e0be05117d8a0039413138b24fa80c972bda
 - kind: project-relative
   target: claude
   value: .claude/skills/engineering-loop/scripts/labels.py
@@ -1250,7 +1250,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:efe016ead4c9c5bd04afc5bb13cd1bbfd214b087af0feed0080b01da62d5d8dd
+  content_hash: sha256:49eaab1479af152b45a376d8d32023f5c2c13b156222e94200ab8d4db7a65da8
 - kind: project-relative
   target: claude
   value: .claude/skills/grill-with-docs
@@ -1547,7 +1547,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:5b17da41e4066a2ecf306785fb2b72b4138cfe9771db43a7123110280d6bddf6
+  content_hash: sha256:83b91047662de74db1d6e10e893ae635ea9c81d9409adb23d47d1e88bad4c517
 - kind: project-relative
   target: claude
   value: .claude/skills/orchestrating-agents/scripts/__pycache__
@@ -1583,7 +1583,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:0b067e07d0396bc1e6e4266943010fe82d8c347a6b870c7e55f10c55e8d7e8e4
+  content_hash: sha256:909f91e1b1417e3614014e6d7fa06995635bbdec0f91e0c741a91fac57c3e2ae
 - kind: project-relative
   target: claude
   value: .claude/skills/pr
@@ -2447,7 +2447,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:7a3a5b071c7cc007e0a20c0ef92e6d6cd43a8390314bfa3ac7ebff35f67cc2d7
+  content_hash: sha256:d83311df32d462951f6014ef3977479ce35942d52e29e36ce77d1c3624a3b8e4
 - kind: project-relative
   target: codex
   value: .agents/skills/engineering-loop/agents/openai.yaml
@@ -2501,7 +2501,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:cc66c1613537610e10c1bcc8db2cdea65f1cfc76999634ad90988b2d2c2f26c0
+  content_hash: sha256:0e4d20788c9eb8158ef946b766d5f210ac3131d27b461add07bd680c1f1a6035
 - kind: project-relative
   target: codex
   value: .agents/skills/engineering-loop/proof-run.md
@@ -2591,7 +2591,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:ff18c1f37e38f000c7f19bf937655b16593fff7aabf21d3aafdc121a8bed8ba9
+  content_hash: sha256:c00f20a08c47a28f352d2853d1aec71140373d386375d99b3983ca67c9afdcf9
 - kind: project-relative
   target: codex
   value: .agents/skills/engineering-loop/scripts/github_adapter.py
@@ -2600,7 +2600,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:7108b2bbb31dfc8887e01e1919e1e29bf83ffa2c12a6b160ea65c430f7b0237e
+  content_hash: sha256:22137a13b0f1fc6faf7b6bed62e8e0be05117d8a0039413138b24fa80c972bda
 - kind: project-relative
   target: codex
   value: .agents/skills/engineering-loop/scripts/labels.py
@@ -2654,7 +2654,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:efe016ead4c9c5bd04afc5bb13cd1bbfd214b087af0feed0080b01da62d5d8dd
+  content_hash: sha256:49eaab1479af152b45a376d8d32023f5c2c13b156222e94200ab8d4db7a65da8
 - kind: project-relative
   target: codex
   value: .agents/skills/grill-with-docs
@@ -2951,7 +2951,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:5b17da41e4066a2ecf306785fb2b72b4138cfe9771db43a7123110280d6bddf6
+  content_hash: sha256:83b91047662de74db1d6e10e893ae635ea9c81d9409adb23d47d1e88bad4c517
 - kind: project-relative
   target: codex
   value: .agents/skills/orchestrating-agents/scripts/__pycache__
@@ -2987,7 +2987,7 @@ deployments:
   owners:
   - kzarzycki/agent-skills/engineering
   active_owner: kzarzycki/agent-skills/engineering
-  content_hash: sha256:0b067e07d0396bc1e6e4266943010fe82d8c347a6b870c7e55f10c55e8d7e8e4
+  content_hash: sha256:909f91e1b1417e3614014e6d7fa06995635bbdec0f91e0c741a91fac57c3e2ae
 - kind: project-relative
   target: codex
   value: .agents/skills/pr
