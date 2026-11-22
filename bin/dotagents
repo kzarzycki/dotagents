@@ -948,11 +948,6 @@ if [ -f "$SHARED_SETTINGS" ]; then
           then .extraKnownMarketplaces |= $h.extraKnownMarketplaces + . + ($h.extraKnownMarketplaces
             | with_entries(select(.value.source.source? == "directory"))) else . end
         | if .pluginConfigs and $h.pluginConfigs then .pluginConfigs |= $h.pluginConfigs * . else . end
-        # Orca is not used: drop its agent-hook entries a host still carries.
-        | if .hooks then .hooks |= (map_values(map(select(
-              ([.hooks[]?.command? // ""] | any(contains(".orca/agent-hooks")) | not))))
-            | with_entries(select(.value | length > 0)))
-          else . end
       ' <<<"$merged" > "$tmp"; then
       printf 'WARNING: %s is not a valid settings object; left unchanged\n' "$USER_SETTINGS" >&2
       rm -f "$tmp"

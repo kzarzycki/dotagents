@@ -162,6 +162,8 @@ def test_a_hosts_directory_marketplace_wins_and_work_pins_decision_model_to_clau
 
 
 def test_install_drops_orca_hooks_a_host_still_carries(tmp_path):
+    # The repo's hooks block replaces the host's wholesale, so entries Orca wrote
+    # into a host's settings disappear on the next install.
     repo, home = make_checkout(tmp_path)
     settings = home / ".claude/settings.json"
     assert run_install(repo, home, "--profile", "vps").returncode == 0
