@@ -100,7 +100,8 @@
   },
   "enabledPlugins": {
     "decision-model@claude-mods": true,
-    "eval-kernel@claude-mods": true,
+    "code-mode@claude-mods": false,
+    "eval-kernel@claude-mods": false,
     "self-compact@claude-mods": true
   },
   "extraKnownMarketplaces": {
