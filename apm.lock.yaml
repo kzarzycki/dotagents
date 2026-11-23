@@ -1,13 +1,13 @@
 lockfile_version: '2'
-generated_at: '2026-11-22T21:31:07.721261+00:00'
+generated_at: '2026-11-23T07:16:23.467612+00:00'
 apm_version: 0.30.0
 dependencies:
 - repo_url: kzarzycki/agent-skills
   name: engineering
   host: github.com
-  resolved_commit: c3ec347e931d7192253a71f829629561c31bd2b1
-  resolved_ref: engineering-v0.35.2
-  version: 0.35.2
+  resolved_commit: 612a5be2234979181fb9d263e18efd5ad1094476
+  resolved_ref: engineering-v0.35.5
+  version: 0.35.5
   virtual_path: engineering
   is_virtual: true
   package_type: skill_bundle
@@ -441,10 +441,10 @@ dependencies:
     .claude/skills/wizard/SKILL.md: sha256:2fb85928b7ab44f20348553392b68142e1da0022142772473e2daed45789b65e
     .claude/skills/wizard/agents/openai.yaml: sha256:98f44d682d58e262f160dc59a8befc365e0aa65820dd0261864af26aa8e59d83
     .claude/skills/wizard/template.sh: sha256:2b9bceab14f71bf05d54847155b37c466065f2e86d83b348a70dacc0bff0a01f
-  content_hash: sha256:cc8e167190140f9d16687f9a759f4de8bcf8267ab90d64c210497ceb97b6f167
-  constraint: ^0.35.2
-  resolved_tag: engineering-v0.35.2
-  resolved_at: '2026-11-22T21:30:58+00:00'
+  content_hash: sha256:c23d8aa1c2b593a760f13ddb8c1876398d7c78cf7cc48a9de382850c6ca9c3eb
+  constraint: ^0.35.5
+  resolved_tag: engineering-v0.35.5
+  resolved_at: '2026-11-23T07:16:17+00:00'
 - repo_url: kzarzycki/agent-skills
   name: chief-of-staff
   host: github.com
