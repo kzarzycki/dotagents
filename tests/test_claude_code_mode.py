@@ -69,6 +69,8 @@ def test_install_agent_hands_omnigent_a_claude_native_agent(tmp_path):
     spec = (out / "config.yaml").read_text()
     assert "\nname: code-mode\n" in spec
     assert "    harness: claude-native\n" in spec
+    # a mod's tool call can't prompt, so outside bypass every Bash call that would ask is refused
+    assert "    permission_mode: bypassPermissions\n" in spec
     # patterns, not plain names: a plain name becomes Omnigent's server deny policy, which refuses the mod's calls too
     assert (
         "    disallowed_tools: [" + ", ".join([f'"{t}(*)"' for t in HIDDEN] + [f'"{t}"' for t in OMNIGENT]) + "]\n"
