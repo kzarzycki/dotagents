@@ -1288,6 +1288,30 @@ if (( ! ONLY_MODE )) || is_selected ".agents"; then
     printf 'PROVIDED: %s %s via %s, for skill %s\n' "$tool" "$REQ_HAVE" "$via" "$skill"
   done < <(skill_requirements)
 fi
+
+# 4.10 Install agent-skills' gh quota shim (~/.local/bin/gh, a logging wrapper that
+# names who spends the GitHub quota). The pinned pack carries the gh-quota skill
+# once a release has it; until then a host's agent-skills checkout
+# ($AGENT_SKILLS_DIR, default ~/dev/agents/agent-skills) does. A host with neither
+# skips silently. The installer refuses to replace a real gh and is idempotent;
+# ~/.local/bin goes first on its PATH, as env.sh puts it first in a shell, or the
+# shim would never run. A failure warns and never fails install.
+if (( ! ONLY_MODE )) || is_selected ".local"; then
+  gh_quota=""
+  for cand in "$PINNED_SKILLS/gh-quota/scripts/gh_quota.py" \
+    "${AGENT_SKILLS_DIR:-$HOME/dev/agents/agent-skills}/github/skills/gh-quota/scripts/gh_quota.py"; do
+    [ -f "$cand" ] && { gh_quota=$cand; break; }
+  done
+  if [ -n "$gh_quota" ] && command -v python3 >/dev/null 2>&1; then
+    if (( DRY_RUN )); then
+      printf 'DRY: python3 %s install\n' "$gh_quota"
+    elif out=$(PATH="$HOME/.local/bin:$PATH" python3 "$gh_quota" install 2>&1); then
+      printf 'GH-QUOTA: %s\n' "$out"
+    else
+      printf 'WARNING: gh-quota shim not installed: %s\n' "$out" >&2
+    fi
+  fi
+fi
 if command -v jq >/dev/null 2>&1; then
   for f in "$HOME"/.claude/settings.json; do
     [ -e "$f" ] || continue
