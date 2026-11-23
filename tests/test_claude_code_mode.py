@@ -8,7 +8,7 @@ OMNIGENT = [f"mcp__omnigent__sys_os_{t}" for t in ("shell", "read", "write", "ed
 GUIDE = "Work through repl.\nIts scripts: call tools as JavaScript.\n"
 
 
-def run(tmp_path, *args, installed=True, guide_exit=0):
+def run(tmp_path, *args, installed=True, guide_exit=0, guide=GUIDE, **extra_env):
     """claude-code-mode with fake bun and omnigent: bun prints the plugin folder (-e) or the guide, omnigent records
     its arguments and, for `agent add`, unpacks the archive it was handed."""
     plugin = tmp_path / "plugin"
@@ -30,8 +30,9 @@ def run(tmp_path, *args, installed=True, guide_exit=0):
         "HOME": str(tmp_path),
         "PATH": f"{bin_dir}:/usr/bin:/bin",
         "XDG_CACHE_HOME": str(tmp_path / "cache"),
-        "GUIDE": GUIDE,
+        "GUIDE": guide,
         "OUT": str(out),
+        **extra_env,
     }
     r = subprocess.run(["sh", str(SCRIPT), *args], capture_output=True, text=True, timeout=10, env=env)
     argv = (out / "args").read_text().split("\0")[:-1] if (out / "args").exists() else None
@@ -90,6 +91,13 @@ def test_install_agent_stops_when_the_guide_fails(tmp_path):
     assert argv is None
 
 
+def test_install_agent_stops_on_an_empty_guide(tmp_path):
+    r, argv, _ = run(tmp_path, "--install-agent", guide="")
+    assert r.returncode == 1
+    assert "printed no guide" in r.stderr
+    assert argv is None
+
+
 def test_session_turns_code_mode_on_for_itself_only(tmp_path):
     r, argv, _ = run(tmp_path, "--resume", "x")
     assert r.returncode == 0, r.stderr
@@ -101,6 +109,16 @@ def test_session_turns_code_mode_on_for_itself_only(tmp_path):
     assert settings["enabledPlugins"] == {"code-mode@claude-mods": True, "eval-kernel@claude-mods": False}
     assert settings["env"] == {"CODE_MODE_GUIDE": "system"}
     assert argv[-2:] == ["--resume", "x"]
+
+
+def test_a_checkout_session_loads_code_mode_from_it(tmp_path):
+    r, argv, _ = run(tmp_path, "--resume", "x", CODE_MODE_DIR=str(tmp_path / "plugin"))
+    assert r.returncode == 0, r.stderr
+    assert argv[argv.index("--disallowedTools") + 1] == ",".join(HIDDEN + OMNIGENT)
+    assert argv[argv.index("--plugin-dir") + 1] == str(tmp_path / "plugin")
+    settings = json.loads(argv[argv.index("--settings") + 1])
+    assert settings["enabledPlugins"] == {"eval-kernel@claude-mods": False}
+    assert settings["env"] == {"CODE_MODE_GUIDE": "system"}
 
 
 def test_code_mode_is_off_by_default():
