@@ -216,3 +216,19 @@ def test_gh_quota_is_not_run_by_dry_run_or_an_unrelated_subset(tmp_path):
     other = run_install(repo, home, "--only", "omp")
     assert other.returncode == 0, other.stdout + other.stderr
     assert not (home / "ran").exists()
+
+
+def test_install_links_ssh_aliases_and_includes_them_once(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    (home / ".ssh").mkdir()
+    (home / ".ssh/config").write_text("Host x\n  User y\n")
+    for _ in range(2):
+        result = run_install(repo, home, "--only", "ssh")
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    config = (home / ".ssh/config").read_text()
+    assert config == "Include ~/.ssh/dotagents_config\nHost x\n  User y\n"
+    assert (home / ".ssh/dotagents_config").is_symlink()
+    assert oct((home / ".ssh/config").stat().st_mode & 0o777) == "0o600"
+    aliases = (home / ".ssh/dotagents_config").read_text()
+    assert "Host oz\n  HostName oz.taile39822.ts.net\n  User agent" in aliases

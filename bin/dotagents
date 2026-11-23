@@ -817,6 +817,23 @@ if (( ! rc_found )); then
 fi
 fi
 
+if (( ! ONLY_MODE )) || is_selected ".ssh"; then
+# 3.6 SSH aliases. ~/.ssh/dotagents_config is linked above; ~/.ssh/config stays
+# machine-owned, so it only gets one Include line, first because an Include
+# after a Host block applies only to that block. Created (0600) when missing.
+SSH_INCLUDE='Include ~/.ssh/dotagents_config'
+if (( DRY_RUN )); then
+  printf 'DRY: ensure %s in ~/.ssh/config\n' "$SSH_INCLUDE"
+elif ! grep -qxF "$SSH_INCLUDE" "$HOME/.ssh/config" 2>/dev/null; then
+  mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+  ssh_tmp=$(mktemp "$HOME/.ssh/config.XXXXXX")
+  { printf '%s\n' "$SSH_INCLUDE"; [ ! -f "$HOME/.ssh/config" ] || cat "$HOME/.ssh/config"; } > "$ssh_tmp"
+  chmod 600 "$ssh_tmp"
+  mv "$ssh_tmp" "$HOME/.ssh/config"
+  printf 'HOOKED: ~/.ssh/config now includes ~/.ssh/dotagents_config\n'
+fi
+fi
+
 if is_selected ".claude" || is_selected ".codex"; then
 # 4. Settings assembly. Claude Code's only user-scope settings file is
 # $HOME/.claude/settings.json — user-level settings.local.json is NOT read

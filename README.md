@@ -119,6 +119,10 @@ The gh quota shim (agent-skills' `gh-quota` skill: a logging `gh` wrapper that n
 
 Host hygiene (merged worktrees, tool caches, idle environments, dead Omnigent terminals) is the `agent-hygiene` skill of the engineering pack this checkout pins; its `SKILL.md` describes what it clears, keeps and asks about, and how a scheduled round runs it. `dotagents install` installs the pinned pack and links `~/.local/bin/agent-hygiene` to `home/.local/bin/agent-hygiene`, which runs the skill's script, and runs `dotagents install --no-pull` first when a failed or skipped pack install left none, so a host whose pack install failed repairs itself on the next run. The script's self-update fast-forwards this checkout and runs install, so a release that moves the pin reaches every host. `~/.local/bin/disk-hygiene`, the old name, points to the same script until the scheduled tasks no longer use it.
 
+### SSH aliases
+
+`home/.ssh/dotagents_config` gives every agent host the same `Host` alias (`kris`, `xmac-personal`, `oz`, `epic-t2`, `cc-experiments`) with its tailnet name and user, so `ssh <alias>` works the same from each machine. `~/.ssh/config` stays the machine's own file: install only adds `Include ~/.ssh/dotagents_config` as its first line (an Include after a `Host` block applies only to that block) and creates the file with mode 0600 when missing. The aliases carry no keys; whether a host accepts you is that host's `authorized_keys` or Tailscale SSH policy. The work laptop is not listed.
+
 ### `~/.dotagents` symlink
 
 Committed files (e.g. `home/.claude/settings.shared.json` hook commands) reference the repo via `$HOME/.dotagents/...`. The install command creates `~/.dotagents` -> the actual clone path on each machine, so the repo can live anywhere while the access path stays canonical. Reliable regardless of shell env state. Cloning the repo directly at `~/.dotagents` (typical on a VPS) also works — install detects it and skips the symlink.
