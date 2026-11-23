@@ -232,3 +232,24 @@ def test_install_links_ssh_aliases_and_includes_them_once(tmp_path):
     assert oct((home / ".ssh/config").stat().st_mode & 0o777) == "0o600"
     aliases = (home / ".ssh/dotagents_config").read_text()
     assert "Host oz\n  HostName oz.taile39822.ts.net\n  User agent" in aliases
+
+
+def test_ssh_include_edge_cases(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    result = run_install(repo, home)  # no --only, no ~/.ssh yet
+    assert result.returncode == 0, result.stdout + result.stderr
+    config = home / ".ssh/config"
+    assert config.read_text() == "Include ~/.ssh/dotagents_config\n"
+    assert oct(config.stat().st_mode & 0o777) == "0o600"
+
+    config.write_text("Host a\n  User b\nInclude ~/.ssh/dotagents_config\n")
+    assert run_install(repo, home, "--only", "ssh").returncode == 0
+    assert config.read_text() == "Include ~/.ssh/dotagents_config\nHost a\n  User b\n"
+
+    real = home / "real_config"
+    real.write_text("Host a\n")
+    config.unlink()
+    config.symlink_to(real)
+    result = run_install(repo, home, "--only", "ssh")
+    assert result.returncode == 0 and config.is_symlink() and real.read_text() == "Host a\n"
+    assert "symlink" in result.stderr

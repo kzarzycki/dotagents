@@ -824,10 +824,14 @@ if (( ! ONLY_MODE )) || is_selected ".ssh"; then
 SSH_INCLUDE='Include ~/.ssh/dotagents_config'
 if (( DRY_RUN )); then
   printf 'DRY: ensure %s in ~/.ssh/config\n' "$SSH_INCLUDE"
-elif ! grep -qxF "$SSH_INCLUDE" "$HOME/.ssh/config" 2>/dev/null; then
+elif [ "$(head -n1 "$HOME/.ssh/config" 2>/dev/null)" = "$SSH_INCLUDE" ]; then :
+elif [ -L "$HOME/.ssh/config" ]; then
+  # ponytail: a symlinked config (a dotfiles repo's) is left alone; mv would replace the link, not its target.
+  printf 'WARNING: ~/.ssh/config is a symlink; add "%s" to it by hand\n' "$SSH_INCLUDE" >&2
+else
   mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
   ssh_tmp=$(mktemp "$HOME/.ssh/config.XXXXXX")
-  { printf '%s\n' "$SSH_INCLUDE"; [ ! -f "$HOME/.ssh/config" ] || cat "$HOME/.ssh/config"; } > "$ssh_tmp"
+  { printf '%s\n' "$SSH_INCLUDE"; [ ! -f "$HOME/.ssh/config" ] || grep -vxF "$SSH_INCLUDE" "$HOME/.ssh/config" || true; } > "$ssh_tmp"
   chmod 600 "$ssh_tmp"
   mv "$ssh_tmp" "$HOME/.ssh/config"
   printf 'HOOKED: ~/.ssh/config now includes ~/.ssh/dotagents_config\n'
