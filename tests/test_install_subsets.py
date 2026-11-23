@@ -204,3 +204,15 @@ def test_gh_quota_failure_warns_without_failing_install(tmp_path):
     result = run_install(repo, home, "--only", ".local")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "WARNING: gh-quota shim not installed: refused: real gh" in result.stderr
+
+
+def test_gh_quota_is_not_run_by_dry_run_or_an_unrelated_subset(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    make_gh_quota(repo / ".agents/skills")
+    dry = run_install(repo, home, "--dry-run", "--only", ".local")
+    assert dry.returncode == 0, dry.stdout + dry.stderr
+    assert "DRY: python3" in dry.stdout and "gh_quota.py install" in dry.stdout
+    assert not (home / "ran").exists()
+    other = run_install(repo, home, "--only", "omp")
+    assert other.returncode == 0, other.stdout + other.stderr
+    assert not (home / "ran").exists()
