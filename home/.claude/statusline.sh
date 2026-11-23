@@ -31,6 +31,8 @@ five_pct=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empt
 five_reset=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
 week_pct=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty')
 week_reset=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // empty')
+# Last seen account limits, for agents to pace by (read ~/.cache/claude-usage.json).
+[ -n "$week_pct" ] && mkdir -p ~/.cache && echo "$input" | jq -c '{at: now|floor, rate_limits}' > ~/.cache/claude-usage.json.$$ && mv ~/.cache/claude-usage.json.$$ ~/.cache/claude-usage.json
 version=$(echo "$input" | jq -r '.version // ""')
 session_name=$(echo "$input" | jq -r '.session_name // empty')
 transcript=$(echo "$input" | jq -r '.transcript_path // empty')
