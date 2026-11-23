@@ -65,14 +65,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -x \"$HOME/.orca/agent-hooks/claude-hook.sh\" ]; then /bin/sh \"$HOME/.orca/agent-hooks/claude-hook.sh\"; fi"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6.1-sol node \"$HOME/.hindsight/coding-agents/dist/claude-hook.js\"; fi",
             "timeout": 30
           }
@@ -84,26 +76,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [ -x \"$HOME/.orca/agent-hooks/claude-hook.sh\" ]; then /bin/sh \"$HOME/.orca/agent-hooks/claude-hook.sh\"; fi"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "if [ -f \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\" ]; then HINDSIGHT_API_LLM_PROVIDER=openai-codex HINDSIGHT_API_LLM_MODEL=gpt-6.1-sol node \"$HOME/.hindsight/coding-agents/dist/claude-stop-hook.js\"; fi",
             "timeout": 60
-          }
-        ]
-      }
-    ],
-    "StopFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if [ -x \"$HOME/.orca/agent-hooks/claude-hook.sh\" ]; then /bin/sh \"$HOME/.orca/agent-hooks/claude-hook.sh\"; fi"
           }
         ]
       }
@@ -115,48 +89,6 @@
           {
             "type": "command",
             "command": "python3 \"$HOME/.claude/hooks/omnigent-only.py\""
-          }
-        ]
-      },
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if [ -x \"$HOME/.orca/agent-hooks/claude-hook.sh\" ]; then /bin/sh \"$HOME/.orca/agent-hooks/claude-hook.sh\"; fi"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if [ -x \"$HOME/.orca/agent-hooks/claude-hook.sh\" ]; then /bin/sh \"$HOME/.orca/agent-hooks/claude-hook.sh\"; fi"
-          }
-        ]
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if [ -x \"$HOME/.orca/agent-hooks/claude-hook.sh\" ]; then /bin/sh \"$HOME/.orca/agent-hooks/claude-hook.sh\"; fi"
-          }
-        ]
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "matcher": "*",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "if [ -x \"$HOME/.orca/agent-hooks/claude-hook.sh\" ]; then /bin/sh \"$HOME/.orca/agent-hooks/claude-hook.sh\"; fi"
           }
         ]
       }
