@@ -87,6 +87,35 @@ def test_install_agent_hands_omnigent_a_claude_native_agent(tmp_path):
     assert spec.endswith("prompt: |\n" + "".join(f"  {line}\n" for line in GUIDE.splitlines()))
 
 
+def test_install_agent_links_bun_where_the_runner_looks(tmp_path):
+    # Omnigent's runner has ~/.local/bin on its PATH but not ~/.bun/bin, so the kernel's `bun` needs a link there (#232)
+    r, argv, _ = run(tmp_path, "--install-agent")
+    assert r.returncode == 0, r.stderr
+    link = tmp_path / ".local/bin/bun"
+    assert link.is_symlink() and link.resolve() == (tmp_path / "bin/bun").resolve()
+    assert argv[:2] == ["agent", "add"]
+
+
+def test_install_agent_keeps_a_bun_already_in_local_bin(tmp_path):
+    (tmp_path / ".local/bin").mkdir(parents=True)
+    mine = tmp_path / ".local/bin/bun"
+    mine.write_text("#!/bin/sh\nexit 0\n")
+    mine.chmod(0o755)
+    r, argv, _ = run(tmp_path, "--install-agent")
+    assert r.returncode == 0, r.stderr
+    assert not mine.is_symlink() and mine.read_text() == "#!/bin/sh\nexit 0\n"
+    assert argv[:2] == ["agent", "add"]
+
+
+def test_install_agent_stops_when_the_bun_in_local_bin_cannot_run(tmp_path):
+    (tmp_path / ".local/bin").mkdir(parents=True)
+    (tmp_path / ".local/bin/bun").symlink_to(tmp_path / "gone")
+    r, argv, _ = run(tmp_path, "--install-agent")
+    assert r.returncode == 1
+    assert "can't run" in r.stderr
+    assert argv is None
+
+
 def test_install_agent_stops_when_the_guide_fails(tmp_path):
     r, argv, _ = run(tmp_path, "--install-agent", guide_exit=42)
     assert r.returncode == 42

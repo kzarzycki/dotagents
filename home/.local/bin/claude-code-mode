@@ -133,6 +133,16 @@ if [ "${1:-}" = --install-agent ]; then
     printf '%s\n' "$prompt" | sed 's/^/  /'
   } > "$spec"
   tar -czf "$tmp/code-mode.tar.gz" -C "$tmp" config.yaml
+  # The kernel starts as plain `bun` on the PATH of Omnigent's runner, which has ~/.local/bin but not the
+  # ~/.bun/bin that bun's own installer uses (#232). This shell found bun, so link it where the runner looks.
+  lb=$HOME/.local/bin/bun
+  if [ ! -e "$lb" ] && [ ! -L "$lb" ]; then
+    mkdir -p "${lb%/*}" && ln -s "$(command -v bun)" "$lb"
+  fi
+  "$lb" --version >/dev/null 2>&1 || {
+    echo "claude-code-mode: $lb can't run, so the agent's kernel won't start (Omnigent's runner finds bun in ~/.local/bin); fix or remove it, then rerun --install-agent" >&2
+    exit 1
+  }
   exec omnigent agent add "$tmp/code-mode.tar.gz"
 fi
 
