@@ -30,6 +30,78 @@ deny=Bash,Read,Edit,Write,Glob,Grep,NotebookEdit,WebFetch,WebSearch
 # Omnigent's own shell and file tools: without them hidden too, the model falls back to them.
 # Plain names: no script calls them, so the server deny policy they become in an agent costs nothing.
 omni=mcp__omnigent__sys_os_shell,mcp__omnigent__sys_os_read,mcp__omnigent__sys_os_write,mcp__omnigent__sys_os_edit
+
+# A Claude cloud session takes no command line, so code mode comes from its environment instead:
+#   claude-code-mode --cloud-setup        the setup-script lines that give every session in an environment code mode
+#   claude-code-mode --cloud-env <env>    make or update the environment <env>-code-mode: <env>'s setup script
+#                                         with those lines first, its network and variables as they are
+# Settings deny rules stand in for --disallowedTools there: they hide the built-ins from the model and,
+# like the flag, don't bind the mod's calls. CODE_MODE_GUIDE stays unset, since no prompt file carries
+# the guide, so repl's description does. The lines log to /tmp/code-mode-init.log and never fail the
+# setup: a failing setup script fails the whole cloud session, which the bridge doesn't report.
+cloud_setup() {
+  cloud_settings='{"enabledPlugins":{"code-mode@claude-mods":true,"eval-kernel@claude-mods":false},"permissions":{"deny":['"$(printf '%s' "$deny" | sed 's/[^,]*/"&"/g')"']}}'
+  cat <<EOF
+# code mode, exclusive (claude-code-mode --cloud-env); log: /tmp/code-mode-init.log
+(
+  export PATH="\$HOME/.bun/bin:\$PATH"
+  command -v bun >/dev/null || npm install -g bun
+  claude plugin marketplace add kzarzycki/claude-mods
+  claude plugin install code-mode@claude-mods --scope user
+  python3 -c 'import json, os, sys
+p = os.path.expanduser("~/.claude/settings.json")
+s = json.load(open(p)) if os.path.exists(p) else {}
+add = json.loads(sys.argv[1])
+s.setdefault("enabledPlugins", {}).update(add["enabledPlugins"])
+deny = s.setdefault("permissions", {}).setdefault("deny", [])
+deny += [t for t in add["permissions"]["deny"] if t not in deny]
+json.dump(s, open(p, "w"), indent=1)' '$cloud_settings'
+) >>/tmp/code-mode-init.log 2>&1 || echo "code mode setup FAILED" >>/tmp/code-mode-init.log
+EOF
+}
+case "${1:-}" in
+--cloud-setup) cloud_setup; exit 0 ;;
+--cloud-env)
+  [ -n "${2:-}" ] || { echo "usage: claude-code-mode --cloud-env <environment>" >&2; exit 2; }
+  # claude.ai's environment API through omnigent-agents' client, which holds the login handling
+  scripts=${OMNIGENT_AGENTS_SCRIPTS:-$HOME/.agents/skills/omnigent-agents/scripts}
+  [ -f "$scripts/claude_environments.py" ] || {
+    echo "claude-code-mode: --cloud-env needs omnigent-agents' claude_environments.py in $scripts (or set OMNIGENT_AGENTS_SCRIPTS)" >&2
+    exit 1
+  }
+  exec python3 -I -c '
+import importlib.util, sys
+path, base, setup = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("claude_environments", path)
+env = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(env)
+try:
+    auth = env.headers()
+    envs = env.environments(auth)
+    src = env.named(envs, base)
+    if src is None:
+        sys.exit(f"claude-code-mode: no cloud environment called {base}")
+    current = env.read(auth, src["environment_id"])
+    config = dict(current["config"])
+    masked = tuple(str(v) for v in (config.get("environment") or {}).values())
+    script = config.get("init_script") or "#!/bin/bash\n"
+    head, _, body = script.partition("\n") if script.startswith("#!") else ("#!/bin/bash", "", script)
+    config["init_script"] = f"{head}\n{setup}{body}"
+    name = f"{base}-code-mode"
+    variant = env.named(envs, name)
+    if variant:
+        env.update(auth, variant["environment_id"], env.read(auth, variant["environment_id"]), config, masked)
+        print(name, variant["environment_id"] + ": updated from", base)
+    else:
+        made = env.call("/v1/environment_providers/cloud/create", {"name": name, "kind": src.get("kind", "anthropic_cloud"),
+            "description": f"{base} with code mode, exclusive (claude-code-mode --cloud-env)", "config": config}, auth, masked=masked)
+        print(name, made["environment_id"] + ": made from", base)
+except env.Refused as e:
+    sys.exit(f"claude-code-mode: {e}")
+' "$scripts/claude_environments.py" "$2" "$(cloud_setup)
+" ;;
+esac
+
 command -v bun >/dev/null || { echo "claude-code-mode: needs bun (code-mode's kernel runs on it), and it isn't on PATH" >&2; exit 1; }
 dir=${CODE_MODE_DIR:-$(bun -e 'const p = require(process.env.HOME + "/.claude/plugins/installed_plugins.json").plugins["code-mode@claude-mods"]; console.log(p?.find(i => i.scope === "user")?.installPath ?? "")' 2>/dev/null || true)}
 if [ -z "$dir" ] || [ ! -f "$dir/guide.ts" ]; then
