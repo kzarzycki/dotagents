@@ -24,6 +24,10 @@
 # uv run included. omnigent_agent.py passes a mode only to an agent named `claude`, so the agent
 # carries its own.
 #
+# bun: code-mode's kernel runs on it, and the plugin finds it with its own hooks/find-bun.sh ($BUN_INSTALL/bin,
+# PATH, ~/.bun/bin, /opt/homebrew/bin), not only on the PATH of Omnigent's runner. This script asks the same
+# script, so it fails up front where the plugin couldn't start its kernel, and runs the guide with that bun.
+#
 # ponytail: the agent's prompt is a copy of the guide made at install. Rerun --install-agent
 # after updating code-mode.
 #
@@ -117,11 +121,30 @@ except env.Refused as e:
 " ;;
 esac
 
-command -v bun >/dev/null || { echo "claude-code-mode: needs bun (code-mode's kernel runs on it), and it isn't on PATH" >&2; exit 1; }
-dir=${CODE_MODE_DIR:-$(bun -e 'const p = require(process.env.HOME + "/.claude/plugins/installed_plugins.json").plugins["code-mode@claude-mods"]; console.log(p?.find(i => i.scope === "user")?.installPath ?? "")' 2>/dev/null || true)}
+# The plugin's folder: jq reads it without needing bun (which may not be on this PATH), else bun does.
+bun=bun
+plugins=$HOME/.claude/plugins/installed_plugins.json
+if [ -n "${CODE_MODE_DIR:-}" ]; then
+  dir=$CODE_MODE_DIR
+elif command -v jq >/dev/null 2>&1 && [ -f "$plugins" ]; then
+  dir=$(jq -r '(.plugins["code-mode@claude-mods"] // []) | map(select(.scope == "user")) | .[0].installPath // empty' "$plugins" 2>/dev/null || true)
+elif command -v bun >/dev/null 2>&1; then
+  dir=$(bun -e 'const p = require(process.env.HOME + "/.claude/plugins/installed_plugins.json").plugins["code-mode@claude-mods"]; console.log(p?.find(i => i.scope === "user")?.installPath ?? "")' 2>/dev/null || true)
+else
+  echo "claude-code-mode: needs bun (code-mode's kernel runs on it) or jq to find the installed plugin, and neither is on PATH; set CODE_MODE_DIR to the plugin's folder to skip that" >&2
+  exit 1
+fi
 if [ -z "$dir" ] || [ ! -f "$dir/guide.ts" ]; then
   echo "claude-code-mode: code-mode isn't installed (claude plugin install code-mode@claude-mods), or set CODE_MODE_DIR to its folder" >&2
   exit 1
+fi
+# The bun the plugin itself would run: code-mode's own lookup ($BUN_INSTALL/bin, PATH, ~/.bun/bin, /opt/homebrew/bin),
+# so a bun the Omnigent runner can't see on its PATH still counts, and a host where the plugin can't find one fails here,
+# not at the first `repl` call (#232). A plugin without the script gets a PATH check.
+if [ -f "$dir/hooks/find-bun.sh" ]; then
+  bun=$(sh "$dir/hooks/find-bun.sh") || { echo "claude-code-mode: code-mode can't find bun (looked in \$BUN_INSTALL/bin, PATH, ~/.bun/bin, /opt/homebrew/bin); install it: curl -fsSL https://bun.sh/install | bash" >&2; exit 1; }
+else
+  command -v bun >/dev/null || { echo "claude-code-mode: needs bun (code-mode's kernel runs on it), and it isn't on PATH" >&2; exit 1; }
 fi
 
 settings='{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"code-mode@claude-mods":true,"eval-kernel@claude-mods":false}}'
@@ -134,7 +157,7 @@ if [ "${1:-}" = --install-agent ]; then
   # so a lone code-mode.yaml gets "404: config.yaml not found", and a folder source expands the
   # guide's own `${...}` as environment variables.
   tmp=$(mktemp -d) spec=$tmp/config.yaml
-  prompt=$(bun "$dir/guide.ts" exclusive) # its own step, so set -e stops on a failed guide
+  prompt=$("$bun" "$dir/guide.ts" exclusive) # its own step, so set -e stops on a failed guide
   [ -n "$prompt" ] || { echo "claude-code-mode: $dir/guide.ts printed no guide" >&2; exit 1; }
   {
     printf 'spec_version: 1\nname: code-mode\n'
@@ -153,7 +176,7 @@ if [ "${1:-}" = --install-agent ]; then
 fi
 
 guide=${XDG_CACHE_HOME:-$HOME/.cache}/code-mode/guide-exclusive.md
-mkdir -p "${guide%/*}" && bun "$dir/guide.ts" exclusive > "$guide"
+mkdir -p "${guide%/*}" && "$bun" "$dir/guide.ts" exclusive > "$guide"
 if [ -n "${CODE_MODE_DIR:-}" ]; then
   exec omnigent claude --disallowedTools "$deny,$omni" --plugin-dir "$dir" --append-system-prompt-file "$guide" \
     --settings '{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"eval-kernel@claude-mods":false}}' "$@"
