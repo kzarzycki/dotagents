@@ -8,7 +8,17 @@ OMNIGENT = [f"mcp__omnigent__sys_os_{t}" for t in ("shell", "read", "write", "ed
 GUIDE = "Work through repl.\nIts scripts: call tools as JavaScript.\n"
 
 
-def run(tmp_path, *args, installed=True, guide_exit=0, guide=GUIDE, with_plugin_files=True, find_bun=None, **extra_env):
+def run(
+    tmp_path,
+    *args,
+    installed=True,
+    guide_exit=0,
+    guide=GUIDE,
+    with_plugin_files=True,
+    find_bun=None,
+    bun_on_path=True,
+    **extra_env,
+):
     """claude-code-mode with fake bun and omnigent: bun prints the plugin folder (-e) or the guide, omnigent records
     its arguments and, for `agent add`, unpacks the archive it was handed."""
     plugin = tmp_path / "plugin"
@@ -31,6 +41,8 @@ def run(tmp_path, *args, installed=True, guide_exit=0, guide=GUIDE, with_plugin_
     )
     for f in ("bun", "omnigent"):
         (bin_dir / f).chmod(0o755)
+    if not bun_on_path:
+        (bin_dir / "bun").unlink()
     out = tmp_path / "out"
     out.mkdir(exist_ok=True)
     env = {
@@ -291,4 +303,39 @@ def test_a_session_fails_when_code_mode_cannot_find_bun(tmp_path):
     r, argv, _ = run(tmp_path, "--resume", "x", find_bun="#!/bin/sh\nexit 1\n")
     assert r.returncode == 1
     assert "can't find bun" in r.stderr
+    assert argv is None
+
+
+def test_a_bun_off_the_path_is_found_by_the_plugin_lookup(tmp_path):
+    # the #232 host: bun lives only where code-mode's own lookup finds it, not on the PATH the launcher has
+    found = other_bun(tmp_path)
+    r, argv, out = run(
+        tmp_path,
+        "--install-agent",
+        find_bun=f"#!/bin/sh\necho {found}\n",
+        bun_on_path=False,
+        CODE_MODE_DIR=str(tmp_path / "plugin"),
+    )
+    assert r.returncode == 0, r.stderr
+    assert argv[:2] == ["agent", "add"]
+    assert "  Guide from the plugin lookup.\n" in (out / "config.yaml").read_text()
+
+
+def test_no_bun_anywhere_stops_with_one_line(tmp_path):
+    r, argv, _ = run(
+        tmp_path,
+        "--install-agent",
+        find_bun="#!/bin/sh\nexit 1\n",
+        bun_on_path=False,
+        CODE_MODE_DIR=str(tmp_path / "plugin"),
+    )
+    assert r.returncode == 1
+    assert r.stderr.count("\n") == 1 and "can't find bun" in r.stderr
+    assert argv is None
+
+
+def test_an_older_plugin_without_the_script_needs_bun_on_the_path(tmp_path):
+    r, argv, _ = run(tmp_path, "--install-agent", bun_on_path=False, CODE_MODE_DIR=str(tmp_path / "plugin"))
+    assert r.returncode == 1
+    assert "needs bun" in r.stderr
     assert argv is None
