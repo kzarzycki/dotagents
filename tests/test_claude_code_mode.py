@@ -8,12 +8,16 @@ OMNIGENT = [f"mcp__omnigent__sys_os_{t}" for t in ("shell", "read", "write", "ed
 GUIDE = "Work through repl.\nIts scripts: call tools as JavaScript.\n"
 
 
-def run(tmp_path, *args, installed=True, guide_exit=0, guide=GUIDE, **extra_env):
+def run(tmp_path, *args, installed=True, guide_exit=0, guide=GUIDE, with_plugin_files=True, **extra_env):
     """claude-code-mode with fake bun and omnigent: bun prints the plugin folder (-e) or the guide, omnigent records
     its arguments and, for `agent add`, unpacks the archive it was handed."""
     plugin = tmp_path / "plugin"
     plugin.mkdir(exist_ok=True)
     (plugin / "guide.ts").write_text("")
+    if with_plugin_files:
+        for name in (".claude-plugin/plugin.json", "hooks/hooks.json", "hooks/register.ts", "kernel/kernel.ts"):
+            (plugin / name).parent.mkdir(exist_ok=True)
+            (plugin / name).write_text(name)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     (bin_dir / "bun").write_text(
@@ -64,8 +68,21 @@ def test_install_agent_hands_omnigent_a_claude_native_agent(tmp_path):
     r, argv, out = run(tmp_path, "--install-agent")
     assert r.returncode == 0, r.stderr
     assert argv[:2] == ["agent", "add"]
-    # the server reads only config.yaml from the upload, so the archive must hold exactly that
-    assert sorted(p.name for p in out.iterdir()) == ["args", "config.yaml"]
+    # the archive carries a copy of the installed plugin and a skills/ folder: Omnigent starts the session with
+    # --plugin-dir <bundle> then, which loads the plugin's mod; a --settings-only enablement doesn't (#229)
+    assert sorted(p.name for p in out.iterdir()) == [
+        ".claude-plugin",
+        "args",
+        "config.yaml",
+        "guide.ts",
+        "hooks",
+        "kernel",
+        "skills",
+    ]
+    assert (out / ".claude-plugin/plugin.json").read_text() == ".claude-plugin/plugin.json"
+    assert (out / "hooks/register.ts").read_text() == "hooks/register.ts"
+    assert (out / "hooks/hooks.json").exists() and (out / "kernel/kernel.ts").exists()
+    assert (out / "skills/code-mode/SKILL.md").read_text().startswith("---\nname: code-mode\n")
     spec = (out / "config.yaml").read_text()
     assert "\nname: code-mode\n" in spec
     assert "    harness: claude-native\n" in spec
@@ -76,43 +93,18 @@ def test_install_agent_hands_omnigent_a_claude_native_agent(tmp_path):
         "    disallowed_tools: [" + ", ".join([f'"{t}(*)"' for t in HIDDEN] + [f'"{t}"' for t in OMNIGENT]) + "]\n"
         in spec
     )
-    # the agent turns code-mode on for its own sessions through Omnigent's per-agent settings
+    # code-mode comes from the bundle's copy, so the settings leave the marketplace plugin off: one `repl`
     # (a JSON flow mapping, so json reads it as YAML would)
     (line,) = [line for line in spec.splitlines() if line.startswith("    settings: ")]
     settings = json.loads(line.removeprefix("    settings: "))
-    assert settings == {
-        "env": {"CODE_MODE_GUIDE": "system"},
-        "enabledPlugins": {"code-mode@claude-mods": True, "eval-kernel@claude-mods": False},
-    }
+    assert settings == {"env": {"CODE_MODE_GUIDE": "system"}, "enabledPlugins": {"eval-kernel@claude-mods": False}}
     assert spec.endswith("prompt: |\n" + "".join(f"  {line}\n" for line in GUIDE.splitlines()))
 
 
-def test_install_agent_links_bun_where_the_runner_looks(tmp_path):
-    # Omnigent's runner has ~/.local/bin on its PATH but not ~/.bun/bin, so the kernel's `bun` needs a link there (#232)
-    r, argv, _ = run(tmp_path, "--install-agent")
-    assert r.returncode == 0, r.stderr
-    link = tmp_path / ".local/bin/bun"
-    assert link.is_symlink() and link.resolve() == (tmp_path / "bin/bun").resolve()
-    assert argv[:2] == ["agent", "add"]
-
-
-def test_install_agent_keeps_a_bun_already_in_local_bin(tmp_path):
-    (tmp_path / ".local/bin").mkdir(parents=True)
-    mine = tmp_path / ".local/bin/bun"
-    mine.write_text("#!/bin/sh\nexit 0\n")
-    mine.chmod(0o755)
-    r, argv, _ = run(tmp_path, "--install-agent")
-    assert r.returncode == 0, r.stderr
-    assert not mine.is_symlink() and mine.read_text() == "#!/bin/sh\nexit 0\n"
-    assert argv[:2] == ["agent", "add"]
-
-
-def test_install_agent_stops_when_the_bun_in_local_bin_cannot_run(tmp_path):
-    (tmp_path / ".local/bin").mkdir(parents=True)
-    (tmp_path / ".local/bin/bun").symlink_to(tmp_path / "gone")
-    r, argv, _ = run(tmp_path, "--install-agent")
+def test_install_agent_stops_when_the_installed_plugin_is_incomplete(tmp_path):
+    r, argv, _ = run(tmp_path, "--install-agent", with_plugin_files=False)
     assert r.returncode == 1
-    assert "can't run" in r.stderr
+    assert "can't carry code-mode" in r.stderr
     assert argv is None
 
 

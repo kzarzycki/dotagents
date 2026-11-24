@@ -31,6 +31,15 @@
 # invocation settings: code-mode on for this session alone, eval-kernel (its old name) off, so the
 # model doesn't get two REPLs. The agent's needs an Omnigent with per-agent settings (omnigent#473).
 # CODE_MODE_DIR loads code-mode from a checkout instead of the installed plugin.
+#
+# The agent can't turn code-mode on through its settings: Claude Code loads a mod (the plugin's
+# hooks/register.ts, which registers `repl` at session start) only for a plugin enabled in a settings
+# file, not for one a session's --settings flag enables, though it lists that plugin as enabled. With
+# only that key a session has no `repl` (#229). An agent spec can't carry a CLI flag either, but
+# Omnigent starts a session with --plugin-dir <the agent's bundle> when the bundle has a skills/ folder,
+# and that loads mods. So --install-agent ships a copy of the installed plugin (made at install, never
+# committed) plus a stub skills/ folder in the agent's tarball, and the agent's settings leave the
+# marketplace copy off, so there is one `repl`.
 set -eu
 deny=Bash,Read,Edit,Write,Glob,Grep,NotebookEdit,WebFetch,WebSearch
 # Omnigent's own shell and file tools: without them hidden too, the model falls back to them.
@@ -117,6 +126,10 @@ fi
 
 settings='{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"code-mode@claude-mods":true,"eval-kernel@claude-mods":false}}'
 if [ "${1:-}" = --install-agent ]; then
+  settings='{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"eval-kernel@claude-mods":false}}'
+  for part in .claude-plugin/plugin.json hooks/hooks.json hooks/register.ts kernel/kernel.ts guide.ts; do
+    [ -f "$dir/$part" ] || { echo "claude-code-mode: $dir has no $part, so the agent can't carry code-mode (claude plugin install code-mode@claude-mods)" >&2; exit 1; }
+  done
   # A tarball with config.yaml at its root: Omnigent's server reads only config.yaml from an upload,
   # so a lone code-mode.yaml gets "404: config.yaml not found", and a folder source expands the
   # guide's own `${...}` as environment variables.
@@ -132,17 +145,10 @@ if [ "${1:-}" = --install-agent ]; then
     printf 'prompt: |\n'
     printf '%s\n' "$prompt" | sed 's/^/  /'
   } > "$spec"
-  tar -czf "$tmp/code-mode.tar.gz" -C "$tmp" config.yaml
-  # The kernel starts as plain `bun` on the PATH of Omnigent's runner, which has ~/.local/bin but not the
-  # ~/.bun/bin that bun's own installer uses (#232). This shell found bun, so link it where the runner looks.
-  lb=$HOME/.local/bin/bun
-  if [ ! -e "$lb" ] && [ ! -L "$lb" ]; then
-    mkdir -p "${lb%/*}" && ln -s "$(command -v bun)" "$lb"
-  fi
-  "$lb" --version >/dev/null 2>&1 || {
-    echo "claude-code-mode: $lb can't run, so the agent's kernel won't start (Omnigent's runner finds bun in ~/.local/bin); fix or remove it, then rerun --install-agent" >&2
-    exit 1
-  }
+  cp -RL "$dir/.claude-plugin" "$dir/hooks" "$dir/kernel" "$dir/guide.ts" "$tmp/"
+  mkdir -p "$tmp/skills/code-mode" # the folder that makes Omnigent pass --plugin-dir
+  printf -- '---\nname: code-mode\ndescription: Work through the repl tool\n---\nThis session works through `repl`; see the Code Mode section of the system prompt.\n' > "$tmp/skills/code-mode/SKILL.md"
+  tar -czf "$tmp/code-mode.tar.gz" -C "$tmp" config.yaml .claude-plugin hooks kernel guide.ts skills
   exec omnigent agent add "$tmp/code-mode.tar.gz"
 fi
 
