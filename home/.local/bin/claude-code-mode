@@ -18,6 +18,12 @@
 # becomes Omnigent's server deny policy, whose PreToolUse hook refuses the mod's calls too
 # ("Tool 'Bash' is forbidden by the agent spec"); a pattern goes to the harness flag only.
 #
+# The agent starts in bypassPermissions (executor.config.permission_mode, which Omnigent launches
+# as --permission-mode): a mod's $.tool.call can't show a prompt, so in the default mode every Bash
+# call that would ask is refused ("this repeats a Bash call that is not allowed"), git commit and
+# uv run included. omnigent_agent.py passes a mode only to an agent named `claude`, so the agent
+# carries its own.
+#
 # ponytail: the agent's prompt is a copy of the guide made at install. Rerun --install-agent
 # after updating code-mode.
 #
@@ -120,7 +126,7 @@ if [ "${1:-}" = --install-agent ]; then
   {
     printf 'spec_version: 1\nname: code-mode\n'
     printf 'description: "Claude Code with code-mode'"'"'s repl as the one way to work: shell, files, search and tool calls as JavaScript."\n'
-    printf 'executor:\n  type: omnigent\n  config:\n    harness: claude-native\n'
+    printf 'executor:\n  type: omnigent\n  config:\n    harness: claude-native\n    permission_mode: bypassPermissions\n'
     printf '    disallowed_tools: [%s]\n' "$(printf '%s' "$deny" | sed 's/\([A-Za-z]*\)/"\1(*)"/g; s/,/, /g'), $(printf '%s' "$omni" | sed 's/[^,]*/"&"/g; s/,/, /g')"
     printf '    settings: %s\n' "$settings" # JSON is a YAML flow mapping
     printf 'prompt: |\n'
