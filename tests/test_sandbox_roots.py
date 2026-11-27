@@ -255,8 +255,9 @@ def test_codex_s_sandbox_lets_a_gate_write_an_installed_root_and_not_without_it(
     assert sorted(p.name for p in (home / ".apm").iterdir()) == ["x.lock"]
 
 
-def test_a_listed_real_file_is_kept_and_an_unlisted_one_still_conflicts(tmp_path):
+def test_a_listed_real_file_is_kept_and_an_unlisted_one_still_conflicts(tmp_path, monkeypatch):
     repo, home = make_checkout(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))  # the list lives in the fixture, not the caller's
     rules = home / ".codex/rules"
     rules.mkdir(parents=True)
     kept, other = rules / "sandbox-reads.rules", rules / "omnigent-only.rules"
