@@ -23,7 +23,7 @@ Run from the branch, never against the real `$HOME`:
 
 Only people approve. There is no spec policy, so every spec waits for the owner. The
 merge proof is the `check` check that GitHub Actions (`.github/workflows/ci.yml`) runs on
-the PR head: `mise run check`, the gate in `docs/agents/gatekeeper.md`, on every PR with no path filter, since a required check a
+the PR head: `mise run check-fast` (the affected tests and the frozen agent-config check; the full `mise run check` runs nightly), the gate in `docs/agents/gatekeeper.md`, on every PR with no path filter, since a required check a
 filter skips never reports. `risk.verifier: true` lets the verifier decide what is
 high risk: a pass on the head whose `Risk:` line says anything but `low` holds the merge for
 the owner's `approved:merge`, and so does a `risk:high` label.
@@ -42,6 +42,12 @@ Never on GitHub rule.
 `git worktree add ../dotagents-worktrees/<branch> -b <branch> origin/main`, then in it
 `mise trust` and `mise run setup:dev`, which installs the gitignored skills the loop's
 tasks call. Remove it with `git worktree remove`.
+
+## Affected tests
+
+Affected tests: mise run test:affected
+
+It reads only `git diff` against `GATE_BASE` (else `origin/main`), so it needs no saved state on a fresh clone or in CI, and runs everything when the base can't be diffed, or when the change touches anything but test files and docs: the installer tests read `home/`, `bin/` and `lib/` through paths no name search sees, so the selection only narrows a tests-only or docs-only change. CI runs it on a PR and on push to main (`mise run check-fast`); the nightly workflow runs the full `mise run check`, so a break the selection misses shows up there.
 
 ## Ledger
 

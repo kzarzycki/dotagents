@@ -8,7 +8,7 @@ targets:
 dependencies:
   apm:
   - git: kzarzycki/agent-skills/engineering
-    ref: ^0.28.0
+    ref: ^0.35.5
   mcp: []
 includes: auto
 scripts: {}

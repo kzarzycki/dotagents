@@ -335,6 +335,30 @@ check_requirements() {
   return "$found"
 }
 
+# The sibling skills a skill's scripts forward to: a `skill = "<name>"` line in a
+# script that runs `<skills dir>/<name>` (orchestrating-agents' omnigent_agent.py),
+# found beside the skill in the dir it is reached through.
+forwarder_targets() {
+  grep -hEs '^skill = "[a-z0-9-]+"$' "$1"/scripts/*.py 2>/dev/null | sed -E 's/^skill = "(.*)"$/\1/' | sort -u
+}
+
+# A forwarder in a skills dir whose target skill is not beside it: one line each,
+# returns 1 if there is any.
+check_forwarders() {
+  local d entry target found=0
+  for d in "${SKILL_DIRS[@]}"; do
+    for entry in "$d"/*/; do
+      entry=${entry%/}
+      while IFS= read -r target; do
+        { [ -n "$target" ] && [ ! -f "$d/$target/SKILL.md" ]; } || continue
+        printf 'broken forwarder: %s needs the skill %s beside it: re-run bin/dotagents install\n' "$entry" "$target"
+        found=1
+      done < <(forwarder_targets "$entry")
+    done
+  done
+  return "$found"
+}
+
 # A skill script, in a skill path an agent loads (a project's or the global
 # .claude, .agents or .codex skills), that the pinned pack's skill of that name
 # doesn't have: an old pin, an old clone's install, a second copy of the skill.
@@ -478,6 +502,7 @@ if [ "$CMD" = "doctor" ]; then
   doctor_status=0
   check_requirements || doctor_status=1
   check_stale_skill_copies || doctor_status=1
+  check_forwarders || doctor_status=1
   exit "$doctor_status"
 fi
 
@@ -687,7 +712,11 @@ if { (( ! ONLY_MODE )) || is_selected ".agents"; } && [ -f "$REPO_ROOT/apm.lock.
   && { [ ! -d "$PINNED_SKILLS" ] || ! cmp -s "$REPO_ROOT/apm.lock.yaml" "$PACK_STAMP"; }; then
   if (( DRY_RUN )); then
     printf 'DRY: cd %s && mise exec -- apm install --frozen\n' "$REPO_ROOT"
-  elif rm -f "$PACK_STAMP" && (cd "$REPO_ROOT" && mise exec -- apm install --frozen >/dev/null); then
+  elif lock_keep=$(mktemp) && cp "$REPO_ROOT/apm.lock.yaml" "$lock_keep" \
+    && { rm -f "$PACK_STAMP" && (cd "$REPO_ROOT" && mise exec -- apm install --frozen >/dev/null); apm_rc=$?
+         # an apm that rewrites the lock it was told to keep must not leave the checkout dirty
+         cmp -s "$lock_keep" "$REPO_ROOT/apm.lock.yaml" || cp "$lock_keep" "$REPO_ROOT/apm.lock.yaml"
+         rm -f "$lock_keep"; [ "$apm_rc" -eq 0 ]; }; then
     mkdir -p "${PACK_STAMP%/*}"
     cp "$REPO_ROOT/apm.lock.yaml" "$PACK_STAMP"
     printf 'INSTALLED: the pinned pack in %s at its apm.lock.yaml\n' "$PINNED_SKILLS"
@@ -1232,12 +1261,40 @@ if (( ! ONLY_MODE )) || is_selected ".agents"; then
       pack_skill="$PINNED_SKILLS/${global##*/}"
       { [ -L "$global" ] || [ ! -d "$pack_skill" ]; } && continue
       diff -rq -x __pycache__ "$pack_skill" "$global" >/dev/null 2>&1 && continue
+      # A forwarder is only as good as its target: never swap a working copy for one
+      # whose target skill neither sits beside it nor comes with the pack.
+      missing=""
+      while IFS= read -r target; do
+        if [ -n "$target" ] && [ ! -f "$skill_dir/$target/SKILL.md" ] && [ ! -f "$PINNED_SKILLS/$target/SKILL.md" ]; then missing=$target; fi
+      done < <(forwarder_targets "$pack_skill")
+      if [ -n "$missing" ]; then
+        printf 'WARNING: kept %s: the pinned pack copy forwards to the skill %s, which the pack lacks\n' "$global" "$missing" >&2
+        pack_failed=1
+        continue
+      fi
       bak="$HOME/.dotagents-bak/$(printf '%s' "${global#"$HOME"/}" | tr / _)"
       run mkdir -p "$HOME/.dotagents-bak"
       run rm -rf "$bak"
       run mv "$global" "$bak"
       run cp -R "$pack_skill" "$global"
       (( DRY_RUN )) || printf 'REFRESHED: %s from the pinned pack; the old copy is in %s\n' "$global" "$bak"
+    done
+  done
+  # Each skills dir holding a forwarder (a copy or a link) gets the skill it forwards
+  # to beside it, since it finds that sibling in the dir it is reached through.
+  for skill_dir in "${SKILL_DIRS[@]:1}"; do
+    for entry in "$skill_dir"/*/; do
+      entry=${entry%/}
+      while IFS= read -r target; do
+        { [ -n "$target" ] && [ ! -e "$skill_dir/$target" ]; } || continue
+        if [ ! -f "$PINNED_SKILLS/$target/SKILL.md" ]; then
+          printf 'WARNING: %s forwards to the skill %s, which the pinned pack lacks\n' "$entry" "$target" >&2
+          pack_failed=1
+          continue
+        fi
+        run cp -R "$PINNED_SKILLS/$target" "$skill_dir/$target"
+        (( DRY_RUN )) || printf 'INSTALLED: %s beside %s, which forwards to it\n' "$skill_dir/$target" "${entry##*/}"
+      done < <(forwarder_targets "$entry")
     done
   done
 fi
@@ -1302,6 +1359,30 @@ if (( ! ONLY_MODE )) || is_selected ".agents"; then
     (( DRY_RUN )) && continue
     printf 'PROVIDED: %s %s via %s, for skill %s\n' "$tool" "$REQ_HAVE" "$via" "$skill"
   done < <(skill_requirements)
+fi
+
+# 4.10 Install agent-skills' gh quota shim (~/.local/bin/gh, a logging wrapper that
+# names who spends the GitHub quota). The pinned pack carries the gh-quota skill
+# once a release has it; until then a host's agent-skills checkout
+# ($AGENT_SKILLS_DIR, default ~/dev/agents/agent-skills) does. A host with neither
+# skips silently. The installer refuses to replace a real gh and is idempotent;
+# ~/.local/bin goes first on its PATH, as env.sh puts it first in a shell, or the
+# shim would never run. A failure warns and never fails install.
+if (( ! ONLY_MODE )) || is_selected ".local"; then
+  gh_quota=""
+  for cand in "$PINNED_SKILLS/gh-quota/scripts/gh_quota.py" \
+    "${AGENT_SKILLS_DIR:-$HOME/dev/agents/agent-skills}/github/skills/gh-quota/scripts/gh_quota.py"; do
+    [ -f "$cand" ] && { gh_quota=$cand; break; }
+  done
+  if [ -n "$gh_quota" ] && command -v python3 >/dev/null 2>&1; then
+    if (( DRY_RUN )); then
+      printf 'DRY: python3 %s install\n' "$gh_quota"
+    elif out=$(PATH="$HOME/.local/bin:$PATH" python3 "$gh_quota" install 2>&1); then
+      printf 'GH-QUOTA: %s\n' "$out"
+    else
+      printf 'WARNING: gh-quota shim not installed: %s\n' "$out" >&2
+    fi
+  fi
 fi
 if command -v jq >/dev/null 2>&1; then
   for f in "$HOME"/.claude/settings.json; do

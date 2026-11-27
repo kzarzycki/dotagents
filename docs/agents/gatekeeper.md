@@ -7,6 +7,14 @@ The policy `approvals.py` reads; `docs/agents/loop.md` keeps the loop's other fa
 ```yaml
 loop:
   gate: mise run check
+  delegate: all
 risk:
   verifier: true
+bot:
+  pack-bump:
+    branch: claude/ready-pack-bump-
+    paths:
+      - apm.yml
+      - apm.lock.yaml
+      - ".agents/**"
 ```

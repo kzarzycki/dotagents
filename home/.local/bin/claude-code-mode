@@ -1,0 +1,184 @@
+#!/bin/sh
+# Start an Omnigent claude-native session in Code Mode: the model works only through the code-mode
+# mod's `repl` tool (mcp__code-mode__repl), whose scripts still call the built-ins below.
+#   claude-code-mode [claude args]   a session, per invocation
+#   claude-code-mode --install-agent the same as the Omnigent agent `code-mode`, in the session picker
+#
+# The Code Mode guide goes into the system prompt (--append-system-prompt-file), where the mod can't
+# put it: an organization's sec-default mod skips a person's prompt hooks. A file, because Omnigent
+# refuses a launch argument over 4,096 characters; with a prompt file, Omnigent sends its own
+# appended guidance as session-start context instead. CODE_MODE_GUIDE=system makes
+# repl's own description point there instead of repeating it.
+#
+# --disallowedTools hides the built-ins from the model alone. Deny rules don't bind a mod's
+# $.tool.call (Claude Code's mod API docs), and code-mode reads their absence as its exclusive
+# mode. A --tools list or a tool.list removal would take them from the mod as well.
+#
+# The agent lists them as `Bash(*)`, not `Bash`: a plain name in an agent's disallowed_tools also
+# becomes Omnigent's server deny policy, whose PreToolUse hook refuses the mod's calls too
+# ("Tool 'Bash' is forbidden by the agent spec"); a pattern goes to the harness flag only.
+#
+# The agent starts in bypassPermissions (executor.config.permission_mode, which Omnigent launches
+# as --permission-mode): a mod's $.tool.call can't show a prompt, so in the default mode every Bash
+# call that would ask is refused ("this repeats a Bash call that is not allowed"), git commit and
+# uv run included. omnigent_agent.py passes a mode only to an agent named `claude`, so the agent
+# carries its own.
+#
+# bun: code-mode's kernel runs on it, and the plugin finds it with its own hooks/find-bun.sh ($BUN_INSTALL/bin,
+# PATH, ~/.bun/bin, /opt/homebrew/bin), not only on the PATH of Omnigent's runner. This script asks the same
+# script, so it fails up front where the plugin couldn't start its kernel, and runs the guide with that bun.
+#
+# ponytail: the agent's prompt is a copy of the guide made at install. Rerun --install-agent
+# after updating code-mode.
+#
+# The settings (a session's --settings, the agent's executor.config.settings) merge into Omnigent's
+# invocation settings: code-mode on for this session alone, eval-kernel (its old name) off, so the
+# model doesn't get two REPLs. The agent's needs an Omnigent with per-agent settings (omnigent#473).
+# CODE_MODE_DIR loads code-mode from a checkout instead of the installed plugin.
+#
+# The agent can't turn code-mode on through its settings: Claude Code loads a mod (the plugin's
+# hooks/register.ts, which registers `repl` at session start) only for a plugin enabled in a settings
+# file, not for one a session's --settings flag enables, though it lists that plugin as enabled. With
+# only that key a session has no `repl` (#229). An agent spec can't carry a CLI flag either, but
+# Omnigent starts a session with --plugin-dir <the agent's bundle> when the bundle has a skills/ folder,
+# and that loads mods. So --install-agent ships a copy of the installed plugin (made at install, never
+# committed) plus a stub skills/ folder in the agent's tarball, and the agent's settings leave the
+# marketplace copy off, so there is one `repl`.
+set -eu
+deny=Bash,Read,Edit,Write,Glob,Grep,NotebookEdit,WebFetch,WebSearch
+# Omnigent's own shell and file tools: without them hidden too, the model falls back to them.
+# Plain names: no script calls them, so the server deny policy they become in an agent costs nothing.
+omni=mcp__omnigent__sys_os_shell,mcp__omnigent__sys_os_read,mcp__omnigent__sys_os_write,mcp__omnigent__sys_os_edit
+
+# A Claude cloud session takes no command line, so code mode comes from its environment instead:
+#   claude-code-mode --cloud-setup        the setup-script lines that give every session in an environment code mode
+#   claude-code-mode --cloud-env <env>    make or update the environment <env>-code-mode: <env>'s setup script
+#                                         with those lines first, its network and variables as they are
+# Settings deny rules stand in for --disallowedTools there: they hide the built-ins from the model and,
+# like the flag, don't bind the mod's calls. CODE_MODE_GUIDE stays unset, since no prompt file carries
+# the guide, so repl's description does. The lines log to /tmp/code-mode-init.log and never fail the
+# setup: a failing setup script fails the whole cloud session, which the bridge doesn't report.
+cloud_setup() {
+  cloud_settings='{"enabledPlugins":{"code-mode@claude-mods":true,"eval-kernel@claude-mods":false},"permissions":{"deny":['"$(printf '%s' "$deny" | sed 's/[^,]*/"&"/g')"']}}'
+  cat <<EOF
+# code mode, exclusive (claude-code-mode --cloud-env); log: /tmp/code-mode-init.log
+(
+  export PATH="\$HOME/.bun/bin:\$PATH"
+  command -v bun >/dev/null || npm install -g bun
+  claude plugin marketplace add kzarzycki/claude-mods
+  claude plugin install code-mode@claude-mods --scope user
+  python3 -c 'import json, os, sys
+p = os.path.expanduser("~/.claude/settings.json")
+s = json.load(open(p)) if os.path.exists(p) else {}
+add = json.loads(sys.argv[1])
+s.setdefault("enabledPlugins", {}).update(add["enabledPlugins"])
+deny = s.setdefault("permissions", {}).setdefault("deny", [])
+deny += [t for t in add["permissions"]["deny"] if t not in deny]
+json.dump(s, open(p, "w"), indent=1)' '$cloud_settings'
+) >>/tmp/code-mode-init.log 2>&1 || echo "code mode setup FAILED" >>/tmp/code-mode-init.log
+EOF
+}
+case "${1:-}" in
+--cloud-setup) cloud_setup; exit 0 ;;
+--cloud-env)
+  [ -n "${2:-}" ] || { echo "usage: claude-code-mode --cloud-env <environment>" >&2; exit 2; }
+  # claude.ai's environment API through omnigent-agents' client, which holds the login handling
+  scripts=${OMNIGENT_AGENTS_SCRIPTS:-$HOME/.agents/skills/omnigent-agents/scripts}
+  [ -f "$scripts/claude_environments.py" ] || {
+    echo "claude-code-mode: --cloud-env needs omnigent-agents' claude_environments.py in $scripts (or set OMNIGENT_AGENTS_SCRIPTS)" >&2
+    exit 1
+  }
+  exec python3 -I -c '
+import importlib.util, sys
+path, base, setup = sys.argv[1:]
+spec = importlib.util.spec_from_file_location("claude_environments", path)
+env = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(env)
+try:
+    auth = env.headers()
+    envs = env.environments(auth)
+    src = env.named(envs, base)
+    if src is None:
+        sys.exit(f"claude-code-mode: no cloud environment called {base}")
+    current = env.read(auth, src["environment_id"])
+    config = dict(current["config"])
+    masked = tuple(str(v) for v in (config.get("environment") or {}).values())
+    script = config.get("init_script") or "#!/bin/bash\n"
+    head, _, body = script.partition("\n") if script.startswith("#!") else ("#!/bin/bash", "", script)
+    config["init_script"] = f"{head}\n{setup}{body}"
+    name = f"{base}-code-mode"
+    variant = env.named(envs, name)
+    if variant:
+        env.update(auth, variant["environment_id"], env.read(auth, variant["environment_id"]), config, masked)
+        print(name, variant["environment_id"] + ": updated from", base)
+    else:
+        made = env.call("/v1/environment_providers/cloud/create", {"name": name, "kind": src.get("kind", "anthropic_cloud"),
+            "description": f"{base} with code mode, exclusive (claude-code-mode --cloud-env)", "config": config}, auth, masked=masked)
+        print(name, made["environment_id"] + ": made from", base)
+except env.Refused as e:
+    sys.exit(f"claude-code-mode: {e}")
+' "$scripts/claude_environments.py" "$2" "$(cloud_setup)
+" ;;
+esac
+
+# The plugin's folder: jq reads it without needing bun (which may not be on this PATH), else bun does.
+bun=bun
+plugins=$HOME/.claude/plugins/installed_plugins.json
+if [ -n "${CODE_MODE_DIR:-}" ]; then
+  dir=$CODE_MODE_DIR
+elif command -v jq >/dev/null 2>&1 && [ -f "$plugins" ]; then
+  dir=$(jq -r '(.plugins["code-mode@claude-mods"] // []) | map(select(.scope == "user")) | .[0].installPath // empty' "$plugins" 2>/dev/null || true)
+elif command -v bun >/dev/null 2>&1; then
+  dir=$(bun -e 'const p = require(process.env.HOME + "/.claude/plugins/installed_plugins.json").plugins["code-mode@claude-mods"]; console.log(p?.find(i => i.scope === "user")?.installPath ?? "")' 2>/dev/null || true)
+else
+  echo "claude-code-mode: needs bun (code-mode's kernel runs on it) or jq to find the installed plugin, and neither is on PATH; set CODE_MODE_DIR to the plugin's folder to skip that" >&2
+  exit 1
+fi
+if [ -z "$dir" ] || [ ! -f "$dir/guide.ts" ]; then
+  echo "claude-code-mode: code-mode isn't installed (claude plugin install code-mode@claude-mods), or set CODE_MODE_DIR to its folder" >&2
+  exit 1
+fi
+# The bun the plugin itself would run: code-mode's own lookup ($BUN_INSTALL/bin, PATH, ~/.bun/bin, /opt/homebrew/bin),
+# so a bun the Omnigent runner can't see on its PATH still counts, and a host where the plugin can't find one fails here,
+# not at the first `repl` call (#232). A plugin without the script gets a PATH check.
+if [ -f "$dir/hooks/find-bun.sh" ]; then
+  bun=$(sh "$dir/hooks/find-bun.sh") || { echo "claude-code-mode: code-mode can't find bun (looked in \$BUN_INSTALL/bin, PATH, ~/.bun/bin, /opt/homebrew/bin); install it: curl -fsSL https://bun.sh/install | bash" >&2; exit 1; }
+else
+  command -v bun >/dev/null || { echo "claude-code-mode: needs bun (code-mode's kernel runs on it), and it isn't on PATH" >&2; exit 1; }
+fi
+
+settings='{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"code-mode@claude-mods":true,"eval-kernel@claude-mods":false}}'
+if [ "${1:-}" = --install-agent ]; then
+  settings='{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"eval-kernel@claude-mods":false}}'
+  for part in .claude-plugin/plugin.json hooks/hooks.json hooks/register.ts kernel/kernel.ts guide.ts; do
+    [ -f "$dir/$part" ] || { echo "claude-code-mode: $dir has no $part, so the agent can't carry code-mode (claude plugin install code-mode@claude-mods)" >&2; exit 1; }
+  done
+  # A tarball with config.yaml at its root: Omnigent's server reads only config.yaml from an upload,
+  # so a lone code-mode.yaml gets "404: config.yaml not found", and a folder source expands the
+  # guide's own `${...}` as environment variables.
+  tmp=$(mktemp -d) spec=$tmp/config.yaml
+  prompt=$("$bun" "$dir/guide.ts" exclusive) # its own step, so set -e stops on a failed guide
+  [ -n "$prompt" ] || { echo "claude-code-mode: $dir/guide.ts printed no guide" >&2; exit 1; }
+  {
+    printf 'spec_version: 1\nname: code-mode\n'
+    printf 'description: "Claude Code with code-mode'"'"'s repl as the one way to work: shell, files, search and tool calls as JavaScript."\n'
+    printf 'executor:\n  type: omnigent\n  config:\n    harness: claude-native\n    permission_mode: bypassPermissions\n'
+    printf '    disallowed_tools: [%s]\n' "$(printf '%s' "$deny" | sed 's/\([A-Za-z]*\)/"\1(*)"/g; s/,/, /g'), $(printf '%s' "$omni" | sed 's/[^,]*/"&"/g; s/,/, /g')"
+    printf '    settings: %s\n' "$settings" # JSON is a YAML flow mapping
+    printf 'prompt: |\n'
+    printf '%s\n' "$prompt" | sed 's/^/  /'
+  } > "$spec"
+  cp -RL "$dir/.claude-plugin" "$dir/hooks" "$dir/kernel" "$dir/guide.ts" "$tmp/"
+  mkdir -p "$tmp/skills/code-mode" # the folder that makes Omnigent pass --plugin-dir
+  printf -- '---\nname: code-mode\ndescription: Work through the repl tool\n---\nThis session works through `repl`; see the Code Mode section of the system prompt.\n' > "$tmp/skills/code-mode/SKILL.md"
+  tar -czf "$tmp/code-mode.tar.gz" -C "$tmp" config.yaml .claude-plugin hooks kernel guide.ts skills
+  exec omnigent agent add "$tmp/code-mode.tar.gz"
+fi
+
+guide=${XDG_CACHE_HOME:-$HOME/.cache}/code-mode/guide-exclusive.md
+mkdir -p "${guide%/*}" && "$bun" "$dir/guide.ts" exclusive > "$guide"
+if [ -n "${CODE_MODE_DIR:-}" ]; then
+  exec omnigent claude --disallowedTools "$deny,$omni" --plugin-dir "$dir" --append-system-prompt-file "$guide" \
+    --settings '{"env":{"CODE_MODE_GUIDE":"system"},"enabledPlugins":{"eval-kernel@claude-mods":false}}' "$@"
+fi
+exec omnigent claude --disallowedTools "$deny,$omni" --append-system-prompt-file "$guide" --settings "$settings" "$@"

@@ -162,3 +162,57 @@ def test_agent_hygiene_installs_a_missing_pack_on_its_next_run(tmp_path):
         [str(home / ".local/bin/agent-hygiene")], env={**os.environ, "HOME": str(home)}, capture_output=True, text=True
     )
     assert done.stdout == "pack-script\n" and calls.read_text().count("install") == 2, "a present pack installs nothing"
+
+
+def make_gh_quota(root, marker="ran"):
+    script = root / "gh-quota/scripts/gh_quota.py"
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        "import os, sys, pathlib\n"
+        f"pathlib.Path(os.environ['HOME'], '{marker}').write_text(os.environ['PATH'].split(os.pathsep)[0] + ' ' + sys.argv[1])\n"
+    )
+
+
+def test_install_runs_gh_quota_from_the_pinned_pack_with_local_bin_first(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    make_gh_quota(repo / ".agents/skills")
+    result = run_install(repo, home, "--only", ".local")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (home / "ran").read_text() == f"{home}/.local/bin install"
+
+
+def test_install_runs_gh_quota_from_an_agent_skills_checkout(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    make_gh_quota(home / "dev/agents/agent-skills/github/skills")
+    result = run_install(repo, home, "--only", ".local")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (home / "ran").exists()
+
+
+def test_install_skips_gh_quota_cleanly_without_the_skill(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    result = run_install(repo, home, "--only", ".local")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "gh-quota" not in (result.stdout + result.stderr).lower()
+
+
+def test_gh_quota_failure_warns_without_failing_install(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    script = repo / ".agents/skills/gh-quota/scripts/gh_quota.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("import sys\nprint('refused: real gh', file=sys.stderr)\nsys.exit(1)\n")
+    result = run_install(repo, home, "--only", ".local")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "WARNING: gh-quota shim not installed: refused: real gh" in result.stderr
+
+
+def test_gh_quota_is_not_run_by_dry_run_or_an_unrelated_subset(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    make_gh_quota(repo / ".agents/skills")
+    dry = run_install(repo, home, "--dry-run", "--only", ".local")
+    assert dry.returncode == 0, dry.stdout + dry.stderr
+    assert "DRY: python3" in dry.stdout and "gh_quota.py install" in dry.stdout
+    assert not (home / "ran").exists()
+    other = run_install(repo, home, "--only", "omp")
+    assert other.returncode == 0, other.stdout + other.stderr
+    assert not (home / "ran").exists()

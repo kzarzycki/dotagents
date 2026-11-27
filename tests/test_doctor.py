@@ -468,3 +468,67 @@ def test_each_stale_copy_line_ends_with_the_action_that_clears_it(tmp_path, wher
     assert result.stdout.splitlines() == [
         f"stale skill copy: {root}/.agents/skills/demo: old_helper.sh: {action.format(home=home)}"
     ]
+
+
+def forwarder(root, name="orchestrating-agents", target="omnigent-agents"):
+    skill(root, name, scripts=[])
+    (root / name / "scripts/omnigent_agent.py").write_text(f'skill = "{target}"\n')
+
+
+def test_install_puts_a_forwarders_target_beside_it_in_every_skills_dir(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    forwarder(repo / ".agents/skills")
+    skill(repo / ".agents/skills", "omnigent-agents", scripts=["omnigent_agent.py"])
+    # An old full copy, as an earlier install left it; ~/.claude/skills links it.
+    skill(home / ".agents/skills", "orchestrating-agents", scripts=["herdr_watch.sh"])
+    (home / ".claude/skills").mkdir(parents=True)
+    (home / ".claude/skills/orchestrating-agents").symlink_to("../../.agents/skills/orchestrating-agents")
+
+    result = run_install(repo, home, "--profile", "vps")
+    assert result.returncode == 0, result.stdout + result.stderr
+    for d in (".agents/skills", ".claude/skills"):
+        assert (home / d / "omnigent-agents/SKILL.md").is_file(), d
+    assert doctor(repo, home, tmp_path / "bin").stdout == ""
+
+
+def test_install_keeps_a_copy_whose_pack_forwarder_has_no_target(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    forwarder(repo / ".agents/skills")  # the pack lacks omnigent-agents
+    skill(home / ".agents/skills", "orchestrating-agents", scripts=["herdr_watch.sh"])
+
+    result = run_install(repo, home, "--profile", "vps")
+    assert result.returncode != 0
+    assert "WARNING: kept" in result.stderr and "omnigent-agents" in result.stderr
+    assert (home / ".agents/skills/orchestrating-agents/scripts/herdr_watch.sh").exists()
+    assert not (home / ".dotagents-bak").exists()
+
+
+def test_doctor_fails_on_a_forwarder_whose_target_is_missing(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    skill(repo / ".agents/skills", "demo")
+    forwarder(home / ".agents/skills")
+    (home / ".claude/skills").mkdir(parents=True)
+    (home / ".claude/skills/orchestrating-agents").symlink_to("../../.agents/skills/orchestrating-agents")
+    skill(home / ".agents/skills", "omnigent-agents")  # beside the .agents copy only
+
+    result = doctor(repo, home, tmp_path / "bin")
+    assert result.returncode != 0
+    assert result.stdout == (
+        f"broken forwarder: {home}/.claude/skills/orchestrating-agents needs the skill omnigent-agents "
+        "beside it: re-run bin/dotagents install\n"
+    )
+
+
+def test_install_leaves_a_lock_that_apm_rewrote_as_it_was(tmp_path, monkeypatch):
+    repo, home = make_checkout(tmp_path)
+    lock(repo, "1.0.0", ".agents/skills/demo")
+    before = (repo / "apm.lock.yaml").read_bytes()
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "mise").write_text(f"#!/bin/sh\necho rewritten > {repo}/apm.lock.yaml\nmkdir -p {repo}/.agents/skills\n")
+    (bindir / "mise").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bindir}:{os.environ['PATH']}")
+
+    result = run_install(repo, home, "--profile", "vps")
+    assert "INSTALLED: the pinned pack" in result.stdout, result.stdout + result.stderr
+    assert (repo / "apm.lock.yaml").read_bytes() == before
