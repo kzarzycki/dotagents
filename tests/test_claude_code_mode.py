@@ -159,10 +159,12 @@ def test_a_checkout_session_loads_code_mode_from_it(tmp_path):
     assert settings["env"] == {"CODE_MODE_GUIDE": "system"}
 
 
-def test_code_mode_is_off_by_default():
+def test_code_mode_is_on_by_default_in_exclusive_mode_with_no_denies():
     shared = json.loads((SCRIPT.parent.parent.parent / ".claude/settings.shared.json").read_text())
-    assert shared["enabledPlugins"]["code-mode@claude-mods"] is False
+    assert shared["enabledPlugins"]["code-mode@claude-mods"] is True
     assert shared["enabledPlugins"]["eval-kernel@claude-mods"] is False
+    assert shared["pluginConfigs"]["code-mode@claude-mods"]["options"]["mode"] == "exclusive"
+    assert "deny" not in shared["permissions"]
 
 
 def test_cloud_setup_turns_on_exclusive_code_mode_for_the_environment(tmp_path):
