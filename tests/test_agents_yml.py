@@ -2,8 +2,6 @@ import os
 import subprocess
 from pathlib import Path
 
-import yaml
-
 from test_install_subsets import make_checkout, run_install
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,8 +21,35 @@ def resolve(cfg, role, key, **attrs):
     return value
 
 
+def mini_yaml(text):
+    """Nested `key: value` / `key:` maps only: enough for this file where PyYAML is not installed (CI)."""
+    root, stack = {}, [(-1, {})]
+    stack[0] = (-1, root)
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].rstrip()
+        if not line.strip():
+            continue
+        indent = len(line) - len(line.lstrip())
+        key, _, value = line.strip().partition(":")
+        while stack[-1][0] >= indent:
+            stack.pop()
+        value = value.strip()
+        if value:
+            stack[-1][1][key] = value
+        else:
+            child = {}
+            stack[-1][1][key] = child
+            stack.append((indent, child))
+    return root
+
+
 def load():
-    return yaml.safe_load(STARTER.read_text())
+    text = STARTER.read_text()
+    try:
+        import yaml
+    except ImportError:
+        return mini_yaml(text)
+    return yaml.safe_load(text)
 
 
 def test_starter_file_parses_with_known_shape():
