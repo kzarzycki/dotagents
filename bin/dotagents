@@ -965,17 +965,26 @@ if [ -f "$SHARED_SETTINGS" ]; then
         (if .pluginConfigs then del(.pluginConfigs["code-mode@claude-mods"]) else . end)
         | (if .pluginConfigs == {} then del(.pluginConfigs) else . end)
       else . end' <<<"$merged")
-  # Code Mode replaces the denied built-ins, so the deny rules go in only where it can run: its plugin
-  # installed and bun (its kernel) found. Otherwise they are removed from the result too, and install says so.
-  code_mode_missing=
-  if jq -e '.enabledPlugins["code-mode@claude-mods"] == true' <<<"$merged" >/dev/null 2>&1; then
-    grep -qs 'code-mode@claude-mods' "$HOME/.claude/plugins/installed_plugins.json" || code_mode_missing="the code-mode plugin is not installed (claude plugin marketplace add kzarzycki/claude-mods && claude plugin install code-mode@claude-mods --scope user)"
-    if [ -z "$code_mode_missing" ] && ! command -v bun >/dev/null 2>&1 && ! [ -x "${BUN_INSTALL:-$HOME/.bun}/bin/bun" ] && ! [ -x "$HOME/.bun/bin/bun" ] && ! [ -x /opt/homebrew/bin/bun ]; then
-      code_mode_missing="bun, Code Mode's kernel, is not installed (curl -fsSL https://bun.sh/install | bash)"
+  # Code Mode replaces the denied built-ins, so the deny rules go in only where it can run: its user-scope
+  # plugin payload on disk and the bun its kernel will use (the saved `bun` option, else the plugin's own
+  # hooks/find-bun.sh). Otherwise the repo adds no deny rules and install says so; a host's own entries stay.
+  # Only a Claude install needs this.
+  if is_selected ".claude" && jq -e '.enabledPlugins["code-mode@claude-mods"] == true' <<<"$merged" >/dev/null 2>&1; then
+    code_mode_missing=
+    cm_dir=$(jq -r '(.plugins["code-mode@claude-mods"] // []) | map(select(.scope == "user")) | .[0].installPath // empty' "$HOME/.claude/plugins/installed_plugins.json" 2>/dev/null || true)
+    if [ -z "$cm_dir" ] || ! [ -f "$cm_dir/.claude-plugin/plugin.json" ] || ! [ -f "$cm_dir/hooks/register.ts" ]; then
+      code_mode_missing="the code-mode plugin is not installed for this user (claude plugin marketplace add kzarzycki/claude-mods && claude plugin install code-mode@claude-mods --scope user)"
+    else
+      cm_bun=$(jq -rn --slurpfile h "$([ -f "$USER_SETTINGS" ] && echo "$USER_SETTINGS" || echo /dev/null)" --argjson m "$merged" '(($h[0] // {}).pluginConfigs["code-mode@claude-mods"].options.bun // $m.pluginConfigs["code-mode@claude-mods"].options.bun // "bun")' 2>/dev/null || echo bun)
+      if [ "$cm_bun" != bun ]; then
+        command -v "$cm_bun" >/dev/null 2>&1 || code_mode_missing="the code-mode plugin's bun option ($cm_bun) is not a command that exists"
+      elif ! [ -f "$cm_dir/hooks/find-bun.sh" ] || ! sh "$cm_dir/hooks/find-bun.sh" >/dev/null 2>&1; then
+        code_mode_missing="bun, Code Mode's kernel, is not installed (curl -fsSL https://bun.sh/install | bash)"
+      fi
     fi
     if [ -n "$code_mode_missing" ]; then
-      printf 'ERROR: %s; the built-in tools stay allowed until it is. Rerun install after fixing this.\n' "$code_mode_missing" >&2
-      drop_deny=$(jq -c --argjson d "$drop_deny" '$d + (.permissions.deny // [])' <<<"$merged")
+      printf 'ERROR: %s; the repo adds no deny rules for the built-in tools until it is. Rerun install after fixing this.\n' "$code_mode_missing" >&2
+      merged=$(jq 'del(.permissions.deny)' <<<"$merged")
     fi
   fi
   if is_selected ".claude" && [ -f "$USER_SETTINGS" ]; then
@@ -1001,7 +1010,7 @@ if [ -f "$SHARED_SETTINGS" ]; then
             | reduce ("allow", "deny", "ask", "additionalDirectories") as $k (.;
                 if .[$k] and $h.permissions[$k] then .[$k] = $h.permissions[$k] + (.[$k] - $h.permissions[$k]) else . end))
           else . end
-        | if .permissions.deny then .permissions.deny -= $drop else . end
+        | if .permissions.deny and $h.enabledPlugins["code-mode@claude-mods"] == true then .permissions.deny -= $drop else . end
         | if .autoMode and $h.autoMode then .autoMode |= ($h.autoMode + .
             | reduce ("allow", "soft_deny", "environment") as $k (.;
                 if .[$k] and $h.autoMode[$k] then .[$k] = $h.autoMode[$k] + (.[$k] - $h.autoMode[$k]) else . end))

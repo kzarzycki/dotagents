@@ -180,15 +180,21 @@ def test_install_drops_orca_hooks_a_host_still_carries(tmp_path):
 SEVEN = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"]
 
 
-def with_code_mode_ready(home):
-    """The plugin installed and bun found, as on a host where Code Mode can run."""
-    (home / ".claude/plugins").mkdir(parents=True, exist_ok=True)
+def with_code_mode_ready(home, bun=True):
+    """A user-scope plugin payload on disk and a bun for its own find-bun.sh to find, as where Code Mode can run."""
+    plugin = home / ".claude/plugins/cache/claude-mods/code-mode/1"
+    (plugin / ".claude-plugin").mkdir(parents=True, exist_ok=True)
+    (plugin / ".claude-plugin/plugin.json").write_text("{}")
+    (plugin / "hooks").mkdir(exist_ok=True)
+    (plugin / "hooks/register.ts").write_text("")
+    (plugin / "hooks/find-bun.sh").write_text('[ -x "$HOME/.bun/bin/bun" ] && echo "$HOME/.bun/bin/bun"\n')
     (home / ".claude/plugins/installed_plugins.json").write_text(
-        json.dumps({"plugins": {"code-mode@claude-mods": [{"scope": "user", "installPath": "/x"}]}})
+        json.dumps({"plugins": {"code-mode@claude-mods": [{"scope": "user", "installPath": str(plugin)}]}})
     )
-    (home / ".bun/bin").mkdir(parents=True, exist_ok=True)
-    (home / ".bun/bin/bun").write_text("#!/bin/sh\n")
-    (home / ".bun/bin/bun").chmod(0o755)
+    if bun:
+        (home / ".bun/bin").mkdir(parents=True, exist_ok=True)
+        (home / ".bun/bin/bun").write_text("#!/bin/sh\n")
+        (home / ".bun/bin/bun").chmod(0o755)
 
 
 def test_a_fresh_personal_install_turns_on_exclusive_code_mode(tmp_path):
@@ -252,15 +258,45 @@ def test_a_personal_install_sets_the_plugins_mode_to_exclusive_over_a_saved_pref
     assert json.loads(settings.read_text())["pluginConfigs"]["code-mode@claude-mods"]["options"]["mode"] == "exclusive"
 
 
-def test_a_personal_install_without_the_plugin_or_bun_leaves_the_built_ins_allowed(tmp_path):
-    repo, home = make_checkout(tmp_path)  # a fresh home: nothing installed
+def test_a_personal_install_without_a_usable_plugin_or_bun_adds_no_denies(tmp_path):
+    repo, home = make_checkout(tmp_path)
     settings = home / ".claude/settings.json"
+
+    def denies():
+        return json.loads(settings.read_text())["permissions"].get("deny", [])
+
+    result = run_install(repo, home, "--profile", "mac")  # nothing installed
+    assert "ERROR: the code-mode plugin is not installed" in result.stderr and denies() == []
+
+    with_code_mode_ready(home, bun=False)  # plugin there, no bun (skipped where the test host has bun on PATH)
     result = run_install(repo, home, "--profile", "mac")
-    assert "ERROR: the code-mode plugin is not installed" in result.stderr
-    assert json.loads(settings.read_text())["permissions"].get("deny", []) == []
+    if "ERROR: bun" in result.stderr:
+        assert denies() == []
 
     with_code_mode_ready(home)
-    (home / ".bun/bin/bun").unlink()  # the plugin is there but its kernel's bun is not
+    plugin = next((home / ".claude/plugins/cache").rglob("register.ts"))
+    plugin.unlink()  # a manifest entry whose payload is gone
     result = run_install(repo, home, "--profile", "mac")
-    if "ERROR: bun" in result.stderr:  # unless the host running the test has bun on PATH
-        assert json.loads(settings.read_text())["permissions"].get("deny", []) == []
+    assert "ERROR: the code-mode plugin is not installed" in result.stderr and denies() == []
+
+    with_code_mode_ready(home)
+    settings.write_text(json.dumps({"pluginConfigs": {"code-mode@claude-mods": {"options": {"bun": "no-such-bun-xyz"}}}}))
+    result = run_install(repo, home, "--profile", "mac")
+    assert "no-such-bun-xyz" in result.stderr and denies() == []
+
+
+def test_a_host_authored_deny_survives_installs_that_never_enabled_code_mode(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    settings = home / ".claude/settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(json.dumps({"permissions": {"deny": ["Bash", "Read(./example/**)"]}}))
+    assert run_install(repo, home, "--profile", "mac,work", "--only", "claude").returncode == 0
+    assert json.loads(settings.read_text())["permissions"]["deny"] == ["Bash", "Read(./example/**)"]
+    assert run_install(repo, home, "--profile", "mac", "--only", "claude").returncode == 0  # no plugin: adds none
+    assert json.loads(settings.read_text())["permissions"]["deny"] == ["Bash", "Read(./example/**)"]
+
+
+def test_a_codex_only_install_does_not_check_code_mode(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    result = run_install(repo, home, "--profile", "mac", "--only", "codex")
+    assert result.returncode == 0 and "code-mode" not in result.stderr

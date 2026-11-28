@@ -203,7 +203,8 @@ The VPS exposes that loopback API through Tailscale **Serve** (not public Funnel
 
 ### claude-mods
 
-`settings.shared.json` declares the `claude-mods` marketplace from GitHub (`kzarzycki/claude-mods`), so all eight mods are available on every machine, and enables two:
+`settings.shared.json` declares the `claude-mods` marketplace from GitHub (`kzarzycki/claude-mods`), so all eight mods are available on every machine, and enables three on a personal host:
+- `code-mode` gives the model a `repl` tool and, with the managed deny list, makes it the way to reach the shell and file tools (below); the `work` overlay turns it off.
 - `self-compact` compacts at task boundaries.
 - `decision-model` judges, for `self-compact`, whether a turn finished a task. Without it, `self-compact` nudges with each prompt above its threshold instead.
 
