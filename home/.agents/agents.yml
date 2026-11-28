@@ -1,0 +1,14 @@
+# The setup's agent models and effort. Format and precedence: see issue #240 of this repo
+# (the format comes from the agent-skills resolver spec). A project's .agents/agents.yml
+# is merged over this file key by key; where nothing sets a key, the harness's own config decides.
+effort: medium
+
+lead:
+  model: sonnet
+
+verifier:
+  route: codex
+  model: gpt-6.2-sol
+  by_risk:
+    low:
+      model: gpt-6.1-terra

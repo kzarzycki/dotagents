@@ -1,7 +1,7 @@
 [tools]
 gitleaks = "8"
 pre-commit = "4"
-"pipx:pytest" = "8"
+"pipx:pytest" = { version = "8", pipx_args = "--preinstall pyyaml" } # pyyaml: tests/test_agents_yml.py parses the starter file
 python = "3.14"
 "github:microsoft/apm" = "0.30.0"
 
