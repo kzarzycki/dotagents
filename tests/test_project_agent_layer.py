@@ -180,8 +180,8 @@ def test_home_configuration_does_not_enable_direct_matt_plugin():
 # Machine-wide plugins are opt-in per project; persistent memory is provided
 # by the Hindsight integration rather than a Claude-only plugin. These two
 # claude-mods change the harness itself, so they are on everywhere (#108);
-# code-mode is off until claude-code-mode turns it on for a session.
-USER_SCOPED_PLUGINS = {"decision-model@claude-mods", "self-compact@claude-mods"}
+# code-mode is on for personal hosts (#242); the work overlay turns it off.
+USER_SCOPED_PLUGINS = {"decision-model@claude-mods", "self-compact@claude-mods", "code-mode@claude-mods"}
 
 
 def test_home_claude_global_plugins_are_user_scoped_only():
