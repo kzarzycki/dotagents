@@ -199,4 +199,6 @@ def test_a_personal_install_keeps_code_mode_on_and_a_work_install_keeps_it_off(t
     assert "code-mode@claude-mods" not in work.get("pluginConfigs", {})
 
     assert run_install(repo, home, "--profile", "mac,work").returncode == 0  # a host that had it on
-    assert json.loads(settings.read_text())["enabledPlugins"]["code-mode@claude-mods"] is False
+    switched = json.loads(settings.read_text())
+    assert switched["enabledPlugins"]["code-mode@claude-mods"] is False
+    assert "code-mode@claude-mods" not in switched.get("pluginConfigs", {})  # the host's saved mode goes too
