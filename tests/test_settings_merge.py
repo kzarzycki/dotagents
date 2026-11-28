@@ -40,16 +40,51 @@ def test_install_keeps_host_settings_the_repo_does_not_set(tmp_path):
     # The printed diff carries only the repo's changes.
     own = result.stdout.split(f"UPDATED {settings}:", 1)[1].split("UPDATED ", 1)[0]  # not the Codex config's diff
     changed = [l for l in own.splitlines() if l.startswith(("+", "-")) and not l.startswith(("+++", "---"))]
+    # (Sorted-key diffs also move a trailing comma, hence the comma-insensitive match.)
+    changed = [l.rstrip(",") for l in changed if l.rstrip(",") != '-    "self-compact@claude-mods": true' and l.rstrip(",") != '+    "self-compact@claude-mods": true']
     assert sorted(changed) == [
-        '+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",',
-        '-    "CLAUDE_CODE_ENABLE_TELEMETRY": "0",',
-        '-    "stale@host-market": false,',
+        '+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1"',
+        '-    "CLAUDE_CODE_ENABLE_TELEMETRY": "0"',
+        '-    "stale@host-market": false',
     ], own
 
     before = settings.read_bytes()
     result = run_install(repo, home, "--profile", "vps")
     assert result.returncode == 0 and "UPDATED" not in result.stdout
     assert settings.read_bytes() == before
+
+
+def _settings_stdout(repo, home):
+    result = run_install(repo, home, "--profile", "vps")
+    assert result.returncode == 0, result.stdout + result.stderr
+    return result.stdout
+
+
+def test_install_prints_a_sorted_key_diff_only_for_a_real_settings_change(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    settings = home / ".claude/settings.json"
+    _settings_stdout(repo, home)
+    header = f"UPDATED {settings}:"
+
+    # An unchanged file prints nothing.
+    assert "UPDATED" not in _settings_stdout(repo, home)
+
+    # Reordering keys without changing values prints no diff.
+    data = json.loads(settings.read_text())
+    settings.write_text(json.dumps(dict(reversed(list(data.items()))), indent=2) + "\n")
+    assert header not in _settings_stdout(repo, home)
+
+    # Changing one repo-owned key prints that key's old and new value, headed by its file.
+    data = json.loads(settings.read_text())
+    key = "CLAUDE_CODE_ENABLE_TELEMETRY"
+    old, new = data["env"][key], "switched-off"
+    data["env"][key] = new
+    settings.write_text(json.dumps(data, indent=2) + "\n")
+    out = _settings_stdout(repo, home)
+    assert out.count(header) == 1
+    diff = out.split(header, 1)[1]
+    assert f'-    "{key}": "{new}"' in diff
+    assert f'+    "{key}": "{old}"' in diff
 
 
 def test_the_compact_window_is_a_setting_so_a_launch_flag_can_lower_it(tmp_path):
