@@ -1,8 +1,15 @@
 {
+  "enabledPlugins": {
+    "code-mode@claude-mods": false
+  },
+  "permissions": {
+    "deny": []
+  },
   "env": {
     "CLAUDE_CODE_ENABLE_TELEMETRY": "0"
   },
   "dotagents": {
+    "dropDeny": ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"],
     "telemetryRepos": [
       "github.com/kzarzycki/agent-skills",
       "github.com/kzarzycki/dotagents",

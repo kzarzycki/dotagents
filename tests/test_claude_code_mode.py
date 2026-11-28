@@ -159,10 +159,12 @@ def test_a_checkout_session_loads_code_mode_from_it(tmp_path):
     assert settings["env"] == {"CODE_MODE_GUIDE": "system"}
 
 
-def test_code_mode_is_off_by_default():
+def test_code_mode_is_on_by_default_and_exclusive():
     shared = json.loads((SCRIPT.parent.parent.parent / ".claude/settings.shared.json").read_text())
-    assert shared["enabledPlugins"]["code-mode@claude-mods"] is False
+    assert shared["enabledPlugins"]["code-mode@claude-mods"] is True
     assert shared["enabledPlugins"]["eval-kernel@claude-mods"] is False
+    # the same seven tools the cloud setup denies to the model (its list adds WebFetch and WebSearch)
+    assert shared["permissions"]["deny"] == [t for t in HIDDEN if t not in ("WebFetch", "WebSearch")]
 
 
 def test_cloud_setup_turns_on_exclusive_code_mode_for_the_environment(tmp_path):
