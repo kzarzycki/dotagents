@@ -8,7 +8,8 @@
 # the repo (so home/.omp/agent/config.yml lands at ~/.omp/agent/config.yml
 # without swallowing the live state next to it). Existing real files at
 # destinations are left alone and reported as conflicts, unless listed in
-# ~/.config/dotagents/keep-local (one $HOME-relative path per line). Local-override
+# ~/.config/dotagents/keep-local, or $XDG_CONFIG_HOME/dotagents/keep-local when that variable is set and non-empty
+# (one $HOME-relative path per line). Local-override
 # patterns are skipped.
 #
 # Profile: machine-class overlay name (mac, vps, remote, ...). If not
