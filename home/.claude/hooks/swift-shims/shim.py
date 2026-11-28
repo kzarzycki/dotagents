@@ -52,7 +52,8 @@ def real_binary(name, shim_dir):
 
 def swift_hosts():
     try:
-        lines = open(os.path.expanduser("~/.agents/swift-hosts")).read().splitlines()
+        with open(os.path.expanduser("~/.agents/swift-hosts")) as f:
+            lines = f.read().splitlines()
     except OSError:
         return "a claude-cloud worker or a Mac"
     return ", ".join(h for h in (line.split("#")[0].strip() for line in lines) if h) or "a claude-cloud worker or a Mac"
