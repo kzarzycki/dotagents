@@ -74,6 +74,12 @@ def test_install_prints_a_sorted_key_diff_only_for_a_real_settings_change(tmp_pa
     settings.write_text(json.dumps(dict(reversed(list(data.items()))), indent=2) + "\n")
     assert header not in _settings_stdout(repo, home)
 
+    # Reordering keys inside a repo-owned object changes the bytes yet prints no diff.
+    data = json.loads(settings.read_text())
+    data["env"] = dict(reversed(list(data["env"].items())))
+    settings.write_text(json.dumps(data, indent=2) + "\n")
+    assert header not in _settings_stdout(repo, home)
+
     # Changing one repo-owned key prints that key's old and new value, headed by its file.
     data = json.loads(settings.read_text())
     key = "CLAUDE_CODE_ENABLE_TELEMETRY"
