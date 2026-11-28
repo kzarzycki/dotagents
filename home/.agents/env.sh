@@ -12,10 +12,17 @@ esac
 # A host whose ~/.agents/host-commands lists a `swift` rule gets swift, swift-build and swift-test
 # shims first on PATH, so a Swift call nested in a script is refused like a typed one
 # (home/.claude/hooks/swift-shims/shim.py). The hook's own parser answers; no rule, no shims.
-if [ -f "$HOME/.agents/host-commands" ] && python3 "$HOME/.claude/hooks/omnigent-only.py" --has-rule swift 2>/dev/null; then
-  case ":$PATH:" in
-    *":$HOME/.claude/hooks/swift-shims:"*) ;;
-    *) export PATH="$HOME/.claude/hooks/swift-shims:$PATH" ;;
+# Exit 1 is no rule (127: no python3); anything else, an unreadable file included, keeps the shims.
+if [ -e "$HOME/.agents/host-commands" ]; then
+  python3 "$HOME/.claude/hooks/omnigent-only.py" --has-rule swift >/dev/null 2>&1
+  case $? in
+    1|127) ;;
+    *)
+      case ":$PATH:" in
+        *":$HOME/.claude/hooks/swift-shims:"*) ;;
+        *) export PATH="$HOME/.claude/hooks/swift-shims:$PATH" ;;
+      esac
+      ;;
   esac
 fi
 

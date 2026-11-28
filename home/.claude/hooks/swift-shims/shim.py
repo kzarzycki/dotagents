@@ -12,8 +12,8 @@ lists a `swift` rule, env.sh puts this directory first on PATH. `swift`, `swift-
   one allowed case, an Android APK build for an emulator proof, is fine only on an idle host).
 
 The rule parsing is the hook's own. The hosts where Swift runs are read from ~/.agents/swift-hosts
-(one per line, optional), so the repo names none. Test seam: SWIFT_SHIM_LOAD_FILE reads the load
-from a file in /proc/loadavg format. Cases: tests/test_swift_shims.py.
+(one per line, optional), so the repo names none. The load is the system's own; tests inject it
+with a sitecustomize on PYTHONPATH, never an environment variable the shim reads. Cases: tests/test_swift_shims.py.
 """
 
 import importlib.util
@@ -33,10 +33,6 @@ def load_hook(shim_dir):
 
 
 def load_average():
-    seam = os.environ.get("SWIFT_SHIM_LOAD_FILE")
-    if seam:
-        with open(seam) as f:
-            return float(f.read().split()[0])
     return os.getloadavg()[0]
 
 
