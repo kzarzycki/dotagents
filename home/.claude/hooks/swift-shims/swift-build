@@ -1,0 +1,4 @@
+#!/bin/sh
+# Shim, see shim.py.
+d=$(dirname "$0")
+exec python3 "$d/shim.py" "$d" swift-build "$@"

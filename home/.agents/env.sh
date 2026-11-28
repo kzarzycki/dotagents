@@ -9,6 +9,16 @@ case ":$PATH:" in
   *) export PATH="$HOME/.local/bin:$PATH" ;;
 esac
 
+# A host whose ~/.agents/host-commands lists a `swift` rule gets swift, swift-build and swift-test
+# shims first on PATH, so a Swift call nested in a script is refused like a typed one
+# (home/.claude/hooks/swift-shims/shim.py). The hook's own parser answers; no rule, no shims.
+if [ -f "$HOME/.agents/host-commands" ] && python3 "$HOME/.claude/hooks/omnigent-only.py" --has-rule swift 2>/dev/null; then
+  case ":$PATH:" in
+    *":$HOME/.claude/hooks/swift-shims:"*) ;;
+    *) export PATH="$HOME/.claude/hooks/swift-shims:$PATH" ;;
+  esac
+fi
+
 # mise global tools (e.g. herdr). mise is not shell-activated here, so its shims
 # dir is the only way `mise use -g` tools resolve by name in an interactive shell.
 # Append, never prepend, so a real system install always wins over a shim.
