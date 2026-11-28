@@ -253,3 +253,25 @@ def test_codex_s_sandbox_lets_a_gate_write_an_installed_root_and_not_without_it(
     assert touch("x.lock") == 0
     assert touch("y.lock", "sandbox_workspace_write.writable_roots=[]") != 0
     assert sorted(p.name for p in (home / ".apm").iterdir()) == ["x.lock"]
+
+
+def test_a_listed_real_file_is_kept_and_an_unlisted_one_still_conflicts(tmp_path, monkeypatch):
+    repo, home = make_checkout(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))  # the list lives in the fixture, not the caller's
+    rules = home / ".codex/rules"
+    rules.mkdir(parents=True)
+    kept, other = rules / "sandbox-reads.rules", rules / "omnigent-only.rules"
+    kept.write_text("# mine\n")
+    other.write_text("# also mine\n")
+    keep_list = home / ".config/dotagents/keep-local"
+    keep_list.parent.mkdir(parents=True)
+    keep_list.write_text(".codex/rules/sandbox-reads.rules\n")
+    result = run_install(repo, home)
+    assert result.returncode == 1, result.stdout + result.stderr  # the unlisted file is still a conflict
+    assert "KEEP (local): .codex/rules/sandbox-reads.rules" in result.stdout
+    assert f"CONFLICT: {other} " in result.stdout and f"CONFLICT: {kept} " not in result.stdout
+    assert kept.read_text() == "# mine\n"
+    keep_list.write_text(".codex/rules/sandbox-reads.rules\n.codex/rules/omnigent-only.rules\n")
+    result = run_install(repo, home)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert other.read_text() == "# also mine\n"

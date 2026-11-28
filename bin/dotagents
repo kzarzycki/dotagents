@@ -7,7 +7,9 @@
 # directories are recreated as real directories, files are symlinked back into
 # the repo (so home/.omp/agent/config.yml lands at ~/.omp/agent/config.yml
 # without swallowing the live state next to it). Existing real files at
-# destinations are left alone and reported as conflicts. Local-override
+# destinations are left alone and reported as conflicts, unless listed in
+# ~/.config/dotagents/keep-local, or $XDG_CONFIG_HOME/dotagents/keep-local when that variable is set and non-empty
+# (one $HOME-relative path per line). Local-override
 # patterns are skipped.
 #
 # Profile: machine-class overlay name (mac, vps, remote, ...). If not
@@ -746,6 +748,16 @@ is_skipped() {
 }
 
 linked=0; skipped=0; conflicts=0; agents_seen=0
+# Per-host keep list (issue #119): one path per line, relative to $HOME, outside the repo. A listed
+# destination that is a real file stays as the host has it: install prints KEEP and counts no conflict.
+KEEP_LOCAL_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/dotagents/keep-local"
+is_kept_local() {
+  local target="$1" rel
+  [ -f "$KEEP_LOCAL_FILE" ] || return 1
+  [ -f "$target" ] && [ ! -L "$target" ] || return 1
+  rel="${target#"$HOME"/}"
+  grep -qxF -e "$rel" -e "~/$rel" "$KEEP_LOCAL_FILE"
+}
 RULES_MARK='# Installed by dotagents (home/.codex/rules/)'
 
 # Mirror the repo tree: directories are recreated as real dirs at the
@@ -777,6 +789,10 @@ link_tree() {
         continue
       fi
       link_tree "$entry" "$target"
+      continue
+    fi
+    if is_kept_local "$target"; then
+      printf 'KEEP (local): %s\n' "${target#"$HOME"/}"
       continue
     fi
     # Codex skips a symlinked rules file: with sandbox-reads.rules linked, an
