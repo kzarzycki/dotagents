@@ -35,7 +35,7 @@ dotagents/
 
 Every direct child of `home/` becomes a `~/`-level entry of the same name. The directory tree IS the manifest — there's no manifest file.
 
-The installed user baseline enables two Claude Code mods globally (see claude-mods below) and no other capability plugins. Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
+The installed user baseline enables three Claude Code mods globally on a personal host (the `work` overlay turns `code-mode` off) (see claude-mods below) and no other capability plugins. Ponytail is a section of `home/.agents/AGENTS.md`, the shared behavioral spec, not a Claude Code plugin. Capability -- tools, MCP servers, domain knowledge -- stays with the project that needs it. `find-skills`, when present under `~/.agents/skills/`, is an independently installed universal discovery skill; dotagents does not install or update it. Repository skills and MCPs come from each project's APM manifest.
 
 OMP (oh-my-pi) is a first-class payload under `home/.omp/`: its config, rules,
 and extensions install with the normal command just like Claude and Codex
@@ -203,11 +203,12 @@ The VPS exposes that loopback API through Tailscale **Serve** (not public Funnel
 
 ### claude-mods
 
-`settings.shared.json` declares the `claude-mods` marketplace from GitHub (`kzarzycki/claude-mods`), so all eight mods are available on every machine, and enables two:
+`settings.shared.json` declares the `claude-mods` marketplace from GitHub (`kzarzycki/claude-mods`), so all eight mods are available on every machine, and enables three on a personal host:
+- `code-mode` gives the model a `repl` tool (the `work` overlay turns it off).
 - `self-compact` compacts at task boundaries.
 - `decision-model` judges, for `self-compact`, whether a turn finished a task. Without it, `self-compact` nudges with each prompt above its threshold instead.
 
-`code-mode` is off by default, while it is tried on chosen work: it changes how the model works in every session that loads it. It gives the model a `repl` tool, a JavaScript kernel whose state survives between scripts, and those scripts call Claude's own tools. The kernel runs on `bun` (its `bun` option), which install doesn't provide. Install sets `eval-kernel`, its old name, to off, so a machine that had it turned on stops loading a plugin the marketplace no longer has.
+`code-mode` is on by default on personal hosts, with its `mode` option set to `exclusive`; the `work` overlay keeps it off. The managed settings add no permission denies: hiding the built-in tools stays host-local (`claude-code-mode`, below). It changes how the model works in every session that loads it. It gives the model a `repl` tool, a JavaScript kernel whose state survives between scripts, and those scripts call Claude's own tools. The kernel runs on `bun` (its `bun` option), which install doesn't provide. Install sets `eval-kernel`, its old name, to off, so a machine that had it turned on stops loading a plugin the marketplace no longer has.
 
 `decision-model` sends the text it judges to openrouter.ai or api.typesafe.ai when `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` is in Claude's environment, or its `apiKey` option is set; otherwise a Claude model answers under the session's own account. The `work` overlay pins its `backend` option to `claude`, so a work machine never calls those endpoints. `code-mode` and `self-compact` call nothing off the machine themselves; a `repl` script is model-written code with Bun's `fetch` and `process`, the same reach as the Bash tool.
 

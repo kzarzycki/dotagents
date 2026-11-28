@@ -175,3 +175,28 @@ def test_install_drops_orca_hooks_a_host_still_carries(tmp_path):
 
     assert run_install(repo, home, "--profile", "vps").returncode == 0
     assert ".orca" not in settings.read_text()
+
+
+def test_a_personal_install_keeps_code_mode_on_and_a_work_install_keeps_it_off(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    settings = home / ".claude/settings.json"
+    assert run_install(repo, home, "--profile", "mac").returncode == 0
+    got = json.loads(settings.read_text())
+    assert got["enabledPlugins"]["code-mode@claude-mods"] is True
+    assert got["pluginConfigs"]["code-mode@claude-mods"]["options"]["mode"] == "exclusive"
+    assert got["permissions"].get("deny", []) == []
+
+    got["enabledPlugins"]["code-mode@claude-mods"] = True  # a host that has it on
+    settings.write_text(json.dumps(got, indent=2) + "\n")
+    assert run_install(repo, home, "--profile", "mac").returncode == 0
+    assert json.loads(settings.read_text())["enabledPlugins"]["code-mode@claude-mods"] is True
+
+    fresh = tmp_path / "work"
+    fresh.mkdir()
+    assert run_install(repo, fresh, "--profile", "mac,work").returncode == 0
+    work = json.loads((fresh / ".claude/settings.json").read_text())
+    assert work["enabledPlugins"]["code-mode@claude-mods"] is False
+    assert "code-mode@claude-mods" not in work.get("pluginConfigs", {})
+
+    assert run_install(repo, home, "--profile", "mac,work").returncode == 0  # a host that had it on
+    assert json.loads(settings.read_text())["enabledPlugins"]["code-mode@claude-mods"] is False

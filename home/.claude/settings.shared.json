@@ -100,7 +100,7 @@
   },
   "enabledPlugins": {
     "decision-model@claude-mods": true,
-    "code-mode@claude-mods": false,
+    "code-mode@claude-mods": true,
     "eval-kernel@claude-mods": false,
     "self-compact@claude-mods": true
   },
@@ -169,6 +169,13 @@
       "source": {
         "source": "github",
         "repo": "kzarzycki/claude-mods"
+      }
+    }
+  },
+  "pluginConfigs": {
+    "code-mode@claude-mods": {
+      "options": {
+        "mode": "exclusive"
       }
     }
   },

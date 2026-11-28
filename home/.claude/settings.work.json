@@ -1,4 +1,7 @@
 {
+  "enabledPlugins": {
+    "code-mode@claude-mods": false
+  },
   "env": {
     "CLAUDE_CODE_ENABLE_TELEMETRY": "0"
   },
