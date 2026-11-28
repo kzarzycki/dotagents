@@ -173,6 +173,13 @@
       }
     }
   },
+  "pluginConfigs": {
+    "code-mode@claude-mods": {
+      "options": {
+        "mode": "exclusive"
+      }
+    }
+  },
   "tui": "default",
   "autoMemoryEnabled": false,
   "autoDreamEnabled": true,

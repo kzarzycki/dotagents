@@ -180,16 +180,30 @@ def test_install_drops_orca_hooks_a_host_still_carries(tmp_path):
 SEVEN = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"]
 
 
+def with_code_mode_ready(home):
+    """The plugin installed and bun found, as on a host where Code Mode can run."""
+    (home / ".claude/plugins").mkdir(parents=True, exist_ok=True)
+    (home / ".claude/plugins/installed_plugins.json").write_text(
+        json.dumps({"plugins": {"code-mode@claude-mods": [{"scope": "user", "installPath": "/x"}]}})
+    )
+    (home / ".bun/bin").mkdir(parents=True, exist_ok=True)
+    (home / ".bun/bin/bun").write_text("#!/bin/sh\n")
+    (home / ".bun/bin/bun").chmod(0o755)
+
+
 def test_a_fresh_personal_install_turns_on_exclusive_code_mode(tmp_path):
     repo, home = make_checkout(tmp_path)
+    with_code_mode_ready(home)
     assert run_install(repo, home, "--profile", "mac").returncode == 0
     got = json.loads((home / ".claude/settings.json").read_text())
     assert got["enabledPlugins"]["code-mode@claude-mods"] is True
     assert got["permissions"]["deny"] == SEVEN
+    assert got["pluginConfigs"]["code-mode@claude-mods"]["options"]["mode"] == "exclusive"
 
 
 def test_a_second_install_leaves_code_mode_on_over_a_host_that_has_it_on(tmp_path):
     repo, home = make_checkout(tmp_path)
+    with_code_mode_ready(home)
     settings = home / ".claude/settings.json"
     assert run_install(repo, home, "--profile", "mac").returncode == 0
     host = json.loads(settings.read_text())
@@ -204,7 +218,49 @@ def test_a_second_install_leaves_code_mode_on_over_a_host_that_has_it_on(tmp_pat
 
 def test_the_work_profile_keeps_code_mode_off_and_adds_no_deny_list(tmp_path):
     repo, home = make_checkout(tmp_path)
+    with_code_mode_ready(home)
     assert run_install(repo, home, "--profile", "mac,work").returncode == 0
     got = json.loads((home / ".claude/settings.json").read_text())
     assert got["enabledPlugins"]["code-mode@claude-mods"] is False
     assert got["permissions"].get("deny", []) == []
+    assert "code-mode@claude-mods" not in got.get("pluginConfigs", {})
+
+
+def test_switching_a_personal_host_to_work_drops_the_code_mode_denies_and_keeps_others(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    with_code_mode_ready(home)
+    settings = home / ".claude/settings.json"
+    assert run_install(repo, home, "--profile", "mac").returncode == 0
+    host = json.loads(settings.read_text())
+    host["permissions"]["deny"] = ["Read(./secrets/**)"] + SEVEN
+    settings.write_text(json.dumps(host, indent=2) + "\n")
+    assert run_install(repo, home, "--profile", "mac,work").returncode == 0
+    got = json.loads(settings.read_text())
+    assert got["enabledPlugins"]["code-mode@claude-mods"] is False
+    assert got["permissions"]["deny"] == ["Read(./secrets/**)"]
+
+
+def test_a_personal_install_sets_the_plugins_mode_to_exclusive_over_a_saved_preferred(tmp_path):
+    repo, home = make_checkout(tmp_path)
+    with_code_mode_ready(home)
+    settings = home / ".claude/settings.json"
+    assert run_install(repo, home, "--profile", "mac").returncode == 0
+    got = json.loads(settings.read_text())
+    got["pluginConfigs"]["code-mode@claude-mods"]["options"]["mode"] = "preferred"
+    settings.write_text(json.dumps(got, indent=2) + "\n")
+    assert run_install(repo, home, "--profile", "mac").returncode == 0
+    assert json.loads(settings.read_text())["pluginConfigs"]["code-mode@claude-mods"]["options"]["mode"] == "exclusive"
+
+
+def test_a_personal_install_without_the_plugin_or_bun_leaves_the_built_ins_allowed(tmp_path):
+    repo, home = make_checkout(tmp_path)  # a fresh home: nothing installed
+    settings = home / ".claude/settings.json"
+    result = run_install(repo, home, "--profile", "mac")
+    assert "ERROR: the code-mode plugin is not installed" in result.stderr
+    assert json.loads(settings.read_text())["permissions"].get("deny", []) == []
+
+    with_code_mode_ready(home)
+    (home / ".bun/bin/bun").unlink()  # the plugin is there but its kernel's bun is not
+    result = run_install(repo, home, "--profile", "mac")
+    if "ERROR: bun" in result.stderr:  # unless the host running the test has bun on PATH
+        assert json.loads(settings.read_text())["permissions"].get("deny", []) == []

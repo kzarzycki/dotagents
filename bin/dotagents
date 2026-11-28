@@ -958,7 +958,26 @@ if [ -f "$SHARED_SETTINGS" ]; then
   # `dotagents` is install's own key, never Claude's: the work overlay's
   # telemetryRepos becomes Omnigent's allowlist (4.6) and is dropped from settings.
   telemetry_repos=$(jq -c '.dotagents.telemetryRepos // empty' <<<"$merged")
-  merged=$(jq 'del(.dotagents)' <<<"$merged")
+  # dropDeny: permission rules the profile removes from a host's own list (the work overlay's Code Mode denies).
+  drop_deny=$(jq -c '.dotagents.dropDeny // []' <<<"$merged")
+  merged=$(jq 'del(.dotagents)
+    | if .enabledPlugins["code-mode@claude-mods"] != true then
+        (if .pluginConfigs then del(.pluginConfigs["code-mode@claude-mods"]) else . end)
+        | (if .pluginConfigs == {} then del(.pluginConfigs) else . end)
+      else . end' <<<"$merged")
+  # Code Mode replaces the denied built-ins, so the deny rules go in only where it can run: its plugin
+  # installed and bun (its kernel) found. Otherwise they are removed from the result too, and install says so.
+  code_mode_missing=
+  if jq -e '.enabledPlugins["code-mode@claude-mods"] == true' <<<"$merged" >/dev/null 2>&1; then
+    grep -qs 'code-mode@claude-mods' "$HOME/.claude/plugins/installed_plugins.json" || code_mode_missing="the code-mode plugin is not installed (claude plugin marketplace add kzarzycki/claude-mods && claude plugin install code-mode@claude-mods --scope user)"
+    if [ -z "$code_mode_missing" ] && ! command -v bun >/dev/null 2>&1 && ! [ -x "${BUN_INSTALL:-$HOME/.bun}/bin/bun" ] && ! [ -x "$HOME/.bun/bin/bun" ] && ! [ -x /opt/homebrew/bin/bun ]; then
+      code_mode_missing="bun, Code Mode's kernel, is not installed (curl -fsSL https://bun.sh/install | bash)"
+    fi
+    if [ -n "$code_mode_missing" ]; then
+      printf 'ERROR: %s; the built-in tools stay allowed until it is. Rerun install after fixing this.\n' "$code_mode_missing" >&2
+      drop_deny=$(jq -c --argjson d "$drop_deny" '$d + (.permissions.deny // [])' <<<"$merged")
+    fi
+  fi
   if is_selected ".claude" && [ -f "$USER_SETTINGS" ]; then
     jq -r --slurpfile h "$USER_SETTINGS" '($h[0].extraKnownMarketplaces // {}) as $hm
       | (.extraKnownMarketplaces // {}) | to_entries[]
@@ -975,13 +994,14 @@ if [ -f "$SHARED_SETTINGS" ]; then
     host_settings=/dev/null
     [ -f "$USER_SETTINGS" ] && host_settings=$USER_SETTINGS
     tmp=$(mktemp)
-    if ! jq --slurpfile h "$host_settings" '
+    if ! jq --argjson drop "$drop_deny" --slurpfile h "$host_settings" '
         ($h[0] // {}) as $h
         | $h + .
         | if .permissions and $h.permissions then .permissions |= ($h.permissions + .
             | reduce ("allow", "deny", "ask", "additionalDirectories") as $k (.;
                 if .[$k] and $h.permissions[$k] then .[$k] = $h.permissions[$k] + (.[$k] - $h.permissions[$k]) else . end))
           else . end
+        | if .permissions.deny then .permissions.deny -= $drop else . end
         | if .autoMode and $h.autoMode then .autoMode |= ($h.autoMode + .
             | reduce ("allow", "soft_deny", "environment") as $k (.;
                 if .[$k] and $h.autoMode[$k] then .[$k] = $h.autoMode[$k] + (.[$k] - $h.autoMode[$k]) else . end))
