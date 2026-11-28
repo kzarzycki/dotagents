@@ -807,6 +807,10 @@ link_tree() {
           continue
         fi
         if [ -L "$target" ] || ! cmp -s "$entry" "$target"; then
+          if (( ! DRY_RUN )) && [ -f "$target" ] && [ ! -L "$target" ]; then
+            printf 'UPDATED %s:\n' "$target"
+            diff -u "$target" "$entry" || true
+          fi
           run rm -f "$target"
           run cp "$entry" "$target"
         fi
@@ -1010,8 +1014,18 @@ if [ -f "$SHARED_SETTINGS" ]; then
         if [ ! -e "$USER_SETTINGS.pre-dotagents.bak" ]; then
           cp "$USER_SETTINGS" "$USER_SETTINGS.pre-dotagents.bak"
         fi
-        printf 'UPDATED %s:\n' "$USER_SETTINGS"
-        diff -u "$USER_SETTINGS" "$tmp" || true
+        # Compared with sorted keys: a change in key order alone prints nothing.
+        sorted_old=$(mktemp) && sorted_new=$(mktemp)
+        if jq -S . "$USER_SETTINGS" > "$sorted_old" 2>/dev/null && jq -S . "$tmp" > "$sorted_new"; then
+          if ! cmp -s "$sorted_old" "$sorted_new"; then
+            printf 'UPDATED %s:\n' "$USER_SETTINGS"
+            diff -u -L "$USER_SETTINGS" -L "$USER_SETTINGS" "$sorted_old" "$sorted_new" || true
+          fi
+        else
+          printf 'UPDATED %s:\n' "$USER_SETTINGS"
+          diff -u "$USER_SETTINGS" "$tmp" || true
+        fi
+        rm -f "$sorted_old" "$sorted_new"
       fi
       chmod 644 "$tmp"
       mv "$tmp" "$USER_SETTINGS"

@@ -177,9 +177,14 @@ def test_the_rules_install_as_copies_since_codex_skips_a_linked_one(tmp_path):
     (rules / names[0]).unlink()
     (rules / names[0]).symlink_to(repo / "home/.codex/rules" / names[0])
     (repo / "home/.codex/rules" / names[1]).write_text("# changed\n")
-    assert run_install(repo, home).returncode == 0
+    result = run_install(repo, home)
+    assert result.returncode == 0
     assert not (rules / names[0]).is_symlink()
     assert (rules / names[1]).read_text() == "# changed\n"
+    # the rewritten copy prints a header and a diff; a copy that did not change prints nothing
+    assert result.stdout.count(f"UPDATED {rules / names[1]}:") == 1
+    assert "+# changed" in result.stdout
+    assert f"UPDATED {rules / names[2]}" not in result.stdout if len(names) > 2 else True
 
 
 def test_a_rules_file_dotagents_did_not_write_is_left_alone(tmp_path):
