@@ -19,7 +19,9 @@ command prefix per line (`swift build`), `#` comments, absent or empty forbids n
 A prefix matches the words of a command, so `swiftly run swift build` matches
 `swift build`, `echo swift test` and `grep swiftc` do not, and a Gradle build that
 compiles Swift underneath is not a `swift` call. Dotagents installs no file there:
-the host owns it, so no host name lives in the repo.
+the host owns it, so no host name lives in the repo. On a host with a `swift` rule, env.sh puts
+swift-shims/ first on PATH (`--has-rule swift` asks this file), so a Swift call nested in a script
+is refused too.
 
 A wait is one command that ends on every outcome (`omnigent_agent.py wait-for
 --log <log> --pid <pidfile> --notify`), so a `while` or `until` loop that runs
@@ -78,10 +80,14 @@ def agent_launch(name, args):
     return False
 
 
-def host_rules():
+def host_rules(strict=False):
+    """The rules as word lists. A missing file is no rules; with strict, an unreadable one raises."""
     try:
-        lines = open(HOST_RULES).read().splitlines()
-    except OSError:
+        with open(HOST_RULES, errors="replace") as f:  # a stray byte in a comment keeps the valid rules
+            lines = f.read().splitlines()
+    except OSError as err:
+        if strict and not isinstance(err, FileNotFoundError):
+            raise
         return []
     return [r for r in (line.split("#")[0].split() for line in lines) if r]
 
@@ -143,7 +149,7 @@ def uncomment(text):
     """The text with each comment cut: from a word-initial `#` outside quotes (the first whose prefix,
     earlier comments cut, lexes) to the end of its line. Quotes may span lines."""
     kept, start = "", 0
-    for m in re.finditer(r"(?:^|(?<=[\s;&|]))#", text, re.M):
+    for m in re.finditer(r"(?:^|(?<=[\s;&|]))#", text, re.MULTILINE):
         if m.start() < start:
             continue
         try:
@@ -226,6 +232,11 @@ def check_segment(words):
 
 
 def main():
+    if sys.argv[1:2] == ["--has-rule"]:  # env.sh asks whether this host forbids a command word
+        try:  # exit 0 a rule, 1 none, 3 unreadable: a caller must not read a crash (1) as "none"
+            sys.exit(0 if any(r[0] == sys.argv[2] for r in host_rules(strict=True)) else 1)
+        except (OSError, ValueError):
+            sys.exit(3)
     command = json.load(sys.stdin).get("tool_input", {}).get("command", "")
     hit = launches(command)
     if hit == KILL:

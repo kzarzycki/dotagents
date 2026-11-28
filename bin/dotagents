@@ -765,12 +765,25 @@ RULES_MARK='# Installed by dotagents (home/.codex/rules/)'
 # an agent's live state (~/.omp/agent holds sqlite dbs and sessions) land
 # inside the repo, so dirs are never links — nesting like
 # home/.omp/agent/config.yml installs to the matching ~/-path.
+# Swift shims (home/.claude/hooks/swift-shims) install only on a host whose ~/.agents/host-commands has
+# a `swift` rule, asked of the hook's own parser. Exit 1 (no rule) and 127 (no python3) mean none;
+# an unreadable file still installs them, so the load guard never silently disappears.
+host_has_swift_rule() {
+  local rc=0
+  python3 "$SRC/.claude/hooks/omnigent-only.py" --has-rule swift >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 1 ] && [ "$rc" -ne 127 ]
+}
+
 link_tree() {
   local src_dir="$1" dest_dir="$2" entry item target
   run mkdir -p "$dest_dir"
   for entry in "$src_dir"/*; do
     item=$(basename "$entry")
     if is_skipped "$item"; then
+      skipped=$((skipped + 1))
+      continue
+    fi
+    if [ "$entry" = "$SRC/.claude/hooks/swift-shims" ] && ! host_has_swift_rule; then
       skipped=$((skipped + 1))
       continue
     fi
